@@ -59,7 +59,6 @@ function MainTabs() {
         },
         tabBarLabelStyle: {
           fontSize: 12,
-          fontWeight: '500',
         },
         headerShown: false,
       })}
