@@ -8,8 +8,9 @@ import { colors } from '../theme';
 import type { RootStackParamList, MainTabParamList } from '../types';
 
 // Screens
+import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
-import SignupScreen from '../screens/SignupScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import ChatScreen from '../screens/ChatScreen';
 import TicketsScreen from '../screens/TicketsScreen';
@@ -77,7 +78,7 @@ function MainTabs() {
 }
 
 export default function Navigation() {
-  const isAuthenticated = true; // TODO: Connect to auth store
+  const isAuthenticated = false; // Set to false to show login flow
 
   return (
     <NavigationContainer>
@@ -86,8 +87,9 @@ export default function Navigation() {
           <Stack.Screen name="Main" component={MainTabs} />
         ) : (
           <>
+            <Stack.Screen name="Welcome" component={WelcomeScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="Signup" component={SignupScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
           </>
         )}
       </Stack.Navigator>

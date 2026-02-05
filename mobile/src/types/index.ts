@@ -57,10 +57,11 @@ export interface ForumPost {
 }
 
 export type RootStackParamList = {
-  Auth: undefined;
-  Main: undefined;
+  Welcome: undefined;
   Login: undefined;
+  ForgotPassword: undefined;
   Signup: undefined;
+  Main: undefined;
   Chat: undefined;
   TicketDetail: { ticketId: string };
   PostDetail: { postId: string };
