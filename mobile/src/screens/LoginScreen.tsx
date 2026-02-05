@@ -163,7 +163,6 @@ const styles = StyleSheet.create({
   },
   logoText: {
     fontSize: fontSize.xxxl,
-    fontWeight: 'bold',
     color: colors.white,
   },
   form: {
@@ -176,7 +175,6 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.xxl,
-    fontWeight: 'bold',
     color: colors.text,
     marginBottom: spacing.xs,
   },
@@ -198,7 +196,6 @@ const styles = StyleSheet.create({
   },
   googleBtnText: {
     fontSize: fontSize.md,
-    fontWeight: '600',
     color: colors.text,
   },
   divider: {
@@ -245,7 +242,6 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: {
     fontSize: fontSize.md,
-    fontWeight: '600',
     color: colors.white,
   },
   otpInfo: {
@@ -256,7 +252,6 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   otpEmail: {
-    fontWeight: '600',
     color: colors.text,
   },
   backBtn: {
@@ -266,7 +261,6 @@ const styles = StyleSheet.create({
   backBtnText: {
     fontSize: fontSize.md,
     color: colors.primary,
-    fontWeight: '500',
   },
   footer: {
     flexDirection: 'row',
@@ -281,6 +275,5 @@ const styles = StyleSheet.create({
   footerLink: {
     fontSize: fontSize.md,
     color: colors.primary,
-    fontWeight: '600',
   },
 });

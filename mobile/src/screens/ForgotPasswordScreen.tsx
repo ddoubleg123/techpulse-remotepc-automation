@@ -118,7 +118,6 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.xxl,
-    fontWeight: 'bold',
     color: '#fff',
     marginBottom: spacing.sm,
   },
@@ -156,7 +155,6 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     fontSize: fontSize.md,
-    fontWeight: '600',
     color: colors.white,
   },
 });
