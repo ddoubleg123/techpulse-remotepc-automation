@@ -1,13 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 
 // TechPulse Logo - pulse/heartbeat line design
-function TechPulseLogo() {
+function TechPulseLogo({ size = 'large' }: { size?: 'large' | 'small' }) {
+  const width = size === 'large' ? 200 : 150;
+  const height = size === 'large' ? 60 : 45;
+  const fontSize = size === 'large' ? 28 : 22;
+
   return (
     <View style={logoStyles.container}>
-      <Svg width={200} height={60} viewBox="0 0 200 60">
+      <Svg width={width} height={height} viewBox="0 0 200 60">
         <Path
           d="M0 30 L40 30 L50 10 L60 50 L70 20 L80 40 L90 30 L200 30"
           stroke="#3B82F6"
@@ -17,7 +22,7 @@ function TechPulseLogo() {
           strokeLinejoin="round"
         />
       </Svg>
-      <Text style={logoStyles.brandName}>TECHPULSE</Text>
+      <Text style={[logoStyles.brandName, { fontSize }]}>TECHPULSE</Text>
     </View>
   );
 }
@@ -27,42 +32,30 @@ const logoStyles = StyleSheet.create({
     alignItems: 'center',
   },
   brandName: {
-    fontSize: 28,
     color: '#3B82F6',
     letterSpacing: 6,
     marginTop: 16,
   },
 });
 
-export default function App() {
+// Welcome Screen
+function WelcomeScreen({ onLogin }: { onLogin: () => void }) {
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
-
-      <View style={styles.logoSection}>
-        <TechPulseLogo />
+    <View style={welcomeStyles.container}>
+      <View style={welcomeStyles.logoSection}>
+        <TechPulseLogo size="large" />
       </View>
 
-      <View style={styles.buttonSection}>
-        <TouchableOpacity
-          style={styles.loginButton}
-          onPress={() => Alert.alert('Login', 'Login button pressed!')}
-        >
-          <Text style={styles.loginButtonText}>Login</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.forgotPassword}
-          onPress={() => Alert.alert('Forgot Password', 'Forgot password pressed!')}
-        >
-          <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+      <View style={welcomeStyles.buttonSection}>
+        <TouchableOpacity style={welcomeStyles.loginButton} onPress={onLogin}>
+          <Text style={welcomeStyles.loginButtonText}>Login</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const welcomeStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
@@ -90,12 +83,287 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#ffffff',
   },
-  forgotPassword: {
-    marginTop: 24,
+});
+
+// Login Screen
+function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: () => void }) {
+  const [email, setEmail] = useState('');
+  const [showOTP, setShowOTP] = useState(false);
+  const [otp, setOTP] = useState('');
+
+  const handleGoogleLogin = () => {
+    // TODO: Implement Google OAuth
+    console.log('Google login pressed');
+  };
+
+  const handleSendCode = () => {
+    if (email) {
+      setShowOTP(true);
+      // TODO: Send OTP to email
+      console.log('Sending OTP to:', email);
+    }
+  };
+
+  const handleVerifyOTP = () => {
+    if (otp.length === 6) {
+      // TODO: Verify OTP
+      console.log('Verifying OTP:', otp);
+      onSuccess();
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView
+      style={loginStyles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView
+        contentContainerStyle={loginStyles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Header */}
+        <View style={loginStyles.header}>
+          <TouchableOpacity onPress={onBack} style={loginStyles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#3B82F6" />
+          </TouchableOpacity>
+          <TechPulseLogo size="small" />
+        </View>
+
+        {/* Form */}
+        <View style={loginStyles.form}>
+          <Text style={loginStyles.title}>Welcome back</Text>
+          <Text style={loginStyles.subtitle}>Sign in to continue</Text>
+
+          {!showOTP ? (
+            <>
+              {/* Google Login */}
+              <TouchableOpacity style={loginStyles.googleBtn} onPress={handleGoogleLogin}>
+                <Ionicons name="logo-google" size={20} color="#ffffff" />
+                <Text style={loginStyles.googleBtnText}>Continue with Google</Text>
+              </TouchableOpacity>
+
+              <View style={loginStyles.divider}>
+                <View style={loginStyles.dividerLine} />
+                <Text style={loginStyles.dividerText}>or</Text>
+                <View style={loginStyles.dividerLine} />
+              </View>
+
+              {/* Email Input */}
+              <Text style={loginStyles.inputLabel}>Email address</Text>
+              <View style={loginStyles.inputContainer}>
+                <Ionicons name="mail-outline" size={20} color="#64748b" />
+                <TextInput
+                  style={loginStyles.input}
+                  placeholder="Enter your email"
+                  placeholderTextColor="#64748b"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[loginStyles.primaryBtn, !email && loginStyles.primaryBtnDisabled]}
+                onPress={handleSendCode}
+                disabled={!email}
+              >
+                <Text style={loginStyles.primaryBtnText}>Send Code</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={loginStyles.otpInfo}>
+                We sent a 6-digit code to{'\n'}
+                <Text style={loginStyles.otpEmail}>{email}</Text>
+              </Text>
+
+              <Text style={loginStyles.inputLabel}>Enter code</Text>
+              <View style={loginStyles.inputContainer}>
+                <Ionicons name="keypad-outline" size={20} color="#64748b" />
+                <TextInput
+                  style={loginStyles.input}
+                  placeholder="000000"
+                  placeholderTextColor="#64748b"
+                  value={otp}
+                  onChangeText={setOTP}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[loginStyles.primaryBtn, otp.length !== 6 && loginStyles.primaryBtnDisabled]}
+                onPress={handleVerifyOTP}
+                disabled={otp.length !== 6}
+              >
+                <Text style={loginStyles.primaryBtnText}>Verify & Login</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={loginStyles.backLink} onPress={() => setShowOTP(false)}>
+                <Text style={loginStyles.backLinkText}>Use a different email</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const loginStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  header: {
+    paddingTop: 60,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    alignItems: 'center',
+  },
+  backButton: {
+    position: 'absolute',
+    left: 24,
+    top: 60,
     padding: 8,
   },
-  forgotPasswordText: {
+  form: {
+    flex: 1,
+    backgroundColor: '#1e293b',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: 24,
+    paddingTop: 32,
+  },
+  title: {
+    fontSize: 28,
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  subtitle: {
     fontSize: 16,
+    color: '#94a3b8',
+    marginBottom: 32,
+  },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: '#4285F4',
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  googleBtnText: {
+    fontSize: 16,
+    color: '#ffffff',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#334155',
+  },
+  dividerText: {
+    paddingHorizontal: 16,
+    fontSize: 14,
     color: '#64748b',
   },
+  inputLabel: {
+    fontSize: 14,
+    color: '#94a3b8',
+    marginBottom: 8,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  input: {
+    flex: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    fontSize: 16,
+    color: '#ffffff',
+  },
+  primaryBtn: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  primaryBtnDisabled: {
+    backgroundColor: '#3B82F650',
+  },
+  primaryBtnText: {
+    fontSize: 16,
+    color: '#ffffff',
+  },
+  otpInfo: {
+    fontSize: 16,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  otpEmail: {
+    color: '#3B82F6',
+  },
+  backLink: {
+    alignItems: 'center',
+    marginTop: 16,
+    padding: 8,
+  },
+  backLinkText: {
+    fontSize: 16,
+    color: '#3B82F6',
+  },
 });
+
+// Main App with simple navigation
+export default function App() {
+  const [screen, setScreen] = useState<'welcome' | 'login' | 'main'>('welcome');
+
+  return (
+    <View style={{ flex: 1, backgroundColor: '#0f172a' }}>
+      <StatusBar style="light" />
+
+      {screen === 'welcome' && (
+        <WelcomeScreen onLogin={() => setScreen('login')} />
+      )}
+
+      {screen === 'login' && (
+        <LoginScreen
+          onBack={() => setScreen('welcome')}
+          onSuccess={() => setScreen('main')}
+        />
+      )}
+
+      {screen === 'main' && (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: '#fff', fontSize: 24 }}>Welcome to TechPulse!</Text>
+          <TouchableOpacity
+            style={{ marginTop: 20, padding: 16, backgroundColor: '#3B82F6', borderRadius: 12 }}
+            onPress={() => setScreen('welcome')}
+          >
+            <Text style={{ color: '#fff' }}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
