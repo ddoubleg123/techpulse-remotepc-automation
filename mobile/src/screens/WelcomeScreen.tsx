@@ -5,11 +5,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
-  StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import TechPulseLogo from '../components/TechPulseLogo';
 import { colors, spacing, fontSize, borderRadius } from '../theme';
 import type { RootStackParamList } from '../types';
 
@@ -20,12 +18,11 @@ export default function WelcomeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
-
       <View style={styles.content}>
         {/* Logo Section */}
         <View style={styles.logoSection}>
-          <TechPulseLogo width={280} height={80} color="#3B82F6" />
+          {/* Pulse line using text characters */}
+          <Text style={styles.pulseLine}>╱╲__╱╲__╱╲</Text>
           <Text style={styles.brandName}>TECHPULSE</Text>
         </View>
 
@@ -60,11 +57,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingTop: 120,
+    paddingTop: 160,
     paddingBottom: 60,
   },
   logoSection: {
     alignItems: 'center',
+  },
+  pulseLine: {
+    fontSize: 40,
+    color: '#3B82F6',
+    fontWeight: '200',
+    letterSpacing: -2,
   },
   brandName: {
     fontSize: 32,
