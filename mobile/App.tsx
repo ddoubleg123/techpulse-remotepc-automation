@@ -1,12 +1,31 @@
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
-import Navigation from './src/navigation';
+import { View, Text, StyleSheet } from 'react-native';
 
 export default function App() {
   return (
-    <View style={{ flex: 1, backgroundColor: '#0f172a' }}>
+    <View style={styles.container}>
       <StatusBar style="light" />
-      <Navigation />
+      <Text style={styles.text}>TECHPULSE</Text>
+      <Text style={styles.subtitle}>Loading...</Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  text: {
+    fontSize: 32,
+    color: '#3B82F6',
+    letterSpacing: 4,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#64748b',
+    marginTop: 16,
+  },
+});
