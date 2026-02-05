@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+
+// Required for auth session to work properly
+WebBrowser.maybeCompleteAuthSession();
+
+// Google OAuth Client ID
+const GOOGLE_CLIENT_ID = '416281156741-cn1vmd73s9vu7pp6t4ohe4tj6imbtjh7.apps.googleusercontent.com';
 
 // TechPulse Logo - pulse/heartbeat line design
 function TechPulseLogo({ size = 'large' }: { size?: 'large' | 'small' }) {
@@ -85,32 +93,85 @@ const welcomeStyles = StyleSheet.create({
   },
 });
 
+// User type
+interface User {
+  email: string;
+  name?: string;
+  picture?: string;
+}
+
 // Login Screen
-function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: () => void }) {
+function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (user: User) => void }) {
   const [email, setEmail] = useState('');
   const [showOTP, setShowOTP] = useState(false);
   const [otp, setOTP] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // Google Auth setup
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    webClientId: GOOGLE_CLIENT_ID,
+    // For Android standalone app, you'll need androidClientId
+    // For iOS standalone app, you'll need iosClientId
+  });
+
+  // Handle Google Auth response
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication } = response;
+      if (authentication?.accessToken) {
+        fetchGoogleUserInfo(authentication.accessToken);
+      }
+    }
+  }, [response]);
+
+  const fetchGoogleUserInfo = async (accessToken: string) => {
+    setLoading(true);
+    try {
+      const userInfoResponse = await fetch('https://www.googleapis.com/userinfo/v2/me', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const userInfo = await userInfoResponse.json();
+      console.log('Google user info:', userInfo);
+      onSuccess({
+        email: userInfo.email,
+        name: userInfo.name,
+        picture: userInfo.picture,
+      });
+    } catch (error) {
+      console.error('Error fetching Google user info:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGoogleLogin = () => {
-    // TODO: Implement Google OAuth
-    console.log('Google login pressed');
+    promptAsync();
   };
 
   const handleSendCode = () => {
     if (email) {
       setShowOTP(true);
-      // TODO: Send OTP to email
+      // TODO: Send OTP to email via backend
       console.log('Sending OTP to:', email);
     }
   };
 
   const handleVerifyOTP = () => {
     if (otp.length === 6) {
-      // TODO: Verify OTP
+      // TODO: Verify OTP via backend
       console.log('Verifying OTP:', otp);
-      onSuccess();
+      onSuccess({ email });
     }
   };
+
+  if (loading) {
+    return (
+      <View style={[loginStyles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+        <Text style={{ color: '#94a3b8', marginTop: 16 }}>Signing in...</Text>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -137,7 +198,11 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: () 
           {!showOTP ? (
             <>
               {/* Google Login */}
-              <TouchableOpacity style={loginStyles.googleBtn} onPress={handleGoogleLogin}>
+              <TouchableOpacity
+                style={[loginStyles.googleBtn, !request && loginStyles.googleBtnDisabled]}
+                onPress={handleGoogleLogin}
+                disabled={!request}
+              >
                 <Ionicons name="logo-google" size={20} color="#ffffff" />
                 <Text style={loginStyles.googleBtnText}>Continue with Google</Text>
               </TouchableOpacity>
@@ -258,6 +323,9 @@ const loginStyles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
   },
+  googleBtnDisabled: {
+    backgroundColor: '#4285F450',
+  },
   googleBtnText: {
     fontSize: 16,
     color: '#ffffff',
@@ -334,9 +402,81 @@ const loginStyles = StyleSheet.create({
   },
 });
 
+// Main Screen (after login)
+function MainScreen({ user, onLogout }: { user: User; onLogout: () => void }) {
+  return (
+    <View style={mainStyles.container}>
+      <View style={mainStyles.content}>
+        <TechPulseLogo size="small" />
+        <Text style={mainStyles.welcome}>Welcome!</Text>
+        <Text style={mainStyles.email}>{user.email}</Text>
+        {user.name && <Text style={mainStyles.name}>{user.name}</Text>}
+      </View>
+      <TouchableOpacity style={mainStyles.logoutBtn} onPress={onLogout}>
+        <Ionicons name="log-out-outline" size={20} color="#ffffff" />
+        <Text style={mainStyles.logoutText}>Logout</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const mainStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 100,
+    paddingBottom: 50,
+    paddingHorizontal: 24,
+  },
+  content: {
+    alignItems: 'center',
+  },
+  welcome: {
+    fontSize: 28,
+    color: '#ffffff',
+    marginTop: 32,
+  },
+  email: {
+    fontSize: 16,
+    color: '#3B82F6',
+    marginTop: 8,
+  },
+  name: {
+    fontSize: 14,
+    color: '#94a3b8',
+    marginTop: 4,
+  },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ef4444',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  logoutText: {
+    fontSize: 16,
+    color: '#ffffff',
+  },
+});
+
 // Main App with simple navigation
 export default function App() {
   const [screen, setScreen] = useState<'welcome' | 'login' | 'main'>('welcome');
+  const [user, setUser] = useState<User | null>(null);
+
+  const handleLoginSuccess = (loggedInUser: User) => {
+    setUser(loggedInUser);
+    setScreen('main');
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setScreen('welcome');
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0f172a' }}>
@@ -349,20 +489,12 @@ export default function App() {
       {screen === 'login' && (
         <LoginScreen
           onBack={() => setScreen('welcome')}
-          onSuccess={() => setScreen('main')}
+          onSuccess={handleLoginSuccess}
         />
       )}
 
-      {screen === 'main' && (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ color: '#fff', fontSize: 24 }}>Welcome to TechPulse!</Text>
-          <TouchableOpacity
-            style={{ marginTop: 20, padding: 16, backgroundColor: '#3B82F6', borderRadius: 12 }}
-            onPress={() => setScreen('welcome')}
-          >
-            <Text style={{ color: '#fff' }}>Logout</Text>
-          </TouchableOpacity>
-        </View>
+      {screen === 'main' && user && (
+        <MainScreen user={user} onLogout={handleLogout} />
       )}
     </View>
   );
