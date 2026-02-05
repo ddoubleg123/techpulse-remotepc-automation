@@ -2,6 +2,7 @@
   "expo": {
     "name": "TechPulse",
     "slug": "techpulse",
+    "scheme": "techpulse",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

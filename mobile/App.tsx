@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
@@ -11,6 +11,9 @@ WebBrowser.maybeCompleteAuthSession();
 
 // Google OAuth Client ID
 const GOOGLE_CLIENT_ID = '416281156741-cn1vmd73s9vu7pp6t4ohe4tj6imbtjh7.apps.googleusercontent.com';
+
+// Expo username for redirect URI
+const EXPO_USERNAME = 'danielgouldman';
 
 // TechPulse Logo - pulse/heartbeat line design
 function TechPulseLogo({ size = 'large' }: { size?: 'large' | 'small' }) {
@@ -109,18 +112,31 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
 
   // Google Auth setup
   const [request, response, promptAsync] = Google.useAuthRequest({
+    expoClientId: GOOGLE_CLIENT_ID,
     webClientId: GOOGLE_CLIENT_ID,
-    // For Android standalone app, you'll need androidClientId
-    // For iOS standalone app, you'll need iosClientId
   });
+
+  // Debug: Log request state
+  useEffect(() => {
+    console.log('Google Auth request state:', request ? 'ready' : 'not ready');
+    if (request) {
+      console.log('Redirect URI:', request.redirectUri);
+    }
+  }, [request]);
 
   // Handle Google Auth response
   useEffect(() => {
+    console.log('Google Auth response:', response?.type);
     if (response?.type === 'success') {
       const { authentication } = response;
       if (authentication?.accessToken) {
         fetchGoogleUserInfo(authentication.accessToken);
       }
+    } else if (response?.type === 'error') {
+      console.error('Google Auth error:', response.error);
+      Alert.alert('Authentication Error', response.error?.message || 'Something went wrong');
+    } else if (response?.type === 'dismiss') {
+      console.log('User dismissed the auth prompt');
     }
   }, [response]);
 
@@ -139,13 +155,25 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
       });
     } catch (error) {
       console.error('Error fetching Google user info:', error);
+      Alert.alert('Error', 'Failed to get user information from Google');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogleLogin = () => {
-    promptAsync();
+  const handleGoogleLogin = async () => {
+    console.log('Google login button pressed');
+    if (!request) {
+      Alert.alert('Not Ready', 'Google Sign-In is still loading. Please try again.');
+      return;
+    }
+    try {
+      const result = await promptAsync();
+      console.log('promptAsync result:', result);
+    } catch (error) {
+      console.error('Google login error:', error);
+      Alert.alert('Error', 'Failed to open Google Sign-In');
+    }
   };
 
   const handleSendCode = () => {
