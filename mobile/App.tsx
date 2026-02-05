@@ -9,11 +9,9 @@ import * as WebBrowser from 'expo-web-browser';
 // Required for auth session to work properly
 WebBrowser.maybeCompleteAuthSession();
 
-// Google OAuth Client ID
-const GOOGLE_CLIENT_ID = '416281156741-cn1vmd73s9vu7pp6t4ohe4tj6imbtjh7.apps.googleusercontent.com';
-
-// Expo username for redirect URI
-const EXPO_USERNAME = 'danielgouldman';
+// Google OAuth Client IDs
+const GOOGLE_WEB_CLIENT_ID = '416281156741-cn1vmd73s9vu7pp6t4ohe4tj6imbtjh7.apps.googleusercontent.com';
+const GOOGLE_ANDROID_CLIENT_ID = '416281156741-brtr7npacdjb5kfemcgm0uqkikuk3if8.apps.googleusercontent.com';
 
 // TechPulse Logo - pulse/heartbeat line design
 function TechPulseLogo({ size = 'large' }: { size?: 'large' | 'small' }) {
@@ -112,8 +110,9 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
 
   // Google Auth setup
   const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: GOOGLE_CLIENT_ID,
-    webClientId: GOOGLE_CLIENT_ID,
+    expoClientId: GOOGLE_WEB_CLIENT_ID,
+    webClientId: GOOGLE_WEB_CLIENT_ID,
+    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
   });
 
   // Debug: Log request state
