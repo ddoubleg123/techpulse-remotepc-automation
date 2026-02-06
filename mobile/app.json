@@ -27,7 +27,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.416281156741-cn1vmd73s9vu7pp6t4ohe4tj6imbtjh7"
+        }
+      ]
     ]
   }
 }

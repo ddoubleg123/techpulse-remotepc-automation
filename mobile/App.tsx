@@ -3,16 +3,14 @@ import { StatusBar } from 'expo-status-bar';
 import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 
-// Required for auth session to work properly
-WebBrowser.maybeCompleteAuthSession();
-
-// Google OAuth Client IDs
-const GOOGLE_WEB_CLIENT_ID = '416281156741-cn1vmd73s9vu7pp6t4ohe4tj6imbtjh7.apps.googleusercontent.com';
-const GOOGLE_ANDROID_CLIENT_ID = '416281156741-brtr7npacdjb5kfemcgm0uqkikuk3if8.apps.googleusercontent.com';
+// Configure Google Sign-In
+// webClientId is used to get the ID token (for backend verification)
+GoogleSignin.configure({
+  webClientId: '416281156741-cn1vmd73s9vu7pp6t4ohe4tj6imbtjh7.apps.googleusercontent.com',
+  offlineAccess: true,
+});
 
 // TechPulse Logo - pulse/heartbeat line design
 function TechPulseLogo({ size = 'large' }: { size?: 'large' | 'small' }) {
@@ -109,78 +107,40 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   const [otp, setOTP] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Google Auth setup - using Expo proxy for redirect
-  // The native custom scheme (techpulse://) is NOT supported by Google OAuth
-  // We must use an HTTPS redirect URI that Google allows
-  const redirectUri = 'https://auth.expo.io/@danielgouldman/techpulse';
-
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    webClientId: GOOGLE_WEB_CLIENT_ID,
-    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
-    redirectUri, // Explicitly pass the redirect URI
-    scopes: ['openid', 'profile', 'email'],
-  });
-
-  // Debug: Log request state and configuration
-  useEffect(() => {
-    console.log('=== Google Auth Debug ===');
-    console.log('Request state:', request ? 'ready' : 'not ready');
-    console.log('Redirect URI:', redirectUri);
-    console.log('=========================');
-  }, [request, redirectUri]);
-
-  // Handle Google Auth response
-  useEffect(() => {
-    console.log('Google Auth response:', response?.type);
-    if (response?.type === 'success') {
-      const { authentication } = response;
-      if (authentication?.accessToken) {
-        fetchGoogleUserInfo(authentication.accessToken);
-      }
-    } else if (response?.type === 'error') {
-      console.error('Google Auth error:', response.error);
-      Alert.alert('Authentication Error', response.error?.message || 'Something went wrong. Make sure you are using a development build, not Expo Go.');
-    } else if (response?.type === 'dismiss') {
-      console.log('User dismissed the auth prompt');
-    }
-  }, [response]);
-
-  const fetchGoogleUserInfo = async (accessToken: string) => {
+  const handleGoogleLogin = async () => {
+    console.log('Google login button pressed - using native sign-in');
     setLoading(true);
+
     try {
-      const userInfoResponse = await fetch('https://www.googleapis.com/userinfo/v2/me', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const userInfo = await userInfoResponse.json();
-      console.log('Google user info:', userInfo);
-      onSuccess({
-        email: userInfo.email,
-        name: userInfo.name,
-        picture: userInfo.picture,
-      });
-    } catch (error) {
-      console.error('Error fetching Google user info:', error);
-      Alert.alert('Error', 'Failed to get user information from Google');
+      // Check if Google Play Services are available
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+      // Sign in with Google
+      const response = await GoogleSignin.signIn();
+      console.log('Google Sign-In response:', response);
+
+      if (response.data?.user) {
+        const { email, name, photo } = response.data.user;
+        onSuccess({
+          email: email,
+          name: name || undefined,
+          picture: photo || undefined,
+        });
+      }
+    } catch (error: any) {
+      console.error('Google Sign-In error:', error);
+
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        console.log('User cancelled the sign-in');
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        Alert.alert('Sign-In In Progress', 'Please wait...');
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Error', 'Google Play Services not available or outdated');
+      } else {
+        Alert.alert('Sign-In Error', error.message || 'Something went wrong');
+      }
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    console.log('Google login button pressed');
-    console.log('Redirect URI being used:', request?.redirectUri);
-
-
-    if (!request) {
-      Alert.alert('Not Ready', 'Google Sign-In is still loading. Please try again.');
-      return;
-    }
-    try {
-      const result = await promptAsync();
-      console.log('promptAsync result:', result);
-    } catch (error) {
-      console.error('Google login error:', error);
-      Alert.alert('Error', 'Failed to open Google Sign-In');
     }
   };
 
