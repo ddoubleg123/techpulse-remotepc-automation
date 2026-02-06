@@ -7,9 +7,11 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Share,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, fontSize, borderRadius } from '../theme';
+import { useAuthStore } from '../stores/authStore';
 
 const menuItems = [
   { icon: 'person-outline' as const, label: 'Edit Profile', screen: 'EditProfile' },
@@ -21,12 +23,29 @@ const menuItems = [
 ];
 
 export default function ProfileScreen() {
+  const { user: authUser, logout } = useAuthStore();
+
   const user = {
-    name: 'Demo User',
-    email: 'demo@techpulse.com',
+    name: authUser?.name || 'Demo User',
+    email: authUser?.email || 'demo@techpulse.com',
     role: 'Mechanic',
     referralCode: 'DEMO2024',
     referrals: 3,
+  };
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: () => logout(),
+        },
+      ]
+    );
   };
 
   const handleShareReferral = async () => {
@@ -53,7 +72,9 @@ export default function ProfileScreen() {
         {/* User Card */}
         <View style={styles.userCard}>
           <View style={styles.avatarLarge}>
-            <Text style={styles.avatarText}>DU</Text>
+            <Text style={styles.avatarText}>
+              {user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+            </Text>
           </View>
           <Text style={styles.userName}>{user.name}</Text>
           <Text style={styles.userEmail}>{user.email}</Text>
@@ -114,7 +135,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Sign Out */}
-        <TouchableOpacity style={styles.signOutBtn}>
+        <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
           <Ionicons name="log-out-outline" size={22} color={colors.error} />
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>

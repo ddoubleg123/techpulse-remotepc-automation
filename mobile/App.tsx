@@ -4,6 +4,18 @@ import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingVi
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useAuthStore } from './src/stores/authStore';
+
+// Import main app screens
+import DashboardScreen from './src/screens/DashboardScreen';
+import ChatScreen from './src/screens/ChatScreen';
+import TicketsScreen from './src/screens/TicketsScreen';
+import CommunityScreen from './src/screens/CommunityScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
+
+const Tab = createBottomTabNavigator();
 
 // Configure Google Sign-In
 // webClientId is used to get the ID token (for backend verification)
@@ -106,6 +118,10 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   const [showOTP, setShowOTP] = useState(false);
   const [otp, setOTP] = useState('');
   const [loading, setLoading] = useState(false);
+  const [otpError, setOtpError] = useState('');
+  const [generatedCode, setGeneratedCode] = useState('');
+
+  const { generateOTP, verifyOTP } = useAuthStore();
 
   const handleGoogleLogin = async () => {
     console.log('Google login button pressed - using native sign-in');
@@ -146,17 +162,29 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
 
   const handleSendCode = () => {
     if (email) {
+      const code = generateOTP(email);
+      setGeneratedCode(code);
       setShowOTP(true);
-      // TODO: Send OTP to email via backend
-      console.log('Sending OTP to:', email);
+      setOtpError('');
+      // In production, this would send via email
+      // For now, show the code in an alert for testing
+      Alert.alert(
+        'Verification Code',
+        `Your code is: ${code}\n\n(In production, this would be sent to ${email})`,
+        [{ text: 'OK' }]
+      );
     }
   };
 
   const handleVerifyOTP = () => {
     if (otp.length === 6) {
-      // TODO: Verify OTP via backend
-      console.log('Verifying OTP:', otp);
-      onSuccess({ email });
+      const isValid = verifyOTP(otp);
+      if (isValid) {
+        onSuccess({ email });
+      } else {
+        setOtpError('Invalid or expired code. Please try again.');
+        setOTP('');
+      }
     }
   };
 
@@ -239,18 +267,25 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
               </Text>
 
               <Text style={loginStyles.inputLabel}>Enter code</Text>
-              <View style={loginStyles.inputContainer}>
-                <Ionicons name="keypad-outline" size={20} color="#64748b" />
+              <View style={[loginStyles.inputContainer, otpError && loginStyles.inputContainerError]}>
+                <Ionicons name="keypad-outline" size={20} color={otpError ? '#ef4444' : '#64748b'} />
                 <TextInput
                   style={loginStyles.input}
                   placeholder="000000"
                   placeholderTextColor="#64748b"
                   value={otp}
-                  onChangeText={setOTP}
+                  onChangeText={(text) => {
+                    setOTP(text);
+                    setOtpError('');
+                  }}
                   keyboardType="number-pad"
                   maxLength={6}
                 />
               </View>
+
+              {otpError ? (
+                <Text style={loginStyles.errorText}>{otpError}</Text>
+              ) : null}
 
               <TouchableOpacity
                 style={[loginStyles.primaryBtn, otp.length !== 6 && loginStyles.primaryBtnDisabled]}
@@ -260,7 +295,15 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
                 <Text style={loginStyles.primaryBtnText}>Verify & Login</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={loginStyles.backLink} onPress={() => setShowOTP(false)}>
+              <TouchableOpacity style={loginStyles.backLink} onPress={handleSendCode}>
+                <Text style={loginStyles.backLinkText}>Resend code</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={loginStyles.backLink} onPress={() => {
+                setShowOTP(false);
+                setOtpError('');
+                setOTP('');
+              }}>
                 <Text style={loginStyles.backLinkText}>Use a different email</Text>
               </TouchableOpacity>
             </>
@@ -395,83 +438,110 @@ const loginStyles = StyleSheet.create({
     fontSize: 16,
     color: '#3B82F6',
   },
+  inputContainerError: {
+    borderColor: '#ef4444',
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 14,
+    marginBottom: 8,
+    marginTop: -8,
+  },
 });
 
-// Main Screen (after login)
-function MainScreen({ user, onLogout }: { user: User; onLogout: () => void }) {
+// Main App Tab Navigator (after login)
+function MainTabNavigator() {
   return (
-    <View style={mainStyles.container}>
-      <View style={mainStyles.content}>
-        <TechPulseLogo size="small" />
-        <Text style={mainStyles.welcome}>Welcome!</Text>
-        <Text style={mainStyles.email}>{user.email}</Text>
-        {user.name && <Text style={mainStyles.name}>{user.name}</Text>}
-      </View>
-      <TouchableOpacity style={mainStyles.logoutBtn} onPress={onLogout}>
-        <Ionicons name="log-out-outline" size={20} color="#ffffff" />
-        <Text style={mainStyles.logoutText}>Logout</Text>
-      </TouchableOpacity>
-    </View>
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarStyle: {
+          backgroundColor: '#1e293b',
+          borderTopColor: '#334155',
+          height: 85,
+          paddingBottom: 25,
+          paddingTop: 10,
+        },
+        tabBarActiveTintColor: '#3B82F6',
+        tabBarInactiveTintColor: '#64748b',
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '500',
+        },
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName: keyof typeof Ionicons.glyphMap = 'home';
+
+          if (route.name === 'Dashboard') {
+            iconName = focused ? 'home' : 'home-outline';
+          } else if (route.name === 'Chat') {
+            iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
+          } else if (route.name === 'Tickets') {
+            iconName = focused ? 'ticket' : 'ticket-outline';
+          } else if (route.name === 'Community') {
+            iconName = focused ? 'people' : 'people-outline';
+          } else if (route.name === 'Profile') {
+            iconName = focused ? 'person' : 'person-outline';
+          }
+
+          return <Ionicons name={iconName} size={24} color={color} />;
+        },
+      })}
+    >
+      <Tab.Screen name="Dashboard" component={DashboardScreen} />
+      <Tab.Screen name="Chat" component={ChatScreen} options={{ tabBarLabel: 'Synth AI' }} />
+      <Tab.Screen name="Tickets" component={TicketsScreen} />
+      <Tab.Screen name="Community" component={CommunityScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
   );
 }
-
-const mainStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 100,
-    paddingBottom: 50,
-    paddingHorizontal: 24,
-  },
-  content: {
-    alignItems: 'center',
-  },
-  welcome: {
-    fontSize: 28,
-    color: '#ffffff',
-    marginTop: 32,
-  },
-  email: {
-    fontSize: 16,
-    color: '#3B82F6',
-    marginTop: 8,
-  },
-  name: {
-    fontSize: 14,
-    color: '#94a3b8',
-    marginTop: 4,
-  },
-  logoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#ef4444',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-  },
-  logoutText: {
-    fontSize: 16,
-    color: '#ffffff',
-  },
-});
 
 // Main App with simple navigation
 export default function App() {
   const [screen, setScreen] = useState<'welcome' | 'login' | 'main'>('welcome');
-  const [user, setUser] = useState<User | null>(null);
+
+  const { user: authUser, isAuthenticated, setUser: setAuthUser } = useAuthStore();
+
+  // Listen to auth state changes - when logout happens in ProfileScreen
+  useEffect(() => {
+    if (!isAuthenticated && screen === 'main') {
+      // User logged out from ProfileScreen, go back to welcome
+      setScreen('welcome');
+      // Also sign out from Google if needed
+      const signOutFromGoogle = async () => {
+        try {
+          if (GoogleSignin.hasPreviousSignIn()) {
+            await GoogleSignin.signOut();
+          }
+        } catch (error) {
+          console.log('Google sign out error:', error);
+        }
+      };
+      signOutFromGoogle();
+    }
+  }, [isAuthenticated, screen]);
 
   const handleLoginSuccess = (loggedInUser: User) => {
-    setUser(loggedInUser);
+    // Create a full user object for the store
+    const fullUser = {
+      id: loggedInUser.email, // Use email as ID for now
+      email: loggedInUser.email,
+      name: loggedInUser.name,
+      picture: loggedInUser.picture,
+    };
+    setAuthUser(fullUser);
     setScreen('main');
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    setScreen('welcome');
-  };
+  // If user is authenticated, show main app with navigation
+  if (isAuthenticated && authUser) {
+    return (
+      <NavigationContainer>
+        <StatusBar style="light" />
+        <MainTabNavigator />
+      </NavigationContainer>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0f172a' }}>
@@ -486,10 +556,6 @@ export default function App() {
           onBack={() => setScreen('welcome')}
           onSuccess={handleLoginSuccess}
         />
-      )}
-
-      {screen === 'main' && user && (
-        <MainScreen user={user} onLogout={handleLogout} />
       )}
     </View>
   );
