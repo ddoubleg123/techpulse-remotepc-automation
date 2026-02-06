@@ -113,9 +113,10 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   // IMPORTANT: The redirect URI must match the scheme in app.json ("techpulse")
   // For development builds, add this to Google Cloud Console:
   // OAuth 2.0 Client IDs > Android Client > Add the SHA-1 fingerprint
-  // The redirect URI for native apps uses the scheme: techpulse://
+  // The redirect URI for native apps uses the scheme: techpulse://oauth
   const redirectUri = makeRedirectUri({
     scheme: 'techpulse',  // Must match "scheme" in app.json
+    path: 'oauth',        // Add path to ensure proper URL formatting with query params
   });
 
   const [request, response, promptAsync] = Google.useAuthRequest({
@@ -130,7 +131,7 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
     console.log('=== Google Auth Debug ===');
     console.log('Request state:', request ? 'ready' : 'not ready');
     console.log('Redirect URI:', redirectUri);
-    console.log('Expected scheme: techpulse://');
+    console.log('Expected scheme: techpulse://oauth');
     console.log('=========================');
   }, [request, redirectUri]);
 
