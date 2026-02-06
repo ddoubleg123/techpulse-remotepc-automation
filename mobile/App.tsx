@@ -109,15 +109,10 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   const [otp, setOTP] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Google Auth setup - using native redirect for development builds
-  // IMPORTANT: The redirect URI must match the scheme in app.json ("techpulse")
-  // For development builds, add this to Google Cloud Console:
-  // OAuth 2.0 Client IDs > Android Client > Add the SHA-1 fingerprint
-  // The redirect URI for native apps uses the scheme: techpulse://oauth
-  const redirectUri = makeRedirectUri({
-    scheme: 'techpulse',  // Must match "scheme" in app.json
-    path: 'oauth',        // Add path to ensure proper URL formatting with query params
-  });
+  // Google Auth setup - using Expo proxy for redirect
+  // The native custom scheme (techpulse://) is NOT supported by Google OAuth
+  // We must use an HTTPS redirect URI that Google allows
+  const redirectUri = 'https://auth.expo.io/@danielgouldman/techpulse';
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     webClientId: GOOGLE_WEB_CLIENT_ID,
@@ -131,7 +126,6 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
     console.log('=== Google Auth Debug ===');
     console.log('Request state:', request ? 'ready' : 'not ready');
     console.log('Redirect URI:', redirectUri);
-    console.log('Expected scheme: techpulse://oauth');
     console.log('=========================');
   }, [request, redirectUri]);
 
@@ -176,22 +170,6 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
     console.log('Google login button pressed');
     console.log('Redirect URI being used:', request?.redirectUri);
 
-    // Check if running in Expo Go (exp:// scheme)
-    const isExpoGo = redirectUri.startsWith('exp://');
-
-    if (isExpoGo) {
-      Alert.alert(
-        'Development Build Required',
-        'Google OAuth does not work in Expo Go because the auth proxy service was discontinued.\n\n' +
-        'To test Google Sign-In, you need to create a development build:\n\n' +
-        '1. Run: npx eas build --profile development --platform android\n' +
-        '2. Install the generated APK on your device\n' +
-        '3. Run: npx expo start --dev-client\n\n' +
-        'For now, you can use the email OTP login option below.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
 
     if (!request) {
       Alert.alert('Not Ready', 'Google Sign-In is still loading. Please try again.');
@@ -257,13 +235,11 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
             <>
               {/* Google Login */}
               <TouchableOpacity
-                style={[loginStyles.googleBtn, redirectUri.startsWith('exp://') && loginStyles.googleBtnDisabled]}
+                style={loginStyles.googleBtn}
                 onPress={handleGoogleLogin}
               >
                 <Ionicons name="logo-google" size={20} color="#ffffff" />
-                <Text style={loginStyles.googleBtnText}>
-                  {redirectUri.startsWith('exp://') ? 'Google (requires dev build)' : 'Continue with Google'}
-                </Text>
+                <Text style={loginStyles.googleBtnText}>Continue with Google</Text>
               </TouchableOpacity>
 
               <View style={loginStyles.divider}>
