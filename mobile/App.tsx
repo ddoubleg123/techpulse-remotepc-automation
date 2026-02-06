@@ -110,23 +110,29 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   const [loading, setLoading] = useState(false);
 
   // Google Auth setup - using native redirect for development builds
-  // Note: For Expo Go, we need to use a workaround since auth proxy is deprecated
+  // IMPORTANT: The redirect URI must be added to Google Cloud Console > Web Client > Authorized redirect URIs
+  // For development builds, add: com.techpulse.app:/oauthredirect
   const redirectUri = makeRedirectUri({
-    scheme: 'techpulse',
-    // Don't use useProxy - it's deprecated and no longer works
+    scheme: 'com.techpulse.app',
+    path: 'oauthredirect',
   });
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     webClientId: GOOGLE_WEB_CLIENT_ID,
     androidClientId: GOOGLE_ANDROID_CLIENT_ID,
-    // Use the proper scopes
+    redirectUri, // Explicitly pass the redirect URI
     scopes: ['openid', 'profile', 'email'],
   });
 
-  // Debug: Log request state
+  // Debug: Log request state and configuration
   useEffect(() => {
-    console.log('Google Auth request state:', request ? 'ready' : 'not ready');
-    console.log('Redirect URI:', redirectUri);
+    console.log('=== Google Auth Debug ===');
+    console.log('Request state:', request ? 'ready' : 'not ready');
+    console.log('Configured redirectUri:', redirectUri);
+    console.log('Request redirectUri:', request?.redirectUri);
+    console.log('=========================');
+    console.log('IMPORTANT: Add this redirect URI to Google Cloud Console:');
+    console.log('Web Client > Authorized redirect URIs > Add:', redirectUri);
   }, [request, redirectUri]);
 
   // Handle Google Auth response
