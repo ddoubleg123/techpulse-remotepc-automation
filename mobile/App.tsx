@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert, NativeModules } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
@@ -17,12 +17,30 @@ import ProfileScreen from './src/screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 
+// ===== DIAGNOSTIC: Check if native module is available =====
+const isGoogleSignInAvailable = !!NativeModules.RNGoogleSignin;
+console.log('=== NATIVE MODULE CHECK ===');
+console.log('GoogleSignin native module available:', isGoogleSignInAvailable);
+console.log('NativeModules.RNGoogleSignin:', NativeModules.RNGoogleSignin ? 'EXISTS' : 'MISSING');
+console.log('Platform:', Platform.OS);
+console.log('===========================');
+
+if (!isGoogleSignInAvailable) {
+  console.error('CRITICAL: @react-native-google-signin native module is NOT available!');
+  console.error('You need to rebuild your development build with: eas build --profile development --platform android');
+}
+
 // Configure Google Sign-In
 // webClientId is used to get the ID token (for backend verification)
-GoogleSignin.configure({
-  webClientId: '416281156741-cn1vmd73s9vu7pp6t4ohe4tj6imbtjh7.apps.googleusercontent.com',
-  offlineAccess: true,
-});
+try {
+  GoogleSignin.configure({
+    webClientId: '416281156741-cn1vmd73s9vu7pp6t4ohe4tj6imbtjh7.apps.googleusercontent.com',
+    offlineAccess: true,
+  });
+  console.log('GoogleSignin.configure() succeeded');
+} catch (configError) {
+  console.error('GoogleSignin.configure() FAILED:', configError);
+}
 
 // TechPulse Logo - pulse/heartbeat line design
 function TechPulseLogo({ size = 'large' }: { size?: 'large' | 'small' }) {
@@ -124,27 +142,59 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   const { generateOTP, verifyOTP } = useAuthStore();
 
   const handleGoogleLogin = async () => {
-    console.log('Google login button pressed - using native sign-in');
+    console.log('=== GOOGLE LOGIN ATTEMPT ===');
+    console.log('Native module available:', isGoogleSignInAvailable);
+    console.log('Timestamp:', new Date().toISOString());
+
+    if (!isGoogleSignInAvailable) {
+      Alert.alert(
+        'Native Module Missing',
+        'The Google Sign-In native module is not installed in this build.\n\n' +
+        'You need to create a new development build:\n\n' +
+        'eas build --profile development --platform android\n\n' +
+        'Then install the new APK.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Check if Google Play Services are available
+      // Step 1: Check Play Services
+      console.log('Step 1: Checking Google Play Services...');
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      console.log('Step 1: Play Services OK');
 
-      // Sign in with Google
+      // Step 2: Attempt sign in
+      console.log('Step 2: Calling GoogleSignin.signIn()...');
       const response = await GoogleSignin.signIn();
-      console.log('Google Sign-In response:', response);
+      console.log('Step 2: Sign-in response received');
+      console.log('Response type:', typeof response);
+      console.log('Response:', JSON.stringify(response, null, 2));
 
+      // Step 3: Extract user data
       if (response.data?.user) {
         const { email, name, photo } = response.data.user;
+        console.log('Step 3: User data extracted - email:', email);
         onSuccess({
           email: email,
           name: name || undefined,
           picture: photo || undefined,
         });
+      } else if (response.type === 'cancelled') {
+        console.log('Step 3: User cancelled sign-in');
+      } else {
+        console.log('Step 3: Unexpected response structure:', response);
+        Alert.alert('Sign-In Issue', 'Received response but no user data. Check console logs.');
       }
     } catch (error: any) {
-      console.error('Google Sign-In error:', error);
+      console.error('=== GOOGLE SIGN-IN ERROR ===');
+      console.error('Error type:', error?.constructor?.name);
+      console.error('Error code:', error?.code);
+      console.error('Error message:', error?.message);
+      console.error('Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+      console.error('============================');
 
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
         console.log('User cancelled the sign-in');
@@ -152,11 +202,35 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
         Alert.alert('Sign-In In Progress', 'Please wait...');
       } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         Alert.alert('Error', 'Google Play Services not available or outdated');
+      } else if (error.code === '12500' || error.message?.includes('12500')) {
+        Alert.alert(
+          'Google Sign-In Error 12500',
+          'This usually means:\n' +
+          '1. SHA-1 fingerprint not registered in Google Cloud Console\n' +
+          '2. OAuth consent screen not configured\n' +
+          '3. Package name mismatch\n\n' +
+          'Check your Google Cloud Console configuration.',
+          [{ text: 'OK' }]
+        );
+      } else if (error.code === '10' || error.message?.includes('DEVELOPER_ERROR')) {
+        Alert.alert(
+          'Developer Error (Code 10)',
+          'Configuration mismatch. Check:\n' +
+          '1. google-services.json is correct\n' +
+          '2. SHA-1 fingerprint matches\n' +
+          '3. Package name matches\n' +
+          '4. OAuth client ID is correct',
+          [{ text: 'OK' }]
+        );
       } else {
-        Alert.alert('Sign-In Error', error.message || 'Something went wrong');
+        Alert.alert(
+          'Sign-In Error',
+          `${error.message || 'Something went wrong'}\n\nError code: ${error.code || 'unknown'}`
+        );
       }
     } finally {
       setLoading(false);
+      console.log('=== GOOGLE LOGIN COMPLETE ===');
     }
   };
 
