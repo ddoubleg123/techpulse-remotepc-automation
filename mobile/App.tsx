@@ -109,26 +109,24 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   const [otp, setOTP] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Google Auth setup - using Expo auth proxy for secure HTTPS redirect
+  // Google Auth setup - using native redirect for development builds
+  // Note: For Expo Go, we need to use a workaround since auth proxy is deprecated
   const redirectUri = makeRedirectUri({
     scheme: 'techpulse',
-    useProxy: true,
+    // Don't use useProxy - it's deprecated and no longer works
   });
 
   const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: GOOGLE_WEB_CLIENT_ID,
     webClientId: GOOGLE_WEB_CLIENT_ID,
     androidClientId: GOOGLE_ANDROID_CLIENT_ID,
-    redirectUri,
+    // Use the proper scopes
+    scopes: ['openid', 'profile', 'email'],
   });
 
   // Debug: Log request state
   useEffect(() => {
     console.log('Google Auth request state:', request ? 'ready' : 'not ready');
-    console.log('Generated redirect URI:', redirectUri);
-    if (request) {
-      console.log('Request redirect URI:', request.redirectUri);
-    }
+    console.log('Redirect URI:', redirectUri);
   }, [request, redirectUri]);
 
   // Handle Google Auth response
@@ -141,7 +139,7 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
       }
     } else if (response?.type === 'error') {
       console.error('Google Auth error:', response.error);
-      Alert.alert('Authentication Error', response.error?.message || 'Something went wrong');
+      Alert.alert('Authentication Error', response.error?.message || 'Something went wrong. Make sure you are using a development build, not Expo Go.');
     } else if (response?.type === 'dismiss') {
       console.log('User dismissed the auth prompt');
     }
@@ -170,6 +168,25 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
 
   const handleGoogleLogin = async () => {
     console.log('Google login button pressed');
+    console.log('Redirect URI being used:', request?.redirectUri);
+
+    // Check if running in Expo Go (exp:// scheme)
+    const isExpoGo = redirectUri.startsWith('exp://');
+
+    if (isExpoGo) {
+      Alert.alert(
+        'Development Build Required',
+        'Google OAuth does not work in Expo Go because the auth proxy service was discontinued.\n\n' +
+        'To test Google Sign-In, you need to create a development build:\n\n' +
+        '1. Run: npx eas build --profile development --platform android\n' +
+        '2. Install the generated APK on your device\n' +
+        '3. Run: npx expo start --dev-client\n\n' +
+        'For now, you can use the email OTP login option below.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     if (!request) {
       Alert.alert('Not Ready', 'Google Sign-In is still loading. Please try again.');
       return;
@@ -234,12 +251,13 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
             <>
               {/* Google Login */}
               <TouchableOpacity
-                style={[loginStyles.googleBtn, !request && loginStyles.googleBtnDisabled]}
+                style={[loginStyles.googleBtn, redirectUri.startsWith('exp://') && loginStyles.googleBtnDisabled]}
                 onPress={handleGoogleLogin}
-                disabled={!request}
               >
                 <Ionicons name="logo-google" size={20} color="#ffffff" />
-                <Text style={loginStyles.googleBtnText}>Continue with Google</Text>
+                <Text style={loginStyles.googleBtnText}>
+                  {redirectUri.startsWith('exp://') ? 'Google (requires dev build)' : 'Continue with Google'}
+                </Text>
               </TouchableOpacity>
 
               <View style={loginStyles.divider}>
