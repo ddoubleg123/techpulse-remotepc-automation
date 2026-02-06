@@ -108,11 +108,12 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   const [otp, setOTP] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Google Auth setup
+  // Google Auth setup - using Expo auth proxy for secure HTTPS redirect
   const [request, response, promptAsync] = Google.useAuthRequest({
     expoClientId: GOOGLE_WEB_CLIENT_ID,
     webClientId: GOOGLE_WEB_CLIENT_ID,
     androidClientId: GOOGLE_ANDROID_CLIENT_ID,
+    redirectUri: 'https://auth.expo.io/@danielgouldman/techpulse',
   });
 
   // Debug: Log request state
