@@ -5,6 +5,7 @@ import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import { makeRedirectUri } from 'expo-auth-session';
 
 // Required for auth session to work properly
 WebBrowser.maybeCompleteAuthSession();
@@ -109,20 +110,26 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   const [loading, setLoading] = useState(false);
 
   // Google Auth setup - using Expo auth proxy for secure HTTPS redirect
+  const redirectUri = makeRedirectUri({
+    scheme: 'techpulse',
+    useProxy: true,
+  });
+
   const [request, response, promptAsync] = Google.useAuthRequest({
     expoClientId: GOOGLE_WEB_CLIENT_ID,
     webClientId: GOOGLE_WEB_CLIENT_ID,
     androidClientId: GOOGLE_ANDROID_CLIENT_ID,
-    redirectUri: 'https://auth.expo.io/@danielgouldman/techpulse',
+    redirectUri,
   });
 
   // Debug: Log request state
   useEffect(() => {
     console.log('Google Auth request state:', request ? 'ready' : 'not ready');
+    console.log('Generated redirect URI:', redirectUri);
     if (request) {
-      console.log('Redirect URI:', request.redirectUri);
+      console.log('Request redirect URI:', request.redirectUri);
     }
-  }, [request]);
+  }, [request, redirectUri]);
 
   // Handle Google Auth response
   useEffect(() => {
