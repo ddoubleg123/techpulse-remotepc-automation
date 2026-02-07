@@ -10,17 +10,17 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, fontSize, borderRadius } from '../theme';
 
-const stats = [
-  { label: 'Chat Sessions', value: '24', icon: 'chatbubbles' as const, color: colors.primary },
-  { label: 'Open Tickets', value: '3', icon: 'ticket' as const, color: colors.warning },
-  { label: 'Reports', value: '12', icon: 'document-text' as const, color: colors.success },
-  { label: 'Community Posts', value: '8', icon: 'people' as const, color: '#8b5cf6' },
+// Recent vehicles with make/model/year for easy identification
+const recentVehicles = [
+  { id: '1', make: 'Honda', model: 'Accord', year: '2019', lastDiagnosis: 'P0300 Misfire', time: '2 hours ago' },
+  { id: '2', make: 'Toyota', model: 'Camry', year: '2021', lastDiagnosis: 'P0420 Catalyst', time: '5 hours ago' },
+  { id: '3', make: 'Ford', model: 'F-150', year: '2020', lastDiagnosis: 'P0171 System Lean', time: '1 day ago' },
 ];
 
-const recentActivity = [
-  { type: 'chat', title: 'P0300 Misfire Diagnosis', time: '2 hours ago' },
-  { type: 'ticket', title: 'Ticket #1234 resolved', time: '5 hours ago' },
-  { type: 'report', title: 'Uploaded: Honda_Accord_Scan.pdf', time: '1 day ago' },
+// Open tickets for escalated human support
+const openTickets = [
+  { id: '1234', vehicle: '2019 Honda Accord', status: 'Waiting for response', time: '3 hours ago' },
+  { id: '1235', vehicle: '2021 Toyota Camry', status: 'In progress', time: '1 day ago' },
 ];
 
 export default function DashboardScreen() {
@@ -39,62 +39,74 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Stats Grid */}
-        <View style={styles.statsGrid}>
-          {stats.map((stat, index) => (
-            <View key={index} style={styles.statCard}>
-              <View style={[styles.statIcon, { backgroundColor: stat.color + '20' }]}>
-                <Ionicons name={stat.icon} size={24} color={stat.color} />
-              </View>
-              <Text style={styles.statValue}>{stat.value}</Text>
-              <Text style={styles.statLabel}>{stat.label}</Text>
-            </View>
-          ))}
-        </View>
+        {/* Primary Action - New Vehicle */}
+        <TouchableOpacity style={styles.newVehicleBtn}>
+          <View style={styles.newVehicleIcon}>
+            <Ionicons name="car-sport" size={32} color={colors.white} />
+          </View>
+          <View style={styles.newVehicleContent}>
+            <Text style={styles.newVehicleTitle}>New Vehicle</Text>
+            <Text style={styles.newVehicleSubtitle}>Start a new diagnostic session</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color={colors.white} />
+        </TouchableOpacity>
 
-        {/* Quick Actions */}
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.quickActions}>
-          <TouchableOpacity style={styles.actionBtn}>
-            <Ionicons name="chatbubbles" size={20} color={colors.white} />
-            <Text style={styles.actionText}>New Chat</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, styles.actionBtnSecondary]}>
-            <Ionicons name="add-circle" size={20} color={colors.primary} />
-            <Text style={[styles.actionText, styles.actionTextSecondary]}>Create Ticket</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, styles.actionBtnSecondary]}>
-            <Ionicons name="cloud-upload" size={20} color={colors.primary} />
-            <Text style={[styles.actionText, styles.actionTextSecondary]}>Upload Report</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Secondary Action - Chat With Synth */}
+        <TouchableOpacity style={styles.chatSynthBtn}>
+          <Ionicons name="chatbubbles" size={22} color={colors.primary} />
+          <Text style={styles.chatSynthText}>Chat With Synth</Text>
+          <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+        </TouchableOpacity>
 
-        {/* Recent Activity */}
+        {/* Recent Activity - Vehicles */}
         <Text style={styles.sectionTitle}>Recent Activity</Text>
         <View style={styles.activityList}>
-          {recentActivity.map((activity, index) => (
-            <TouchableOpacity key={index} style={styles.activityItem}>
+          {recentVehicles.map((vehicle) => (
+            <TouchableOpacity key={vehicle.id} style={styles.activityItem}>
               <View style={styles.activityIcon}>
-                <Ionicons
-                  name={
-                    activity.type === 'chat'
-                      ? 'chatbubbles-outline'
-                      : activity.type === 'ticket'
-                      ? 'ticket-outline'
-                      : 'document-outline'
-                  }
-                  size={20}
-                  color={colors.primary}
-                />
+                <Ionicons name="car-outline" size={20} color={colors.primary} />
               </View>
               <View style={styles.activityContent}>
-                <Text style={styles.activityTitle}>{activity.title}</Text>
-                <Text style={styles.activityTime}>{activity.time}</Text>
+                <Text style={styles.vehicleTitle}>
+                  {vehicle.year} {vehicle.make} {vehicle.model}
+                </Text>
+                <Text style={styles.vehicleSubtitle}>{vehicle.lastDiagnosis}</Text>
+                <Text style={styles.activityTime}>{vehicle.time}</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Open Tickets */}
+        <Text style={styles.sectionTitle}>Open Tickets</Text>
+        {openTickets.length > 0 ? (
+          <View style={styles.ticketsList}>
+            {openTickets.map((ticket) => (
+              <TouchableOpacity key={ticket.id} style={styles.ticketItem}>
+                <View style={styles.ticketIcon}>
+                  <Ionicons name="ticket-outline" size={18} color={colors.warning} />
+                </View>
+                <View style={styles.ticketContent}>
+                  <Text style={styles.ticketTitle}>Ticket #{ticket.id}</Text>
+                  <Text style={styles.ticketVehicle}>{ticket.vehicle}</Text>
+                  <View style={styles.ticketStatusRow}>
+                    <View style={styles.ticketStatusBadge}>
+                      <Text style={styles.ticketStatusText}>{ticket.status}</Text>
+                    </View>
+                    <Text style={styles.ticketTime}>{ticket.time}</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.emptyTickets}>
+            <Ionicons name="checkmark-circle-outline" size={32} color={colors.success} />
+            <Text style={styles.emptyTicketsText}>No open tickets</Text>
+          </View>
+        )}
 
         {/* Trial Banner */}
         <View style={styles.trialBanner}>
@@ -156,36 +168,59 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: colors.error,
   },
-  statsGrid: {
+  // New Vehicle Button - Primary CTA
+  newVehicleBtn: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    padding: spacing.lg,
+    borderRadius: borderRadius.xl,
+    marginBottom: spacing.md,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  statCard: {
-    width: '48%',
-    backgroundColor: colors.card,
-    padding: spacing.md,
+  newVehicleIcon: {
+    width: 56,
+    height: 56,
     borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  statIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    marginRight: spacing.md,
   },
-  statValue: {
-    fontSize: fontSize.xxl,
+  newVehicleContent: {
+    flex: 1,
+  },
+  newVehicleTitle: {
+    fontSize: fontSize.xl,
     fontWeight: 'bold',
-    color: colors.text,
+    color: colors.white,
   },
-  statLabel: {
+  newVehicleSubtitle: {
     fontSize: fontSize.sm,
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: 2,
+  },
+  // Chat With Synth Button - Secondary CTA
+  chatSynthBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+  },
+  chatSynthText: {
+    flex: 1,
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.primary,
   },
   sectionTitle: {
     fontSize: fontSize.lg,
@@ -193,35 +228,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: spacing.md,
   },
-  quickActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  actionBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    borderRadius: borderRadius.lg,
-  },
-  actionBtnSecondary: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  actionText: {
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-    color: colors.white,
-  },
-  actionTextSecondary: {
-    color: colors.primary,
-  },
+  // Recent Activity List
   activityList: {
     backgroundColor: colors.card,
     borderRadius: borderRadius.lg,
@@ -237,9 +244,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderLight,
   },
   activityIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: borderRadius.full,
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.md,
     backgroundColor: colors.primary + '15',
     justifyContent: 'center',
     alignItems: 'center',
@@ -248,16 +255,94 @@ const styles = StyleSheet.create({
   activityContent: {
     flex: 1,
   },
-  activityTitle: {
+  vehicleTitle: {
     fontSize: fontSize.md,
-    fontWeight: '500',
+    fontWeight: '600',
     color: colors.text,
   },
-  activityTime: {
+  vehicleSubtitle: {
     fontSize: fontSize.sm,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     marginTop: 2,
   },
+  activityTime: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: 4,
+  },
+  // Open Tickets Section
+  ticketsList: {
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.lg,
+  },
+  ticketItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  ticketIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.warning + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  ticketContent: {
+    flex: 1,
+  },
+  ticketTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  ticketVehicle: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  ticketStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+    gap: spacing.sm,
+  },
+  ticketStatusBadge: {
+    backgroundColor: colors.warning + '20',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  ticketStatusText: {
+    fontSize: fontSize.xs,
+    color: colors.warning,
+    fontWeight: '500',
+  },
+  ticketTime: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+  },
+  emptyTickets: {
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  emptyTicketsText: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+  },
+  // Trial Banner
   trialBanner: {
     flexDirection: 'row',
     alignItems: 'center',

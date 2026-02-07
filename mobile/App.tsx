@@ -11,7 +11,6 @@ import { useAuthStore } from './src/stores/authStore';
 // Import main app screens
 import DashboardScreen from './src/screens/DashboardScreen';
 import ChatScreen from './src/screens/ChatScreen';
-import TicketsScreen from './src/screens/TicketsScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 
@@ -545,12 +544,10 @@ function MainTabNavigator() {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap = 'home';
 
-          if (route.name === 'Dashboard') {
+          if (route.name === 'Home') {
             iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Chat') {
+          } else if (route.name === 'SynthAI') {
             iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
-          } else if (route.name === 'Tickets') {
-            iconName = focused ? 'ticket' : 'ticket-outline';
           } else if (route.name === 'Community') {
             iconName = focused ? 'people' : 'people-outline';
           } else if (route.name === 'Profile') {
@@ -561,9 +558,8 @@ function MainTabNavigator() {
         },
       })}
     >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} />
-      <Tab.Screen name="Chat" component={ChatScreen} options={{ tabBarLabel: 'Synth AI' }} />
-      <Tab.Screen name="Tickets" component={TicketsScreen} />
+      <Tab.Screen name="Home" component={DashboardScreen} />
+      <Tab.Screen name="SynthAI" component={ChatScreen} options={{ tabBarLabel: 'Synth AI' }} />
       <Tab.Screen name="Community" component={CommunityScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
