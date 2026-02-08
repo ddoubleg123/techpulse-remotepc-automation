@@ -33,8 +33,12 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.416281156741-cn1vmd73s9vu7pp6t4ohe4tj6imbtjh7"
         }
-      ],
-      "expo-font"
-    ]
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "26544e06-c295-4351-8cd1-69168f916ff6"
+      }
+    }
   }
 }
