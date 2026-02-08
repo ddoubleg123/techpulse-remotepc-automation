@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -29,45 +29,12 @@ const suggestedQuestions = [
   'How to check transmission fluid level?',
 ];
 
-export default function ChatScreen() {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
-  const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const scrollViewRef = useRef<ScrollView>(null);
+// Moved outside component to avoid declaration order issues
+function getSimulatedResponse(question: string): string {
+  const lower = question.toLowerCase();
 
-  const handleSend = async (text?: string) => {
-    const content = text || inputText.trim();
-    if (!content) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInputText('');
-    setIsLoading(true);
-
-    // Simulate AI response
-    setTimeout(() => {
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: getSimulatedResponse(content),
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      setIsLoading(false);
-    }, 1500);
-  };
-
-  const getSimulatedResponse = (question: string): string => {
-    const lower = question.toLowerCase();
-
-    if (lower.includes('p0300') || lower.includes('misfire')) {
-      return `A P0300 code indicates a random/multiple cylinder misfire. Here's how to diagnose it:
+  if (lower.includes('p0300') || lower.includes('misfire')) {
+    return `A P0300 code indicates a random/multiple cylinder misfire. Here's how to diagnose it:
 
 **Common Causes:**
 1. Spark plugs or ignition coils worn/failing
@@ -82,10 +49,10 @@ export default function ChatScreen() {
 4. Check for vacuum leaks
 
 Would you like me to go deeper on any of these steps?`;
-    }
+  }
 
-    if (lower.includes('shake') || lower.includes('vibrat')) {
-      return `A car shaking at idle can have several causes:
+  if (lower.includes('shake') || lower.includes('vibrat')) {
+    return `A car shaking at idle can have several causes:
 
 **Most Common Causes:**
 1. Engine misfires - Check plugs/coils
@@ -97,16 +64,56 @@ Would you like me to go deeper on any of these steps?`;
 Put the car in neutral while idling - if shaking reduces, it may be transmission related.
 
 What year/make/model are you working on?`;
-    }
+  }
 
-    return `That's a great question! To give you the most accurate guidance, could you provide a few more details?
+  return `That's a great question! To give you the most accurate guidance, could you provide a few more details?
 
 1. What year, make, and model?
 2. Any diagnostic trouble codes (DTCs)?
 3. When did this issue start?
 
 With more context, I can provide specific diagnostic steps and repair procedures.`;
-  };
+}
+
+export default function ChatScreen() {
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const messageIdRef = useRef(100);
+
+  const generateId = useCallback(() => {
+    messageIdRef.current += 1;
+    return messageIdRef.current.toString();
+  }, []);
+
+  const handleSend = useCallback(async (text?: string) => {
+    const content = text || inputText.trim();
+    if (!content) return;
+
+    const userMessage: Message = {
+      id: generateId(),
+      role: 'user',
+      content,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInputText('');
+    setIsLoading(true);
+
+    // Simulate AI response
+    setTimeout(() => {
+      const assistantMessage: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: getSimulatedResponse(content),
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+      setIsLoading(false);
+    }, 1500);
+  }, [inputText, generateId]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -192,9 +199,9 @@ With more context, I can provide specific diagnostic steps and repair procedures
               </View>
               <View style={[styles.messageContent, styles.assistantContent]}>
                 <View style={styles.typingIndicator}>
-                  <View style={[styles.typingDot, { animationDelay: '0ms' }]} />
-                  <View style={[styles.typingDot, { animationDelay: '150ms' }]} />
-                  <View style={[styles.typingDot, { animationDelay: '300ms' }]} />
+                  <View style={styles.typingDot} />
+                  <View style={[styles.typingDot, styles.typingDotMiddle]} />
+                  <View style={[styles.typingDot, styles.typingDotLast]} />
                 </View>
               </View>
             </View>
@@ -357,6 +364,13 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: colors.textMuted,
+    opacity: 0.4,
+  },
+  typingDotMiddle: {
+    opacity: 0.6,
+  },
+  typingDotLast: {
+    opacity: 0.8,
   },
   inputContainer: {
     flexDirection: 'row',

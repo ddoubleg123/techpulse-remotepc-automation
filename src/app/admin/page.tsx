@@ -57,7 +57,7 @@ const statusColors = {
 };
 
 export default function AdminDashboard() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen] = useState(true);
 
   return (
     <div className="flex min-h-screen bg-gray-100">

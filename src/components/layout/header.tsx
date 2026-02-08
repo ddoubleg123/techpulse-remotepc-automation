@@ -1,7 +1,7 @@
 'use client';
 
 import { Bell, Search, Menu } from 'lucide-react';
-import { Button, Avatar } from '@/components/ui';
+import { Avatar } from '@/components/ui';
 
 interface HeaderProps {
   title: string;

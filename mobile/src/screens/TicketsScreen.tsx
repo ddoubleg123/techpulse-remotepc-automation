@@ -10,6 +10,17 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, fontSize, borderRadius } from '../theme';
 
+// Calculate reference time at module load
+const MODULE_LOAD_TIME = Date.now();
+
+// Format time relative to module load time (static)
+function formatTime(date: Date): string {
+  const diff = MODULE_LOAD_TIME - date.getTime();
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 const tickets = [
   {
     id: '1',
@@ -17,7 +28,7 @@ const tickets = [
     description: 'Customer reports AC blows warm air...',
     status: 'open',
     priority: 'high',
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    createdAt: new Date(MODULE_LOAD_TIME - 2 * 60 * 60 * 1000),
   },
   {
     id: '2',
@@ -25,7 +36,7 @@ const tickets = [
     description: 'Vehicle slips between 3rd and 4th gear...',
     status: 'in_progress',
     priority: 'urgent',
-    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+    createdAt: new Date(MODULE_LOAD_TIME - 24 * 60 * 60 * 1000),
   },
   {
     id: '3',
@@ -33,7 +44,7 @@ const tickets = [
     description: 'Multiple codes present, need guidance...',
     status: 'resolved',
     priority: 'medium',
-    createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000),
+    createdAt: new Date(MODULE_LOAD_TIME - 48 * 60 * 60 * 1000),
   },
 ];
 
@@ -57,13 +68,6 @@ export default function TicketsScreen() {
   const filteredTickets = tickets.filter((ticket) =>
     filter === 'all' ? true : ticket.status === filter
   );
-
-  const formatTime = (date: Date) => {
-    const diff = Date.now() - date.getTime();
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    if (hours < 24) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
-  };
 
   return (
     <SafeAreaView style={styles.container}>

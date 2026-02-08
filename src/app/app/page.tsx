@@ -6,7 +6,6 @@ import {
   MessageSquare,
   Ticket,
   FileText,
-  TrendingUp,
   Clock,
   CheckCircle,
   AlertCircle,

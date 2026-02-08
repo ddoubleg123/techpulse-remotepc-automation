@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert, NativeModules } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -136,8 +136,6 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   const [otp, setOTP] = useState('');
   const [loading, setLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
-  const [generatedCode, setGeneratedCode] = useState('');
-
   const { generateOTP, verifyOTP } = useAuthStore();
 
   const handleGoogleLogin = async () => {
@@ -187,21 +185,22 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
         console.log('Step 3: Unexpected response structure:', response);
         Alert.alert('Sign-In Issue', 'Received response but no user data. Check console logs.');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { code?: string; message?: string; constructor?: { name?: string } };
       console.error('=== GOOGLE SIGN-IN ERROR ===');
-      console.error('Error type:', error?.constructor?.name);
-      console.error('Error code:', error?.code);
-      console.error('Error message:', error?.message);
-      console.error('Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+      console.error('Error type:', err?.constructor?.name);
+      console.error('Error code:', err?.code);
+      console.error('Error message:', err?.message);
+      console.error('Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error as object), 2));
       console.error('============================');
 
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+      if (err.code === statusCodes.SIGN_IN_CANCELLED) {
         console.log('User cancelled the sign-in');
-      } else if (error.code === statusCodes.IN_PROGRESS) {
+      } else if (err.code === statusCodes.IN_PROGRESS) {
         Alert.alert('Sign-In In Progress', 'Please wait...');
-      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+      } else if (err.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         Alert.alert('Error', 'Google Play Services not available or outdated');
-      } else if (error.code === '12500' || error.message?.includes('12500')) {
+      } else if (err.code === '12500' || err.message?.includes('12500')) {
         Alert.alert(
           'Google Sign-In Error 12500',
           'This usually means:\n' +
@@ -211,7 +210,7 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
           'Check your Google Cloud Console configuration.',
           [{ text: 'OK' }]
         );
-      } else if (error.code === '10' || error.message?.includes('DEVELOPER_ERROR')) {
+      } else if (err.code === '10' || err.message?.includes('DEVELOPER_ERROR')) {
         Alert.alert(
           'Developer Error (Code 10)',
           'Configuration mismatch. Check:\n' +
@@ -224,7 +223,7 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
       } else {
         Alert.alert(
           'Sign-In Error',
-          `${error.message || 'Something went wrong'}\n\nError code: ${error.code || 'unknown'}`
+          `${err.message || 'Something went wrong'}\n\nError code: ${err.code || 'unknown'}`
         );
       }
     } finally {
@@ -236,7 +235,6 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   const handleSendCode = () => {
     if (email) {
       const code = generateOTP(email);
-      setGeneratedCode(code);
       setShowOTP(true);
       setOtpError('');
       // In production, this would send via email
@@ -541,7 +539,7 @@ function MainTabNavigator() {
           fontSize: 12,
           fontWeight: '500',
         },
-        tabBarIcon: ({ focused, color, size }) => {
+        tabBarIcon: ({ focused, color }) => {
           let iconName: keyof typeof Ionicons.glyphMap = 'home';
 
           if (route.name === 'Home') {
@@ -569,15 +567,15 @@ function MainTabNavigator() {
 // Main App with simple navigation
 export default function App() {
   const [screen, setScreen] = useState<'welcome' | 'login' | 'main'>('welcome');
+  const prevAuthRef = useRef(false);
 
   const { user: authUser, isAuthenticated, setUser: setAuthUser } = useAuthStore();
 
-  // Listen to auth state changes - when logout happens in ProfileScreen
+  // Handle Google sign-out when user logs out
   useEffect(() => {
-    if (!isAuthenticated && screen === 'main') {
-      // User logged out from ProfileScreen, go back to welcome
-      setScreen('welcome');
-      // Also sign out from Google if needed
+    // Detect transition from authenticated to not authenticated
+    if (prevAuthRef.current && !isAuthenticated) {
+      // Sign out from Google if needed
       const signOutFromGoogle = async () => {
         try {
           if (GoogleSignin.hasPreviousSignIn()) {
@@ -588,6 +586,16 @@ export default function App() {
         }
       };
       signOutFromGoogle();
+    }
+    prevAuthRef.current = isAuthenticated;
+  }, [isAuthenticated]);
+
+  // Derive screen based on auth state - if logged out while on main, go to welcome
+  useEffect(() => {
+    if (!isAuthenticated && screen === 'main') {
+      // Use setTimeout to avoid the synchronous setState warning
+      const timer = setTimeout(() => setScreen('welcome'), 0);
+      return () => clearTimeout(timer);
     }
   }, [isAuthenticated, screen]);
 

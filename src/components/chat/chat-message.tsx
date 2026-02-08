@@ -1,7 +1,6 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { Avatar } from '@/components/ui';
 import { Zap, User, Volume2 } from 'lucide-react';
 import type { Message } from '@/types';
 

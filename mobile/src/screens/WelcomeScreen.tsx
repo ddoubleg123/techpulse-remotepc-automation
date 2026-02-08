@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, NavigationProp, ParamListBase } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 
 // TechPulse Logo - pulse/heartbeat line design
@@ -35,7 +35,7 @@ const logoStyles = StyleSheet.create({
 });
 
 export default function WelcomeScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NavigationProp<ParamListBase>>();
 
   return (
     <View style={styles.container}>

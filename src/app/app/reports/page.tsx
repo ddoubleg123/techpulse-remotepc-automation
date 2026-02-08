@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { AppLayout } from '@/components/layout';
-import { Card, CardContent, CardHeader, Button, Badge } from '@/components/ui';
+import { Card, CardContent, CardHeader, Button } from '@/components/ui';
 import {
   Upload,
   FileText,

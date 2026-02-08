@@ -20,16 +20,20 @@ const invoices = [
   { id: 'INV-003', date: new Date(2024, 2, 15), amount: 350, status: 'pending' },
 ];
 
+// Calculate trial dates at module load time
+const MODULE_LOAD_TIME = Date.now();
+const TRIAL_END_DATE = new Date(MODULE_LOAD_TIME + 7 * 24 * 60 * 60 * 1000);
+
+const subscription = {
+  status: 'trial',
+  plan: 'TechPulse Pro',
+  price: 350,
+  trialEndsAt: TRIAL_END_DATE,
+  nextBillingDate: TRIAL_END_DATE,
+};
+
 export default function BillingPage() {
   const [showAddCard, setShowAddCard] = useState(false);
-
-  const subscription = {
-    status: 'trial',
-    plan: 'TechPulse Pro',
-    price: 350,
-    trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    nextBillingDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-  };
 
   const paymentMethod = {
     brand: 'Visa',

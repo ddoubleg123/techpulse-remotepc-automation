@@ -10,7 +10,6 @@ import {
   ThumbsUp,
   Eye,
   TrendingUp,
-  Clock,
   Users,
   Send,
 } from 'lucide-react';

@@ -46,7 +46,7 @@ export default function ForgotPasswordScreen() {
           <>
             <Text style={styles.title}>Forgot Password</Text>
             <Text style={styles.subtitle}>
-              Enter your email address and we'll send you a link to reset your password.
+              Enter your email address and we&apos;ll send you a link to reset your password.
             </Text>
 
             <View style={styles.inputContainer}>
@@ -77,7 +77,7 @@ export default function ForgotPasswordScreen() {
             </View>
             <Text style={styles.title}>Check Your Email</Text>
             <Text style={styles.subtitle}>
-              We've sent a password reset link to {email}
+              We&apos;ve sent a password reset link to {email}
             </Text>
 
             <TouchableOpacity
