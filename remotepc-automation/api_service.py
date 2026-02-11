@@ -12,7 +12,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 import config
-from worker import sync_mechanic_data
+
+# Don't import worker here to avoid pyautogui dependency on server
+# Worker will be imported only when actually processing jobs
 
 # Load environment variables
 load_dotenv()
@@ -75,9 +77,12 @@ def request_sync():
         if not personal_key.isdigit() or len(personal_key) != 6:
             return jsonify({'error': 'personal_key must be exactly 6 digits'}), 400
 
-        # Queue the sync job
+        # Queue the sync job - worker will handle the actual automation
+        # Use mock worker on Render (headless), real worker locally
+        worker_func = 'worker_mock.sync_mechanic_data' if os.getenv('RENDER') else 'worker.sync_mechanic_data'
+
         job = sync_queue.enqueue(
-            sync_mechanic_data,
+            worker_func,  # Import path as string to avoid loading pyautogui on API server
             mechanic_id=mechanic_id,
             personal_key=personal_key,
             job_timeout='30m',  # 30 minute timeout

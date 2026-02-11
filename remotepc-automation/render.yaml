@@ -28,30 +28,12 @@ services:
           property: port
       - key: DEBUG
         value: False
+      - key: RENDER
+        value: true
       - key: TECHPULSE_API_URL
         value: https://api.techpulse.com  # Update with your actual API URL
 
-  # Background Worker Service
-  - type: worker
-    name: techpulse-sync-worker
-    runtime: python
-    plan: starter  # Free tier
-    buildCommand: pip install -r requirements.txt
-    startCommand: rq worker sync --with-scheduler
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11
-      - key: REDIS_HOST
-        fromService:
-          type: redis
-          name: techpulse-redis
-          property: host
-      - key: REDIS_PORT
-        fromService:
-          type: redis
-          name: techpulse-redis
-          property: port
-      - key: DEBUG
-        value: False
-      - key: TECHPULSE_API_URL
-        value: https://api.techpulse.com  # Update with your actual API URL
+  # NOTE: Worker is NOT deployed on Render because RemotePC requires Windows + GUI
+  # Run the worker locally on your Windows machine instead:
+  # 1. Set REDIS_HOST in .env to your Render Redis URL
+  # 2. Run: rq worker sync
