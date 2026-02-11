@@ -1,12 +1,5 @@
 services:
-  # Redis instance for job queue
-  - type: redis
-    name: techpulse-redis
-    plan: starter  # Free tier
-    maxmemoryPolicy: noeviction
-    ipAllowList: []  # Allow all IPs (or restrict to your web service)
-
-  # API Web Service
+  # API Web Service (uses existing Redis: red-d66d6m7gi27c738cuiv0)
   - type: web
     name: techpulse-sync-api
     runtime: python
@@ -17,15 +10,9 @@ services:
       - key: PYTHON_VERSION
         value: 3.11
       - key: REDIS_HOST
-        fromService:
-          type: redis
-          name: techpulse-redis
-          property: host
+        value: red-d66d6m7gi27c738cuiv0
       - key: REDIS_PORT
-        fromService:
-          type: redis
-          name: techpulse-redis
-          property: port
+        value: 6379
       - key: DEBUG
         value: False
       - key: RENDER
