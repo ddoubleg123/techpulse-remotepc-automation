@@ -1,5 +1,6 @@
 services:
-  # API Web Service (uses existing Redis: red-d66d6m7gi27c738cuiv0)
+  # API Web Service
+  # Note: Redis environment variables must be configured manually in Render dashboard
   - type: web
     name: techpulse-sync-api
     runtime: python
@@ -9,16 +10,14 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
-      - key: REDIS_HOST
-        value: red-d66d6m7gi27c738cuiv0
-      - key: REDIS_PORT
-        value: 6379
       - key: DEBUG
         value: False
       - key: RENDER
         value: true
       - key: TECHPULSE_API_URL
-        value: https://api.techpulse.com  # Update with your actual API URL
+        value: https://api.techpulse.com
+      # REDIS_HOST and REDIS_PORT should be set manually in Render dashboard
+      # pointing to your existing Redis instance: red-d66d6m7gi27c738cuiv0
 
   # NOTE: Worker is NOT deployed on Render because RemotePC requires Windows + GUI
   # Run the worker locally on your Windows machine instead:
