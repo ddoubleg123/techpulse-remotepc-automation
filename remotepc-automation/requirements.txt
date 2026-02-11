@@ -1,0 +1,12 @@
+pyautogui>=0.9.54
+pillow>=10.2.0
+opencv-python-headless>=4.9.0.80
+redis>=5.0.1
+rq>=1.16.1
+requests>=2.31.0
+python-dotenv>=1.0.1
+PyPDF2>=3.0.1
+pandas>=2.2.0
+flask>=3.0.0
+flask-cors>=4.0.0
+gunicorn>=21.2.0

@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert, NativeModules } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert, NativeModules, InteractionManager } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+// Temporarily disable Google Sign-In for Expo Go testing
+// import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuthStore } from './src/stores/authStore';
 
 // Import main app screens
@@ -14,32 +17,45 @@ import ChatScreen from './src/screens/ChatScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 
+// Import diagnostic workflow screens (DiagnosticChatScreen loads image/document pickers only on tap)
+import VinInputScreen from './src/screens/VinInputScreen';
+import CodesInputScreen from './src/screens/CodesInputScreen';
+import DiagnosticChatScreen from './src/screens/DiagnosticChatScreen';
+import DiagnosticReportScreen from './src/screens/DiagnosticReportScreen';
+import DiagnosticFeedbackScreen from './src/screens/DiagnosticFeedbackScreen';
+
+// Import data sync screen
+import DataSyncScreen from './src/screens/DataSyncScreen';
+
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
-// ===== DIAGNOSTIC: Check if native module is available =====
-const isGoogleSignInAvailable = !!NativeModules.RNGoogleSignin;
-console.log('=== NATIVE MODULE CHECK ===');
-console.log('GoogleSignin native module available:', isGoogleSignInAvailable);
-console.log('NativeModules.RNGoogleSignin:', NativeModules.RNGoogleSignin ? 'EXISTS' : 'MISSING');
-console.log('Platform:', Platform.OS);
-console.log('===========================');
+// Catch render errors so we see them instead of a white screen
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  state = { hasError: false, error: null as Error | null };
 
-if (!isGoogleSignInAvailable) {
-  console.error('CRITICAL: @react-native-google-signin native module is NOT available!');
-  console.error('You need to rebuild your development build with: eas build --profile development --platform android');
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError && this.state.error) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#0f172a' }}>
+          <Text style={{ color: '#ef4444', fontSize: 16, marginBottom: 12 }}>Something went wrong</Text>
+          <Text style={{ color: '#94a3b8', fontSize: 12 }}>{this.state.error.message}</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
 }
 
-// Configure Google Sign-In
-// webClientId is used to get the ID token (for backend verification)
-try {
-  GoogleSignin.configure({
-    webClientId: '416281156741-cn1vmd73s9vu7pp6t4ohe4tj6imbtjh7.apps.googleusercontent.com',
-    offlineAccess: true,
-  });
-  console.log('GoogleSignin.configure() succeeded');
-} catch (configError) {
-  console.error('GoogleSignin.configure() FAILED:', configError);
-}
+// Google Sign-In disabled for Expo Go compatibility
+const isGoogleSignInAvailable = false;
 
 // TechPulse Logo - pulse/heartbeat line design
 function TechPulseLogo({ size = 'large' }: { size?: 'large' | 'small' }) {
@@ -139,97 +155,11 @@ function LoginScreen({ onBack, onSuccess }: { onBack: () => void; onSuccess: (us
   const { generateOTP, verifyOTP } = useAuthStore();
 
   const handleGoogleLogin = async () => {
-    console.log('=== GOOGLE LOGIN ATTEMPT ===');
-    console.log('Native module available:', isGoogleSignInAvailable);
-    console.log('Timestamp:', new Date().toISOString());
-
-    if (!isGoogleSignInAvailable) {
-      Alert.alert(
-        'Native Module Missing',
-        'The Google Sign-In native module is not installed in this build.\n\n' +
-        'You need to create a new development build:\n\n' +
-        'eas build --profile development --platform android\n\n' +
-        'Then install the new APK.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // Step 1: Check Play Services
-      console.log('Step 1: Checking Google Play Services...');
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      console.log('Step 1: Play Services OK');
-
-      // Step 2: Attempt sign in
-      console.log('Step 2: Calling GoogleSignin.signIn()...');
-      const response = await GoogleSignin.signIn();
-      console.log('Step 2: Sign-in response received');
-      console.log('Response type:', typeof response);
-      console.log('Response:', JSON.stringify(response, null, 2));
-
-      // Step 3: Extract user data
-      if (response.data?.user) {
-        const { email, name, photo } = response.data.user;
-        console.log('Step 3: User data extracted - email:', email);
-        onSuccess({
-          email: email,
-          name: name || undefined,
-          picture: photo || undefined,
-        });
-      } else if (response.type === 'cancelled') {
-        console.log('Step 3: User cancelled sign-in');
-      } else {
-        console.log('Step 3: Unexpected response structure:', response);
-        Alert.alert('Sign-In Issue', 'Received response but no user data. Check console logs.');
-      }
-    } catch (error: unknown) {
-      const err = error as { code?: string; message?: string; constructor?: { name?: string } };
-      console.error('=== GOOGLE SIGN-IN ERROR ===');
-      console.error('Error type:', err?.constructor?.name);
-      console.error('Error code:', err?.code);
-      console.error('Error message:', err?.message);
-      console.error('Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error as object), 2));
-      console.error('============================');
-
-      if (err.code === statusCodes.SIGN_IN_CANCELLED) {
-        console.log('User cancelled the sign-in');
-      } else if (err.code === statusCodes.IN_PROGRESS) {
-        Alert.alert('Sign-In In Progress', 'Please wait...');
-      } else if (err.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-        Alert.alert('Error', 'Google Play Services not available or outdated');
-      } else if (err.code === '12500' || err.message?.includes('12500')) {
-        Alert.alert(
-          'Google Sign-In Error 12500',
-          'This usually means:\n' +
-          '1. SHA-1 fingerprint not registered in Google Cloud Console\n' +
-          '2. OAuth consent screen not configured\n' +
-          '3. Package name mismatch\n\n' +
-          'Check your Google Cloud Console configuration.',
-          [{ text: 'OK' }]
-        );
-      } else if (err.code === '10' || err.message?.includes('DEVELOPER_ERROR')) {
-        Alert.alert(
-          'Developer Error (Code 10)',
-          'Configuration mismatch. Check:\n' +
-          '1. google-services.json is correct\n' +
-          '2. SHA-1 fingerprint matches\n' +
-          '3. Package name matches\n' +
-          '4. OAuth client ID is correct',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'Sign-In Error',
-          `${err.message || 'Something went wrong'}\n\nError code: ${err.code || 'unknown'}`
-        );
-      }
-    } finally {
-      setLoading(false);
-      console.log('=== GOOGLE LOGIN COMPLETE ===');
-    }
+    Alert.alert(
+      'Google Sign-In Disabled',
+      'Google Sign-In requires a development build and is not available in Expo Go.\n\nPlease use Email login instead.',
+      [{ text: 'OK' }]
+    );
   };
 
   const handleSendCode = () => {
@@ -564,29 +494,52 @@ function MainTabNavigator() {
   );
 }
 
+// Root Stack Navigator (includes tabs + diagnostic workflow screens)
+function RootNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Main" component={MainTabNavigator} />
+      <Stack.Screen name="DataSync" component={DataSyncScreen} />
+      <Stack.Screen name="VinInput" component={VinInputScreen} />
+      <Stack.Screen name="CodesInput" component={CodesInputScreen} />
+      <Stack.Screen name="DiagnosticChat" component={DiagnosticChatScreen} />
+      <Stack.Screen name="DiagnosticReport" component={DiagnosticReportScreen} />
+      <Stack.Screen name="DiagnosticFeedback" component={DiagnosticFeedbackScreen} />
+    </Stack.Navigator>
+  );
+}
+
 // Main App with simple navigation
 export default function App() {
   const [screen, setScreen] = useState<'welcome' | 'login' | 'main'>('welcome');
+  const [booted, setBooted] = useState(false);
   const prevAuthRef = useRef(false);
-
   const { user: authUser, isAuthenticated, setUser: setAuthUser } = useAuthStore();
 
-  // Handle Google sign-out when user logs out
+  // Minimal first frame then show full UI (fixes stuck white / "Reloading..." screen)
   useEffect(() => {
-    // Detect transition from authenticated to not authenticated
-    if (prevAuthRef.current && !isAuthenticated) {
-      // Sign out from Google if needed
-      const signOutFromGoogle = async () => {
-        try {
-          if (GoogleSignin.hasPreviousSignIn()) {
-            await GoogleSignin.signOut();
-          }
-        } catch (error) {
-          console.log('Google sign out error:', error);
-        }
-      };
-      signOutFromGoogle();
-    }
+    let cancelled = false;
+    const id = requestAnimationFrame(() => {
+      if (!cancelled) {
+        setBooted(true);
+        SplashScreen.hideAsync();
+      }
+    });
+    const timeout = setTimeout(() => {
+      if (!cancelled) {
+        setBooted(true);
+        SplashScreen.hideAsync();
+      }
+    }, 100);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+      clearTimeout(timeout);
+    };
+  }, []);
+
+  // Handle Google sign-out when user logs out (disabled for Expo Go)
+  useEffect(() => {
     prevAuthRef.current = isAuthenticated;
   }, [isAuthenticated]);
 
@@ -611,30 +564,43 @@ export default function App() {
     setScreen('main');
   };
 
+  // First frame: minimal paint so screen is never white (then booted becomes true and we show full UI)
+  if (!booted) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: '#ffffff', fontSize: 24 }}>TechPulse</Text>
+      </View>
+    );
+  }
+
   // If user is authenticated, show main app with navigation
   if (isAuthenticated && authUser) {
     return (
-      <NavigationContainer>
-        <StatusBar style="light" />
-        <MainTabNavigator />
-      </NavigationContainer>
+      <AppErrorBoundary>
+        <NavigationContainer>
+          <StatusBar style="light" />
+          <RootNavigator />
+        </NavigationContainer>
+      </AppErrorBoundary>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0f172a' }}>
-      <StatusBar style="light" />
+    <AppErrorBoundary>
+      <View style={{ flex: 1, backgroundColor: '#0f172a' }}>
+        <StatusBar style="light" />
 
-      {screen === 'welcome' && (
-        <WelcomeScreen onLogin={() => setScreen('login')} />
-      )}
+        {screen === 'welcome' && (
+          <WelcomeScreen onLogin={() => setScreen('login')} />
+        )}
 
-      {screen === 'login' && (
-        <LoginScreen
-          onBack={() => setScreen('welcome')}
-          onSuccess={handleLoginSuccess}
-        />
-      )}
-    </View>
+        {screen === 'login' && (
+          <LoginScreen
+            onBack={() => setScreen('welcome')}
+            onSuccess={handleLoginSuccess}
+          />
+        )}
+      </View>
+    </AppErrorBoundary>
   );
 }

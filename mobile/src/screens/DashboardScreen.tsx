@@ -6,9 +6,15 @@ import {
   ScrollView,
   TouchableOpacity,
   SafeAreaView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../types';
 import { colors, spacing, fontSize, borderRadius } from '../theme';
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 // Recent vehicles with make/model/year for easy identification
 const recentVehicles = [
@@ -24,6 +30,21 @@ const openTickets = [
 ];
 
 export default function DashboardScreen() {
+  const navigation = useNavigation<NavigationProp>();
+
+  const handleNewVehicle = () => {
+    console.log('NEW VEHICLE clicked');
+    navigation.navigate('VinInput' as any, {});
+  };
+
+  const handleChatWithSynth = () => {
+    navigation.navigate('SynthAI' as any);
+  };
+
+  const handleSyncData = () => {
+    navigation.navigate('DataSync' as any);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -40,7 +61,7 @@ export default function DashboardScreen() {
         </View>
 
         {/* Primary Action - New Vehicle */}
-        <TouchableOpacity style={styles.newVehicleBtn}>
+        <TouchableOpacity style={styles.newVehicleBtn} onPress={handleNewVehicle}>
           <View style={styles.newVehicleIcon}>
             <Ionicons name="car-sport" size={32} color={colors.white} />
           </View>
@@ -52,10 +73,19 @@ export default function DashboardScreen() {
         </TouchableOpacity>
 
         {/* Secondary Action - Chat With Synth */}
-        <TouchableOpacity style={styles.chatSynthBtn}>
+        <TouchableOpacity style={styles.chatSynthBtn} onPress={handleChatWithSynth}>
           <Ionicons name="chatbubbles" size={22} color={colors.primary} />
           <Text style={styles.chatSynthText}>Chat With Synth</Text>
           <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+        </TouchableOpacity>
+
+        {/* Sync Data Button */}
+        <TouchableOpacity style={styles.syncDataBtn} onPress={handleSyncData}>
+          <Ionicons name="cloud-download" size={22} color="#10B981" />
+          <Text style={styles.syncDataText}>Sync My Data</Text>
+          <View style={styles.syncBadge}>
+            <Text style={styles.syncBadgeText}>Auto Import</Text>
+          </View>
         </TouchableOpacity>
 
         {/* Recent Activity - Vehicles */}
@@ -221,6 +251,35 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '600',
     color: colors.primary,
+  },
+  // Sync Data Button
+  syncDataBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5', // Light green background
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: '#10B981',
+    gap: spacing.sm,
+  },
+  syncDataText: {
+    flex: 1,
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: '#10B981', // Green text
+  },
+  syncBadge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+  },
+  syncBadgeText: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: colors.white,
   },
   sectionTitle: {
     fontSize: fontSize.lg,

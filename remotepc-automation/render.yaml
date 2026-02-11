@@ -1,0 +1,57 @@
+services:
+  # Redis instance for job queue
+  - type: redis
+    name: techpulse-redis
+    plan: starter  # Free tier
+    maxmemoryPolicy: noeviction
+    ipAllowList: []  # Allow all IPs (or restrict to your web service)
+
+  # API Web Service
+  - type: web
+    name: techpulse-sync-api
+    runtime: python
+    plan: starter  # Free tier
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -w 4 -b 0.0.0.0:$PORT api_service:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: techpulse-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: redis
+          name: techpulse-redis
+          property: port
+      - key: DEBUG
+        value: False
+      - key: TECHPULSE_API_URL
+        value: https://api.techpulse.com  # Update with your actual API URL
+
+  # Background Worker Service
+  - type: worker
+    name: techpulse-sync-worker
+    runtime: python
+    plan: starter  # Free tier
+    buildCommand: pip install -r requirements.txt
+    startCommand: rq worker sync --with-scheduler
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: techpulse-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: redis
+          name: techpulse-redis
+          property: port
+      - key: DEBUG
+        value: False
+      - key: TECHPULSE_API_URL
+        value: https://api.techpulse.com  # Update with your actual API URL
