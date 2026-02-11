@@ -3,6 +3,10 @@ Configuration for RemotePC Automation System
 """
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Base directories
 BASE_DIR = Path(__file__).parent
@@ -16,6 +20,7 @@ for directory in [TEMP_DIR, DOWNLOADS_DIR, SCREENSHOTS_DIR, ASSETS_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # Redis configuration
+REDIS_URL = os.getenv('REDIS_URL')  # Full Redis URL if available
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
 REDIS_DB = int(os.getenv('REDIS_DB', 0))
