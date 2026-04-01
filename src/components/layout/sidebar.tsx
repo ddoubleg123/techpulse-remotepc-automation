@@ -1,109 +1,71 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import {
-  Ticket,
-  FileText,
-  Users,
-  User,
-  CreditCard,
-  LayoutDashboard,
-  Settings,
-  LogOut,
-  Zap,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Avatar } from '@/components/ui';
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useAuthStore } from "@/stores/authStore";
+import { useReportsStore } from "@/stores/reportsStore";
 
 const navigation = [
-  { name: 'Dashboard', href: '/app', icon: LayoutDashboard },
-  { name: 'Synth Chat', href: '/app/chat', icon: Zap },
-  { name: 'Tickets', href: '/app/tickets', icon: Ticket },
-  { name: 'Reports', href: '/app/reports', icon: FileText },
-  { name: 'Community', href: '/app/community', icon: Users },
-  { name: 'Profile', href: '/app/profile', icon: User },
-  { name: 'Billing', href: '/app/billing', icon: CreditCard },
+  { name: "Dashboard", href: "/app", icon: "🏠" },
+  { name: "Sync", href: "/app/sync", icon: "🔄" },
+  { name: "Diagnostic Chat", href: "/app/diagnostic/chat", icon: "💬" },
+  { name: "New Report", href: "/app/diagnostic/new", icon: "📝" },
+  { name: "Notifications", href: "/app/notifications", icon: "🔔", badge: true },
 ];
 
-const bottomNavigation = [
-  { name: 'Settings', href: '/app/settings', icon: Settings },
-];
-
-export function Sidebar() {
+export default function Sidebar() {
   const pathname = usePathname();
+  const { user, signOut } = useAuthStore();
+  const { notifications } = useReportsStore();
+  
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
-    <div className="flex flex-col w-64 bg-gray-900 text-white min-h-screen">
-      {/* Logo */}
-      <div className="flex items-center gap-2 px-6 py-5 border-b border-gray-800">
-        <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
-          <Zap className="w-5 h-5" />
-        </div>
-        <span className="text-xl font-bold">TechPulse</span>
+    <div className="w-64 bg-slate-800 border-r border-slate-700 flex flex-col">
+      {/* Header */}
+      <div className="p-6 border-b border-slate-700">
+        <h1 className="text-xl font-bold text-white">TechPulse</h1>
+        <p className="text-slate-400 text-sm mt-1">{user?.email}</p>
       </div>
 
-      {/* Main Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      {/* Navigation */}
+      <nav className="flex-1 p-4 space-y-2">
         {navigation.map((item) => {
-          const isActive = pathname === item.href ||
-            (item.href !== '/app' && pathname.startsWith(item.href));
+          const isActive = pathname === item.href;
+          const showBadge = item.badge && unreadCount > 0;
 
           return (
             <Link
               key={item.name}
               href={item.href}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              className={`flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                 isActive
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-              )}
+                  ? "bg-blue-600 text-white"
+                  : "text-slate-300 hover:bg-slate-700 hover:text-white"
+              }`}
             >
-              <item.icon className="w-5 h-5" />
-              {item.name}
+              <div className="flex items-center">
+                <span className="mr-3">{item.icon}</span>
+                {item.name}
+              </div>
+              {showBadge && (
+                <span className="bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                  {unreadCount}
+                </span>
+              )}
             </Link>
           );
         })}
       </nav>
 
-      {/* Bottom Navigation */}
-      <div className="px-3 py-4 border-t border-gray-800 space-y-1">
-        {bottomNavigation.map((item) => {
-          const isActive = pathname === item.href;
-
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-              )}
-            >
-              <item.icon className="w-5 h-5" />
-              {item.name}
-            </Link>
-          );
-        })}
-
-        <button className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors w-full">
-          <LogOut className="w-5 h-5" />
+      {/* User actions */}
+      <div className="p-4 border-t border-slate-700">
+        <button
+          onClick={signOut}
+          className="w-full px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white rounded-md transition-colors"
+        >
           Sign Out
         </button>
-      </div>
-
-      {/* User Profile */}
-      <div className="px-4 py-4 border-t border-gray-800">
-        <div className="flex items-center gap-3">
-          <Avatar name="Demo User" size="sm" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">Demo User</p>
-            <p className="text-xs text-gray-400 truncate">demo@techpulse.com</p>
-          </div>
-        </div>
       </div>
     </div>
   );
