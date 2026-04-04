@@ -81,7 +81,7 @@ export default function ReportsPage() {
   };
 
   return (
-    <AppLayout title="Reports" subtitle="Manage your diagnostic reports">
+    <AppLayout>
       <div className="space-y-6">
         {/* Upload Area */}
         <Card>
