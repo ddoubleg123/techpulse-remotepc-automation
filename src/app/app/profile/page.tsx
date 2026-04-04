@@ -31,7 +31,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <AppLayout title="Profile" subtitle="Manage your account settings">
+    <AppLayout>
       <div className="max-w-4xl space-y-6">
         {/* Profile Header */}
         <Card>
