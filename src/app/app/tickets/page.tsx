@@ -1,4 +1,4 @@
-'use client';
+'us title="Tickets" subtitle="Track your support requests"e client';
 
 import { useState } from 'react';
 import { AppLayout } from '@/components/layout';
