@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { AppLayout } from '@/components/layout';
 import { ChatMessage, ChatInput } from '@/components/chat';
 import { Button, Card } from '@/components/ui';
-import { Plus, History, Zap, Wrench, Car, Settings } from 'lucide-react';
+import { Plus, History, Zap, Wrench, Car, Settings } from 'lucide-react';h
 import type { Message } from '@/types';
 
 const suggestedQuestions = [
@@ -65,7 +65,7 @@ export default function ChatPage() {
   };
 
   return (
-    <AppLayout title="Synth Chat" subtitle="AI-powered automotive assistant">
+    <AppLayout>
       <div className="flex gap-6 h-[calc(100vh-12rem)]">
         {/* Sidebar */}
         <div className="hidden lg:flex flex-col w-64 space-y-4">
