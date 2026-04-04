@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { AppLayout } from '@/components/layout';
 import { ChatMessage, ChatInput } from '@/components/chat';
 import { Button, Card } from '@/components/ui';
-import { Plus, History, Zap, Wrench, Car, Settings } from 'lucide-react';h
+import { Plus, History, Zap, Wrench, Car, Settings } from 'lucide-react';
 import type { Message } from '@/types';
 
 const suggestedQuestions = [
