@@ -1,4 +1,4 @@
-'us title="Tickets" subtitle="Track your support requests"e client';
+'use client';
 
 import { useState } from 'react';
 import { AppLayout } from '@/components/layout';
@@ -84,7 +84,7 @@ export default function TicketsPage() {
   });
 
   return (
-    <AppLayout title="Tickets" subtitle="Track your support requests">
+    <AppLayout>
       <div className="space-y-6">
         {/* Header Actions */}
         <div className="flex flex-col sm:flex-row gap-4 justify-between">
