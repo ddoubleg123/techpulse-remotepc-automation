@@ -43,7 +43,7 @@ export default function BillingPage() {
   };
 
   return (
-    <AppLayout title="Billing" subtitle="Manage your subscription and payments">
+    <AppLayout>
       <div className="max-w-4xl space-y-6">
         {/* Trial Banner */}
         {subscription.status === 'trial' && (
