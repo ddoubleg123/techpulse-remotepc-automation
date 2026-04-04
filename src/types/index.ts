@@ -50,3 +50,11 @@ export interface Message {
   timestamp: Date;
   audioUrl?: string;
 }
+
+export interface ChatSession {
+  id: string;
+  userId: string;
+  messages: Message[];
+  createdAt: Date;
+  updatedAt: Date;
+}
