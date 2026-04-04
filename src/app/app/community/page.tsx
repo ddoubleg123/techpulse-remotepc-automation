@@ -111,7 +111,7 @@ export default function CommunityPage() {
   });
 
   return (
-    <AppLayout title="Community" subtitle="Connect with fellow mechanics">
+    <AppLayout>
       <div className="space-y-6">
         {/* Tabs */}
         <div className="flex gap-4 border-b border-gray-200">
