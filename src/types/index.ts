@@ -43,3 +43,9 @@ export interface SyncJob {
   completedAt?: string;
   error?: string;
 }
+export interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
