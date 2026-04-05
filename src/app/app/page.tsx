@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import {
   MessageSquare, RefreshCw, FileText, ArrowRight,
-  Activity, Cpu, CheckCircle, AlertTriangle, Clock,
+  Activity, CheckCircle, AlertTriangle, Clock,
 } from 'lucide-react';
 
 function StatCard({ label, value, color }: { label: string; value: string | number; color: string }) {
@@ -49,21 +49,21 @@ const quickActions = [
 ];
 
 const recentActivity = [
-  { icon: CheckCircle, color: '#10b981', title: 'Sync Complete', desc: 'Successfully synced with 2 devices', time: '5 min ago' },
-  { icon: FileText,    color: '#00d4ff', title: 'New Report',    desc: 'Diagnostic complete — VIN: 1HGBH41JXMN109186', time: '1 hr ago' },
-  { icon: AlertTriangle, color: '#f59e0b', title: 'DTC Detected', desc: 'P0420 flagged on 2018 Honda Accord', time: '3 hr ago' },
-  { icon: Activity,   color: '#a855f7', title: 'AI Analysis',   desc: 'Synth completed root-cause analysis', time: '5 hr ago' },
+  { icon: CheckCircle,   color: '#10b981', title: 'Sync Complete',  desc: 'Successfully synced with 2 devices',             time: '5 min ago' },
+  { icon: FileText,      color: '#00d4ff', title: 'New Report',     desc: 'Diagnostic complete — VIN: 1HGBH41JXMN109186',   time: '1 hr ago'  },
+  { icon: AlertTriangle, color: '#f59e0b', title: 'DTC Detected',   desc: 'P0420 flagged on 2018 Honda Accord',             time: '3 hr ago'  },
+  { icon: Activity,      color: '#a855f7', title: 'AI Analysis',    desc: 'Synth completed root-cause analysis',            time: '5 hr ago'  },
 ];
 
 export default function DashboardPage() {
-  const { isAuthenticated } = useAuthStore();
+  const { user } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isAuthenticated) router.push('/auth/login');
-  }, [isAuthenticated, router]);
+    if (!user) router.push('/auth/login');
+  }, [user, router]);
 
-  if (!isAuthenticated) return null;
+  if (!user) return null;
 
   return (
     <div
@@ -73,16 +73,9 @@ export default function DashboardPage() {
       {/* Hero banner */}
       <div
         className="rounded-3xl p-8 mb-8 relative overflow-hidden"
-        style={{
-          background: 'linear-gradient(135deg, #0d2040 0%, #0a1a35 50%, #081428 100%)',
-          border: '1px solid rgba(0,212,255,0.12)',
-        }}
+        style={{ background: 'linear-gradient(135deg, #0d2040 0%, #0a1a35 50%, #081428 100%)', border: '1px solid rgba(0,212,255,0.12)' }}
       >
-        {/* Glow orb */}
-        <div
-          className="absolute -top-20 -right-20 w-80 h-80 rounded-full pointer-events-none"
-          style={{ background: 'radial-gradient(circle, rgba(0,212,255,0.08) 0%, transparent 70%)' }}
-        />
+        <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(0,212,255,0.08) 0%, transparent 70%)' }} />
         <div className="relative z-10 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 mb-3">
@@ -90,15 +83,9 @@ export default function DashboardPage() {
               <span className="text-xs font-semibold text-emerald-400 tracking-wide uppercase">Synth AI Online</span>
             </div>
             <h2 className="text-2xl font-bold text-white mb-2">Ready to diagnose</h2>
-            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>
-              AI engine active · 6,000+ diagnostic cases · 80–85% accuracy
-            </p>
+            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>AI engine active · 6,000+ diagnostic cases · 80–85% accuracy</p>
           </div>
-          <Link
-            href="/app/chat"
-            className="flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-semibold text-white transition-all"
-            style={{ background: 'linear-gradient(135deg, #00d4ff 0%, #0066ff 100%)' }}
-          >
+          <Link href="/app/chat" className="flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-semibold text-white" style={{ background: 'linear-gradient(135deg, #00d4ff 0%, #0066ff 100%)' }}>
             Start Diagnosis <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
@@ -106,31 +93,18 @@ export default function DashboardPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">
-        <StatCard label="Active Devices" value="1" color="#00d4ff" />
+        <StatCard label="Active Devices"    value="1" color="#00d4ff" />
         <StatCard label="Reports Generated" value="1" color="#a855f7" />
-        <StatCard label="Notifications" value="2" color="#f59e0b" />
+        <StatCard label="Notifications"     value="2" color="#f59e0b" />
       </div>
 
       {/* Quick Actions */}
       <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-white">Quick Actions</h3>
-        </div>
+        <h3 className="text-base font-semibold text-white mb-4">Quick Actions</h3>
         <div className="grid grid-cols-3 gap-4">
           {quickActions.map(({ href, icon: Icon, title, desc, gradient, glow }) => (
-            <Link
-              key={href}
-              href={href}
-              className="group rounded-2xl p-5 flex flex-col gap-4 transition-all duration-200"
-              style={{
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.07)',
-              }}
-            >
-              <div
-                className="w-11 h-11 rounded-xl flex items-center justify-center"
-                style={{ background: gradient, boxShadow: `0 8px 24px ${glow}` }}
-              >
+            <Link key={href} href={href} className="group rounded-2xl p-5 flex flex-col gap-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: gradient, boxShadow: `0 8px 24px ${glow}` }}>
                 <Icon className="w-5 h-5 text-white" />
               </div>
               <div>
@@ -150,24 +124,12 @@ export default function DashboardPage() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base font-semibold text-white">Recent Activity</h3>
-          <Link href="/app/reports" className="text-xs font-medium" style={{ color: 'rgba(0,212,255,0.7)' }}>
-            View all
-          </Link>
+          <Link href="/app/reports" className="text-xs font-medium" style={{ color: 'rgba(0,212,255,0.7)' }}>View all</Link>
         </div>
-        <div
-          className="rounded-2xl overflow-hidden"
-          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
-        >
+        <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
           {recentActivity.map(({ icon: Icon, color, title, desc, time }, i) => (
-            <div
-              key={i}
-              className="flex items-start gap-4 px-5 py-4"
-              style={{ borderBottom: i < recentActivity.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
-            >
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
-                style={{ background: color + '18' }}
-              >
+            <div key={i} className="flex items-start gap-4 px-5 py-4" style={{ borderBottom: i < recentActivity.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: color + '18' }}>
                 <Icon className="w-4 h-4" style={{ color }} />
               </div>
               <div className="flex-1 min-w-0">
