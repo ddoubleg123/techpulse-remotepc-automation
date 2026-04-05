@@ -3,20 +3,18 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "TechPulse - AI-Powered Automotive Diagnostics",
-  description: "Your AI partner for smarter repairs. TechPulse combines AI assistance, expert support, and a community of mechanics to help you diagnose faster and fix better.",
-  keywords: ["automotive", "diagnostics", "AI", "mechanics", "repair", "car repair", "auto repair"],
+  description: "Complete automotive diagnostics in seconds using A.I.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+const themeScript = `(function(){try{var t=localStorage.getItem('tp-theme')||'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})()`;
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="antialiased font-sans">
-        {children}
-      </body>
+    <html lang="en" data-theme="dark">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }
