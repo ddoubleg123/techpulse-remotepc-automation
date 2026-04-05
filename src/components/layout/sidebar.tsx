@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
-import { LayoutDashboard, RefreshCw, MessageSquare, FileText, Bell, LogOut, Zap, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, MessageSquare, FileText, Bell, LogOut, ChevronRight } from 'lucide-react';
 
 const navItems = [
   { href: '/app',               label: 'Dashboard',      icon: LayoutDashboard },
@@ -13,13 +13,43 @@ const navItems = [
   { href: '/app/notifications', label: 'Notifications',   icon: Bell },
 ];
 
+function TechPulseLogo() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      {/* ECG waveform logo box */}
+      <div style={{
+        width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+        background: 'linear-gradient(135deg, #00c3ff 0%, #0055ff 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 4px 16px rgba(0,195,255,0.4)',
+        padding: 4,
+      }}>
+        <svg viewBox="0 0 48 28" fill="none" style={{ width: '100%', height: '100%' }}>
+          {/* ECG / heartbeat waveform */}
+          <polyline
+            points="0,14 10,14 14,4 17,24 20,14 24,2 27,22 30,14 34,14 37,8 39,20 41,14 48,14"
+            stroke="white"
+            strokeWidth="2.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </svg>
+      </div>
+      <div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', lineHeight: 1.1, letterSpacing: '-0.01em' }}>TechPulse</div>
+        <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(0,195,255,0.65)', letterSpacing: '0.1em', textTransform: 'uppercase' as const }}>AI Diagnostics</div>
+      </div>
+    </div>
+  );
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, signOut } = useAuthStore();
 
   const initial = (user?.name || user?.email || 'U')[0].toUpperCase();
-
   const handleSignOut = () => { signOut(); router.push('/auth/login'); };
 
   return (
@@ -29,21 +59,8 @@ export default function Sidebar() {
       borderRight: '1px solid var(--border-sidebar)',
     }}>
       {/* Logo */}
-      <div style={{ padding: '28px 20px 20px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: 'linear-gradient(135deg,#00c3ff 0%,#0055ff 100%)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 4px 14px rgba(0,195,255,0.35)',
-          }}>
-            <Zap size={18} color="#fff" fill="#fff" />
-          </div>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', lineHeight: 1.1 }}>TechPulse</div>
-            <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(0,195,255,0.65)', letterSpacing: '0.06em' }}>AI DIAGNOSTICS</div>
-          </div>
-        </div>
+      <div style={{ padding: '24px 20px 20px', flexShrink: 0 }}>
+        <TechPulseLogo />
       </div>
 
       {/* User card */}
@@ -117,7 +134,6 @@ export default function Sidebar() {
 
       {/* Bottom */}
       <div style={{ padding: '12px 10px', flexShrink: 0 }}>
-        {/* Synth status */}
         <div style={{
           padding: '10px 12px', borderRadius: 12, marginBottom: 8,
           background: 'var(--bg-synth)', border: '1px solid var(--border-synth)',
@@ -127,12 +143,9 @@ export default function Sidebar() {
             <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.5)', flex: 1 }}>Synth AI</span>
             <span style={{ fontSize: 11, fontWeight: 700, color: '#34d399' }}>Online</span>
           </div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', lineHeight: 1.4 }}>
-            Diagnostic engine active
-          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', lineHeight: 1.4 }}>Diagnostic engine active</div>
         </div>
 
-        {/* Sign out */}
         <button onClick={handleSignOut} style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 10,
           padding: '9px 10px', borderRadius: 10, cursor: 'pointer',
