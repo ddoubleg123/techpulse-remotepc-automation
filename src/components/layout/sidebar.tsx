@@ -3,17 +3,14 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
-import {
-  LayoutDashboard, RefreshCw, MessageSquare,
-  FileText, Bell, LogOut, Zap, ChevronRight,
-} from 'lucide-react';
+import { LayoutDashboard, RefreshCw, MessageSquare, FileText, Bell, LogOut, Zap, ChevronRight } from 'lucide-react';
 
 const navItems = [
-  { href: '/app',         label: 'Dashboard',      icon: LayoutDashboard },
-  { href: '/app/sync',    label: 'Sync Data',       icon: RefreshCw },
-  { href: '/app/chat',    label: 'Diagnostic Chat', icon: MessageSquare },
-  { href: '/app/reports', label: 'Reports',         icon: FileText },
-  { href: '/app/notifications', label: 'Notifications', icon: Bell },
+  { href: '/app',               label: 'Dashboard',      icon: LayoutDashboard },
+  { href: '/app/chat',          label: 'Diagnostic Chat', icon: MessageSquare },
+  { href: '/app/sync',          label: 'Sync Data',       icon: RefreshCw },
+  { href: '/app/reports',       label: 'Reports',         icon: FileText },
+  { href: '/app/notifications', label: 'Notifications',   icon: Bell },
 ];
 
 export default function Sidebar() {
@@ -21,106 +18,135 @@ export default function Sidebar() {
   const router = useRouter();
   const { user, signOut } = useAuthStore();
 
-  const handleSignOut = () => {
-    signOut();
-    router.push('/auth/login');
-  };
+  const initial = (user?.name || user?.email || 'U')[0].toUpperCase();
+
+  const handleSignOut = () => { signOut(); router.push('/auth/login'); };
 
   return (
-    <aside
-      style={{ background: 'linear-gradient(180deg, #0a0f1e 0%, #0d1526 60%, #0a1a2e 100%)' }}
-      className="w-64 flex-shrink-0 flex flex-col h-screen border-r border-white/5"
-    >
+    <aside style={{
+      width: 256, flexShrink: 0, display: 'flex', flexDirection: 'column',
+      height: '100vh', background: 'var(--bg-sidebar)',
+      borderRight: '1px solid var(--border-sidebar)',
+    }}>
       {/* Logo */}
-      <div className="px-6 pt-8 pb-6">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, #00d4ff 0%, #0066ff 100%)' }}
-          >
-            <Zap className="w-5 h-5 text-white" fill="currentColor" />
+      <div style={{ padding: '28px 20px 20px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: 'linear-gradient(135deg,#00c3ff 0%,#0055ff 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 14px rgba(0,195,255,0.35)',
+          }}>
+            <Zap size={18} color="#fff" fill="#fff" />
           </div>
           <div>
-            <span className="text-white font-bold text-lg tracking-wide">TechPulse</span>
-            <div className="text-xs font-medium -mt-0.5" style={{ color: 'rgba(0,212,255,0.6)' }}>AI Diagnostics</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', lineHeight: 1.1 }}>TechPulse</div>
+            <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(0,195,255,0.65)', letterSpacing: '0.06em' }}>AI DIAGNOSTICS</div>
           </div>
         </div>
       </div>
 
       {/* User card */}
-      <div className="mx-4 mb-6 p-3 rounded-2xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-        <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #00d4ff 0%, #0066ff 100%)' }}
-          >
-            {(user?.name || user?.email || 'U')[0].toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <p className="text-white text-sm font-semibold truncate">{user?.name || 'Technician'}</p>
-            <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.35)' }}>{user?.email || ''}</p>
+      <div style={{ padding: '0 12px 16px', flexShrink: 0 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 12px', borderRadius: 12,
+          background: 'var(--bg-user)', border: '1px solid var(--border-user)',
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+            background: 'linear-gradient(135deg,#00c3ff,#0055ff)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 13, fontWeight: 700, color: '#fff',
+          }}>{initial}</div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {user?.name || 'Technician'}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {user?.email || ''}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Section label */}
-      <div className="px-6 mb-2">
-        <span className="text-xs font-semibold tracking-widest uppercase" style={{ color: 'rgba(255,255,255,0.2)' }}>Menu</span>
+      <div style={{ padding: '0 20px 8px', flexShrink: 0 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase' }}>
+          Navigation
+        </span>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 space-y-0.5">
+      <nav style={{ flex: 1, padding: '0 10px', overflowY: 'auto' }}>
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || (href !== '/app' && pathname.startsWith(href));
           return (
-            <Link
-              key={href}
-              href={href}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 relative"
-              style={active ? {
-                background: 'linear-gradient(135deg, rgba(0,212,255,0.12) 0%, rgba(0,102,255,0.12) 100%)',
-                border: '1px solid rgba(0,212,255,0.18)',
-              } : { border: '1px solid transparent' }}
-            >
+            <Link key={href} href={href} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '9px 10px', borderRadius: 10, marginBottom: 2,
+              textDecoration: 'none', position: 'relative',
+              background: active ? 'var(--bg-nav-active)' : 'transparent',
+              border: active ? '1px solid var(--border-nav-act)' : '1px solid transparent',
+              transition: 'all 0.15s',
+            }}>
               {active && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full" style={{ background: 'linear-gradient(180deg, #00d4ff, #0066ff)' }} />
+                <span style={{
+                  position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
+                  width: 3, height: 20, borderRadius: 2,
+                  background: 'linear-gradient(180deg,#00c3ff,#0055ff)',
+                }} />
               )}
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all duration-150"
-                style={active
-                  ? { background: 'linear-gradient(135deg, #00d4ff 0%, #0066ff 100%)' }
-                  : { background: 'rgba(255,255,255,0.06)' }}
-              >
-                <Icon className="w-4 h-4" style={{ color: active ? '#fff' : 'rgba(255,255,255,0.4)' }} />
+              <div style={{
+                width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: active ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'rgba(255,255,255,0.07)',
+                boxShadow: active ? '0 4px 10px rgba(0,195,255,0.3)' : 'none',
+                transition: 'all 0.15s',
+              }}>
+                <Icon size={15} color={active ? '#fff' : 'rgba(255,255,255,0.45)'} />
               </div>
-              <span className="text-sm font-medium flex-1 transition-colors duration-150" style={{ color: active ? '#fff' : 'rgba(255,255,255,0.5)' }}>
+              <span style={{ fontSize: 13, fontWeight: 500, flex: 1, color: active ? '#fff' : 'rgba(255,255,255,0.5)', transition: 'color 0.15s' }}>
                 {label}
               </span>
-              {active && <ChevronRight className="w-3.5 h-3.5" style={{ color: 'rgba(0,212,255,0.5)' }} />}
+              {active && <ChevronRight size={13} color="rgba(0,195,255,0.5)" />}
             </Link>
           );
         })}
       </nav>
 
       {/* Bottom */}
-      <div className="p-3 mt-2">
-        <div className="rounded-2xl p-3 mb-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="flex items-center gap-2 mb-1.5">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.4)' }}>Synth AI</span>
-            <span className="ml-auto text-xs font-semibold text-emerald-400">Online</span>
+      <div style={{ padding: '12px 10px', flexShrink: 0 }}>
+        {/* Synth status */}
+        <div style={{
+          padding: '10px 12px', borderRadius: 12, marginBottom: 8,
+          background: 'var(--bg-synth)', border: '1px solid var(--border-synth)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#34d399', flexShrink: 0 }} />
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.5)', flex: 1 }}>Synth AI</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#34d399' }}>Online</span>
           </div>
-          <p className="text-xs leading-relaxed" style={{ color: 'rgba(255,255,255,0.25)' }}>AI diagnostic engine active</p>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', lineHeight: 1.4 }}>
+            Diagnostic engine active
+          </div>
         </div>
-        <button
-          onClick={handleSignOut}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 group"
-          style={{ border: '1px solid rgba(255,255,255,0.05)' }}
-        >
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.1)' }}>
-            <LogOut className="w-4 h-4 text-red-400" />
+
+        {/* Sign out */}
+        <button onClick={handleSignOut} style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+          padding: '9px 10px', borderRadius: 10, cursor: 'pointer',
+          background: 'transparent', border: '1px solid rgba(239,68,68,0.15)',
+          transition: 'all 0.15s',
+        }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+            background: 'rgba(239,68,68,0.1)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <LogOut size={14} color="#f87171" />
           </div>
-          <span className="text-sm font-medium text-red-400/60 group-hover:text-red-400 transition-colors">Sign Out</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: 'rgba(248,113,113,0.7)' }}>Sign Out</span>
         </button>
       </div>
     </aside>
