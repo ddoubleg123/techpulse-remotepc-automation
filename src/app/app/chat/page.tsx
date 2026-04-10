@@ -21,16 +21,17 @@ interface DiagnosticReport {
   estimatedTime: string; additionalNotes: string;
 }
 
+// Accept any file - detect issues in JS rather than blocking at browser level
 function cleanFileContent(raw: string): string {
-  const newline = String.fromCharCode(10);
+  const nl = String.fromCharCode(10);
   return raw
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\xFF]/g, ' ')
     .replace(/%%[A-Z]+/g, '')
-    .replace(/endobj|endstream|stream/gi, newline)
-    .split(newline)
+    .replace(/endobj|endstream|stream/gi, nl)
+    .split(nl)
     .map((l: string) => l.trim())
     .filter((l: string) => l.length > 2 && !/^[\d\s\[\]<>\/]+$/.test(l))
-    .join(newline)
+    .join(nl)
     .trim()
     .substring(0, 3000);
 }
@@ -39,7 +40,7 @@ function isBinaryContent(content: string): boolean {
   const nonPrintable = content.split('').filter(
     (c: string) => c.charCodeAt(0) < 32 && c !== '\n' && c !== '\r' && c !== '\t'
   ).length;
-  return (nonPrintable / Math.max(content.length, 1)) > 0.1;
+  return (nonPrintable / Math.max(content.length, 1)) > 0.15;
 }
 
 function StepBar({ step }: { step: Step }) {
@@ -82,21 +83,23 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
 
   const handleFile = (file: File) => {
     setFileError('');
-    if (file.name.toLowerCase().endsWith('.pdf')) {
-      setFileError('PDF files cannot be read as text. Please export your scanner data as .txt, .csv, or .xml instead.');
-      return;
-    }
     setUploadedFile(file);
     const reader = new FileReader();
     reader.onload = (e) => {
       const raw = e.target?.result as string;
+      // Detect binary/PDF content
       if (isBinaryContent(raw)) {
-        setFileError('This file appears to be binary. Please use a plain text export (.txt, .csv, or .xml) from your scanner.');
+        setFileError(
+          file.name.toLowerCase().endsWith('.pdf')
+            ? 'PDF files cannot be read as text. In your scanner tool, use Save/Export to save as .txt or .csv instead.'
+            : 'This file appears to contain binary data. Please use a plain text export from your scanner (.txt or .csv).'
+        );
         setUploadedFile(null);
         return;
       }
       const cleaned = cleanFileContent(raw);
       setUploadedContent(cleaned);
+      // Auto-detect VIN
       const vinMatch = raw.match(/\b[A-HJ-NPR-Z0-9]{17}\b/);
       if (vinMatch) setVin(vinMatch[0]);
     };
@@ -126,8 +129,10 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
       <div style={{ width:'100%', maxWidth:580 }}>
         <div style={{ marginBottom:28 }}>
           <h2 style={{ fontSize:22, fontWeight:800, color:'var(--text-1)', margin:'0 0 6px' }}>New Diagnostic</h2>
-          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>Enter a VIN to look up the vehicle, or upload a scanner text export to auto-populate codes.</p>
+          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>Enter a VIN to look up the vehicle, or upload a scanner export to auto-populate codes.</p>
         </div>
+
+        {/* VIN */}
         <div style={{ padding:'20px', borderRadius:16, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:16 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
             <Car size={16} color='var(--accent)' />
@@ -138,7 +143,10 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
               onKeyDown={e => e.key === 'Enter' && handleVinLookup()}
               style={{ ...inp, flex:1, fontFamily:'monospace', letterSpacing:'0.08em', fontSize:15, fontWeight:600 }} />
             <button onClick={handleVinLookup} disabled={vin.length < 10 || lookingUp}
-              style={{ padding:'11px 16px', borderRadius:10, border:'none', cursor: vin.length >= 10 ? 'pointer' : 'not-allowed', background: vin.length >= 10 ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)', color: vin.length >= 10 ? '#fff' : 'var(--text-3)', fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
+              style={{ padding:'11px 16px', borderRadius:10, border:'none', cursor: vin.length >= 10 ? 'pointer' : 'not-allowed',
+                background: vin.length >= 10 ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
+                color: vin.length >= 10 ? '#fff' : 'var(--text-3)', fontSize:13, fontWeight:700,
+                display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
               <Search size={14} /> {lookingUp ? 'Looking up…' : 'Look Up'}
             </button>
           </div>
@@ -164,18 +172,23 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
             </button>
           )}
         </div>
+
+        {/* OR */}
         <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
           <div style={{ flex:1, height:1, background:'var(--border-card)' }} />
           <span style={{ fontSize:12, color:'var(--text-3)', fontWeight:600 }}>OR</span>
           <div style={{ flex:1, height:1, background:'var(--border-card)' }} />
         </div>
+
+        {/* Upload — accept=* so all files show in picker; binary detected in JS */}
         <div onDrop={handleDrop} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
           onClick={() => !uploadedFile && fileRef.current?.click()}
           style={{ padding:'28px 20px', borderRadius:16, textAlign:'center', cursor: uploadedFile ? 'default' : 'pointer',
             background: dragOver ? 'rgba(0,195,255,0.06)' : uploadedFile ? 'rgba(16,185,129,0.06)' : 'var(--bg-feed)',
             border: `2px dashed ${dragOver ? 'var(--accent)' : uploadedFile ? '#10b981' : fileError ? '#ef4444' : 'var(--border-card)'}`,
             transition:'all 0.2s', marginBottom: fileError ? 8 : 16 }}>
-          <input ref={fileRef} type='file' accept='.txt,.csv,.xml,.rtf,.log' style={{ display:'none' }}
+          {/* accept=* — all files visible in picker; PDF/binary rejected in handleFile */}
+          <input ref={fileRef} type='file' accept='*' style={{ display:'none' }}
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           {uploadedFile ? (
             <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10 }}>
@@ -187,7 +200,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 <div style={{ fontSize:12, color:'var(--text-3)' }}>{(uploadedFile.size / 1024).toFixed(1)} KB uploaded</div>
                 {vin && <div style={{ fontSize:12, color:'var(--text-2)', marginTop:2 }}>VIN detected: <strong style={{ color:'var(--text-1)', fontFamily:'monospace' }}>{vin}</strong></div>}
               </div>
-              <button onClick={e => { e.stopPropagation(); setUploadedFile(null); setUploadedContent(''); setFileError(''); }}
+              <button onClick={e => { e.stopPropagation(); setUploadedFile(null); setUploadedContent(''); setFileError(''); if (fileRef.current) fileRef.current.value = ''; }}
                 style={{ marginLeft:8, width:28, height:28, borderRadius:7, background:'rgba(239,68,68,0.1)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <X size={14} color='#f87171' />
               </button>
@@ -197,27 +210,32 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
               <div style={{ width:48, height:48, borderRadius:14, background:'var(--bg-input)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 12px' }}>
                 <Upload size={22} color='var(--text-3)' />
               </div>
-              <div style={{ fontSize:14, fontWeight:700, color:'var(--text-1)', marginBottom:4 }}>Upload Scanner Export</div>
-              <div style={{ fontSize:13, color:'var(--text-3)' }}>Drag & drop or click to browse</div>
-              <div style={{ fontSize:11, color:'var(--text-3)', marginTop:6 }}>Accepts .txt, .csv, .xml, .log — plain text exports only</div>
+              <div style={{ fontSize:14, fontWeight:700, color:'var(--text-1)', marginBottom:4 }}>Upload Diagnostic Report</div>
+              <div style={{ fontSize:13, color:'var(--text-3)' }}>Drag & drop or click to browse — all file types accepted</div>
             </>
           )}
         </div>
+
         {fileError && (
-          <div style={{ padding:'10px 14px', borderRadius:10, background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', display:'flex', gap:8, alignItems:'flex-start', marginBottom:16 }}>
+          <div style={{ padding:'12px 14px', borderRadius:10, background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', display:'flex', gap:8, alignItems:'flex-start', marginBottom:16 }}>
             <AlertTriangle size={15} color='#f87171' style={{ flexShrink:0, marginTop:1 }} />
             <span style={{ fontSize:13, color:'#f87171', lineHeight:1.5 }}>{fileError}</span>
           </div>
         )}
+
         <div style={{ padding:'10px 14px', borderRadius:10, background:'var(--bg-feed)', border:'1px solid var(--border-card)', display:'flex', gap:8, alignItems:'flex-start', marginBottom:20 }}>
           <Info size={14} color='var(--text-3)' style={{ flexShrink:0, marginTop:1 }} />
           <span style={{ fontSize:12, color:'var(--text-3)', lineHeight:1.5 }}>
-            <strong style={{ color:'var(--text-2)' }}>Using a scanner tool?</strong> Export as .txt or .csv. Most tools (AUTEL, Launch, Snap-on) have a Save/Export option. PDFs cannot be parsed.
+            <strong style={{ color:'var(--text-2)' }}>Scanner tip:</strong> Export your data as .txt or .csv from your scanner tool (AUTEL, Launch, Snap-on all have a Save/Export option). If your report is a PDF, open it and copy the text into the symptoms field instead.
           </span>
         </div>
+
         <button onClick={() => canProceed && onNext({ ...vehicle, vin }, uploadedContent || undefined, uploadedFile?.name)}
           disabled={!canProceed}
-          style={{ width:'100%', padding:'14px', borderRadius:12, background: canProceed ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)', color: canProceed ? '#fff' : 'var(--text-3)', fontSize:15, fontWeight:700, border:'none', cursor: canProceed ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+          style={{ width:'100%', padding:'14px', borderRadius:12,
+            background: canProceed ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
+            color: canProceed ? '#fff' : 'var(--text-3)', fontSize:15, fontWeight:700, border:'none',
+            cursor: canProceed ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
           Continue to Codes <ChevronRight size={18} />
         </button>
       </div>
@@ -565,4 +583,4 @@ export default function ChatPage() {
       {step==='feedback' && <FeedbackStep onRestart={restart} />}
     </div>
   );
-          }
+                       }
