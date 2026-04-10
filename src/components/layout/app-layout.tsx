@@ -4,7 +4,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import Sidebar from "./sidebar";
-import { Header } from "./header";
+import Header from "./header";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, signIn } = useAuthStore();
