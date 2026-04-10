@@ -1,223 +1,168 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { AppLayout } from '@/components/layout';
-import { ChatMessage, ChatInput } from '@/components/chat';
-import { Button, Card } from '@/components/ui';
-import { Plus, History, Zap, Wrench, Car, Settings } from 'lucide-react';
-import type { Message } from '@/types';
+import { useAuthStore } from '@/stores/authStore';
+import { Send, Zap, Car, AlertCircle } from 'lucide-react';
 
-const suggestedQuestions = [
-  { icon: Wrench, text: 'How do I diagnose a P0300 random misfire code?' },
-  { icon: Car, text: 'What causes a car to shake at idle?' },
-  { icon: Settings, text: 'How to check transmission fluid level?' },
-];
+const SYNTH_API = 'https://techpulse-api.onrender.com';
+const API_TOKEN = 'tp_9f4e2a7c1d8b3f6e0a5c9d2f7b4e1a8c';
 
-const demoMessages: Message[] = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: "Hi! I'm Synth, your AI automotive assistant. I can help you with diagnostics, repair procedures, and technical questions. What are you working on today?",
-    timestamp: new Date(Date.now() - 60000),
-  },
-];
+interface Message {
+  role: 'user' | 'synth';
+  content: string;
+  ts: number;
+}
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>(demoMessages);
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const { user } = useAuthStore();
+  const [messages, setMessages] = useState<Message[]>([
+    { role: 'synth', content: 'Ready to diagnose. Tell me the vehicle year, make, model, and describe the symptom or paste your DTC codes.', ts: Date.now() }
+  ]);
+  const [input, setInput] = useState('');
+  const [vehicle, setVehicle] = useState({ year: '', make: '', model: '', engine: '' });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [sessionId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('synth-session-id');
+      if (stored) return stored;
+      const id = crypto.randomUUID();
+      localStorage.setItem('synth-session-id', id);
+      return id;
+    }
+    return 'session-1';
+  });
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollToBottom();
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSendMessage = async (content: string) => {
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content,
-      timestamp: new Date(),
-    };
+  const sendMessage = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput('');
+    setError('');
 
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
+    setMessages(prev => [...prev, { role: 'user', content: userMsg, ts: Date.now() }]);
+    setLoading(true);
 
-    // Simulate AI response
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      const res = await fetch(SYNTH_API + '/api/diagnostic', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + API_TOKEN,
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          message: userMsg,
+          vehicle: vehicle.year ? vehicle : undefined,
+        }),
+      });
 
-    const assistantMessage: Message = {
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: getSimulatedResponse(content),
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, assistantMessage]);
-    setIsLoading(false);
+      if (!res.ok) throw new Error('Synth API error: ' + res.status);
+      const data = await res.json();
+      const reply = data.response || data.message || 'Synth is processing...';
+      setMessages(prev => [...prev, { role: 'synth', content: reply, ts: Date.now() }]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Connection error';
+      setError(msg);
+      setMessages(prev => [...prev, { role: 'synth', content: 'Error connecting to Synth: ' + msg, ts: Date.now() }]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleNewChat = () => {
-    setMessages([demoMessages[0]]);
+  const S = {
+    page:      { flex: 1, display: 'flex', flexDirection: 'column' as const, height: '100%', background: 'var(--bg-page)', overflow: 'hidden' },
+    topBar:    { padding: '14px 20px', borderBottom: '1px solid var(--border-card)', background: 'var(--bg-card)', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 },
+    synthDot:  { width: 8, height: 8, borderRadius: '50%', background: '#34d399', boxShadow: '0 0 6px rgba(52,211,153,0.8)' },
+    vehicle:   { padding: '12px 20px', borderBottom: '1px solid var(--border-card)', background: 'var(--bg-feed)', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, flexShrink: 0 },
+    vinInp:    { padding: '8px 12px', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-input)', color: 'var(--text-1)', fontSize: 13, outline: 'none' },
+    msgs:      { flex: 1, overflowY: 'auto' as const, padding: '20px' },
+    userBub:   { display: 'flex', justifyContent: 'flex-end', marginBottom: 14 },
+    synthBub:  { display: 'flex', justifyContent: 'flex-start', marginBottom: 14 },
+    userTxt:   { maxWidth: '72%', padding: '12px 16px', borderRadius: '16px 16px 4px 16px', background: 'linear-gradient(135deg,#00c3ff,#0055ff)', color: '#fff', fontSize: 14, lineHeight: 1.5 },
+    synthTxt:  { maxWidth: '80%', padding: '12px 16px', borderRadius: '16px 16px 16px 4px', background: 'var(--bg-card)', border: '1px solid var(--border-card)', color: 'var(--text-1)', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' as const },
+    synthIcon: { width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#00c3ff,#0055ff)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 8, alignSelf: 'flex-end' },
+    inputBar:  { padding: '16px 20px', borderTop: '1px solid var(--border-card)', background: 'var(--bg-card)', display: 'flex', gap: 10, flexShrink: 0 },
+    textInput: { flex: 1, padding: '12px 16px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border-input)', color: 'var(--text-1)', fontSize: 14, outline: 'none', resize: 'none' as const },
+    sendBtn:   { width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#00c3ff,#0055ff)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 },
   };
 
   return (
-    <AppLayout>
-      <div className="flex gap-6 h-[calc(100vh-12rem)]">
-        {/* Sidebar */}
-        <div className="hidden lg:flex flex-col w-64 space-y-4">
-          <Button onClick={handleNewChat} className="w-full">
-            <Plus className="w-4 h-4 mr-2" />
-            New Chat
-          </Button>
-
-          <Card className="flex-1 overflow-hidden">
-            <div className="p-4 border-b border-gray-100">
-              <h3 className="font-medium text-gray-900 flex items-center gap-2">
-                <History className="w-4 h-4" />
-                Recent Chats
-              </h3>
-            </div>
-            <div className="p-2 space-y-1 overflow-y-auto">
-              {['P0300 Misfire diagnosis', 'Brake pad replacement', 'AC not cooling'].map(
-                (chat, i) => (
-                  <button
-                    key={i}
-                    className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-100 truncate"
-                  >
-                    {chat}
-                  </button>
-                )
-              )}
-            </div>
-          </Card>
-        </div>
-
-        {/* Chat Area */}
-        <Card className="flex-1 flex flex-col overflow-hidden">
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {messages.length === 1 && (
-              <div className="mt-8">
-                <div className="text-center mb-8">
-                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Zap className="w-8 h-8 text-blue-600" />
-                  </div>
-                  <h2 className="text-xl font-semibold text-gray-900">How can I help you today?</h2>
-                  <p className="text-gray-500 mt-1">
-                    Ask me anything about automotive diagnostics and repairs
-                  </p>
-                </div>
-
-                <div className="grid gap-3 max-w-lg mx-auto">
-                  {suggestedQuestions.map((q, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handleSendMessage(q.text)}
-                      className="flex items-center gap-3 p-4 text-left bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-                    >
-                      <q.icon className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                      <span className="text-sm text-gray-700">{q.text}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {messages.map((message) => (
-              <ChatMessage key={message.id} message={message} />
-            ))}
-
-            {isLoading && (
-              <div className="flex gap-4">
-                <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
-                  <Zap className="w-5 h-5 text-white" />
-                </div>
-                <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-3">
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.1s]" />
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]" />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
+    <div style={S.page}>
+      {/* Top bar */}
+      <div style={S.topBar}>
+        <div style={S.synthIcon}><Zap size={16} color="#fff" fill="#fff" /></div>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>Synth AI</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={S.synthDot} />
+            <span style={{ fontSize: 11, color: '#34d399', fontWeight: 600 }}>Online</span>
+            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>· 6,000+ diagnostic cases</span>
           </div>
-
-          {/* Input */}
-          <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
-        </Card>
+        </div>
       </div>
-    </AppLayout>
+
+      {/* Vehicle inputs */}
+      <div style={S.vehicle}>
+        {(['year','make','model','engine'] as const).map(field => (
+          <input key={field} placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
+            value={vehicle[field]}
+            onChange={e => setVehicle(prev => ({...prev, [field]: e.target.value}))}
+            style={S.vinInp}
+          />
+        ))}
+      </div>
+
+      {/* Error banner */}
+      {error && (
+        <div style={{ padding: '10px 20px', background: 'rgba(239,68,68,0.1)', borderBottom: '1px solid rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AlertCircle size={14} color="#f87171" />
+          <span style={{ fontSize: 13, color: '#f87171' }}>{error}</span>
+        </div>
+      )}
+
+      {/* Messages */}
+      <div style={S.msgs}>
+        {messages.map((msg, i) => (
+          msg.role === 'user' ? (
+            <div key={i} style={S.userBub}>
+              <div style={S.userTxt}>{msg.content}</div>
+            </div>
+          ) : (
+            <div key={i} style={S.synthBub}>
+              <div style={S.synthIcon}><Zap size={14} color="#fff" fill="#fff" /></div>
+              <div style={S.synthTxt}>{msg.content}</div>
+            </div>
+          )
+        ))}
+        {loading && (
+          <div style={S.synthBub}>
+            <div style={S.synthIcon}><Zap size={14} color="#fff" fill="#fff" /></div>
+            <div style={{ ...S.synthTxt, color: 'var(--text-3)' }}>Synth is analyzing...</div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div style={S.inputBar}>
+        <textarea
+          rows={1}
+          placeholder="Describe symptoms, paste DTC codes, or upload scan data..."
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+          style={S.textInput}
+        />
+        <button onClick={sendMessage} disabled={loading || !input.trim()}
+          style={{ ...S.sendBtn, opacity: loading || !input.trim() ? 0.5 : 1 }}>
+          <Send size={18} color="#fff" />
+        </button>
+      </div>
+    </div>
   );
-}
-
-function getSimulatedResponse(question: string): string {
-  const lowerQuestion = question.toLowerCase();
-
-  if (lowerQuestion.includes('p0300') || lowerQuestion.includes('misfire')) {
-    return `A P0300 code indicates a random/multiple cylinder misfire. Here's how to diagnose it:
-
-**Common Causes:**
-1. Spark plugs or ignition coils worn/failing
-2. Fuel injector problems
-3. Vacuum leaks
-4. Low fuel pressure
-5. EGR valve issues
-
-**Diagnostic Steps:**
-1. Check for other codes - specific cylinder misfires (P0301-P0308) help isolate the problem
-2. Inspect spark plugs for wear, fouling, or damage
-3. Test ignition coils with a multimeter or swap with known good coil
-4. Check for vacuum leaks using carb cleaner or smoke test
-5. Test fuel pressure at the rail
-
-Would you like me to go deeper on any of these steps?`;
-  }
-
-  if (lowerQuestion.includes('shake') || lowerQuestion.includes('vibrat')) {
-    return `A car shaking at idle can have several causes. Let me help you narrow it down:
-
-**Most Common Causes:**
-1. **Engine misfires** - Check for misfire codes and inspect plugs/coils
-2. **Vacuum leaks** - Listen for hissing sounds, check all vacuum lines
-3. **Dirty throttle body** - Carbon buildup affects idle quality
-4. **Worn motor mounts** - Allow engine vibration to transfer to chassis
-5. **Fuel system issues** - Clogged injectors or fuel filter
-
-**Quick Test:**
-Put the car in neutral while idling - if shaking reduces, it may be transmission or drivetrain related.
-
-What year/make/model are you working on?`;
-  }
-
-  if (lowerQuestion.includes('transmission') || lowerQuestion.includes('fluid')) {
-    return `Here's how to check transmission fluid properly:
-
-**For Most Automatic Transmissions:**
-1. Park on level ground, engine running, in Park
-2. Locate the transmission dipstick (usually near firewall)
-3. Pull, wipe clean, reinsert fully, then pull again
-4. Check level between MIN and MAX marks
-5. Also check fluid condition - should be red/pink, not brown or burnt smelling
-
-**Note:** Some modern vehicles have sealed transmissions with no dipstick. These require:
-- Checking via fill plug with car level on lift
-- Fluid at specific temperature (usually ~104°F)
-
-What vehicle are you working on? I can give you specific instructions.`;
-  }
-
-  return `That's a great question! To give you the most accurate guidance, could you provide a few more details?
-
-1. What year, make, and model are you working on?
-2. Are there any diagnostic trouble codes (DTCs)?
-3. When did this issue start?
-
-With more context, I can provide specific diagnostic steps and repair procedures.`;
 }
