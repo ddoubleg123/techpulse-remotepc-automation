@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 const SYNTH_API = 'https://techpulse-api.onrender.com';
-const API_TOKEN = 'tp_9f4e2a7c1d8b3f6e0a5c9d2f7b4e1a8c';
+const API_TOKEN = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
 
 type Step = 'vin' | 'codes' | 'chat' | 'report' | 'feedback';
 interface Vehicle { year: string; make: string; model: string; engine: string; vin: string; }
@@ -378,6 +378,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [warmingUp, setWarmingUp] = useState(false);
   const [autoSent, setAutoSent] = useState(false);
   const [apiStatus, setApiStatus] = useState<'ok'|'placeholder'|'error'>('ok');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -401,13 +402,45 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     setInput('');
     setLoading(true);
     try {
-      const res = await fetch(SYNTH_API + '/api/diagnostic', {
+      const controller = new AbortController();
+      const abortTimer = setTimeout(() => controller.abort(), 60000);
+      const warmTimer = setTimeout(() => setWarmingUp(true), 5000);
+      const res = await fetch(SYNTH_API + '/api/diagnostic/stream', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + API_TOKEN },
         body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...(pdfBase64 && pdfName ? { pdf_base64: pdfBase64, pdf_name: pdfName } : {}) }),
+        signal: controller.signal,
       });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
+        clearTimeout(abortTimer);
+        clearTimeout(warmTimer);
+        setWarmingUp(false);
+      if (!res.ok) {
+        if (res.status === 401) throw new Error('Authentication failed — please sign out and sign back in.');
+        if (res.status === 403) throw new Error('Access denied. Please contact support.');
+        throw new Error(`Synth is unavailable (${res.status}). Please try again.`);
+      }
+      // Stream response body; SSE tokens if available, JSON fallback
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let rawText = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        rawText += decoder.decode(value, { stream: !done });
+      }
+      let sseContent = '';
+      for (const ln of rawText.split('\n')) {
+        if (!ln.startsWith('data: ')) continue;
+        const payload = ln.slice(6).trim();
+        if (payload === '[DONE]') continue;
+        try {
+          const p = JSON.parse(payload);
+          sseContent += p.token ?? p.response ?? p.message ?? '';
+        } catch { if (payload) sseContent += payload; }
+      }
+      const data = sseContent
+        ? { response: sseContent, message: sseContent }
+        : JSON.parse(rawText);
       const reply = data.response || data.message || '';
       if (reply.includes('Synth API online') || reply.includes('full agent loop')) {
         setApiStatus('placeholder');
@@ -421,10 +454,15 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         setApiStatus('ok');
         setMessages(prev => [...prev, { id: Date.now()+'s', role:'synth', content:reply, ts:Date.now() }]);
       }
-    } catch {
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') {
+        setWarmingUp(false);
+        setMessages((prev: any[]) => [...prev, { role: 'assistant', content: 'Request timed out — the server may be starting up. Please try again in a moment.' }]);
+      } else {
       setApiStatus('error');
       setMessages(prev => [...prev, { id: Date.now()+'e', role:'synth', content:'Unable to connect to Synth. Please check your connection and try again.', ts:Date.now() }]);
-    } finally { setLoading(false); }
+      }
+    } finally { setLoading(false); setWarmingUp(false); }
   };
   useEffect(() => { if (!autoSent && initMsg) { setAutoSent(true); sendMessage(initMsg); } }, []);
   const buildReport = (): DiagnosticReport => ({
@@ -472,6 +510,11 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         ))}
         {loading && (
           <div style={{ display:'flex', gap:10, marginBottom:14 }}>
+        {warmingUp && (
+          <p className="text-xs text-amber-500 animate-pulse px-4 py-1">
+            Synth is warming up — this may take a moment…
+          </p>
+        )}
             <div style={iconStyle}><Zap size={14} color='#fff' fill='#fff' /></div>
             <div style={{ padding:'14px 18px', borderRadius:'16px 16px 16px 4px', background:'var(--bg-card)', border:'1px solid var(--border-card)', display:'flex', gap:6, alignItems:'center' }}>
               {[0,1,2].map(i => <div key={i} style={{ width:7, height:7, borderRadius:'50%', background:'var(--accent)', opacity:0.4+i*0.3 }} />)}
