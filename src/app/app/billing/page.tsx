@@ -96,7 +96,7 @@ export default function BillingPage() {
           <Card className="bg-green-50 border-green-200">
             <CardContent className="p-4 flex items-center gap-3">
               <CheckCircle className="w-5 h-5 text-green-600" />
-              <p className="text-green-800 font-medium">Subscription activated — welcome to TechPulse Pro!</p>
+              <p className="text-green-800 font-medium">Subscription activated â welcome to TechPulse Pro!</p>
             </CardContent>
           </Card>
         )}
@@ -136,14 +136,14 @@ export default function BillingPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">Current Plan</h3>
             {!loading && status && (
-              <Badge variant={isActive ? 'success' : isTrialing ? 'warning' : isPastDue ? 'destructive' : 'default'}>
+              <Badge variant={isActive ? 'success' : isTrialing ? 'warning' : isPastDue ? 'error' : 'default'}>
                 {isActive ? 'Active' : isTrialing ? 'Free Trial' : isPastDue ? 'Past Due' : status.status === 'canceled' ? 'Canceled' : 'No Subscription'}
               </Badge>
             )}
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="py-8 text-center text-gray-400 animate-pulse">Loading…</div>
+              <div className="py-8 text-center text-gray-400 animate-pulse">Loadingâ¦</div>
             ) : hasSubscription && status ? (
               <>
                 <div className="flex items-center justify-between py-4 border-b border-gray-100">
@@ -186,7 +186,7 @@ export default function BillingPage() {
             ) : (
               <div className="py-6 text-center">
                 <CreditCard className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No active subscription — choose a plan below.</p>
+                <p className="text-gray-500">No active subscription â choose a plan below.</p>
               </div>
             )}
           </CardContent>
@@ -212,7 +212,7 @@ export default function BillingPage() {
                       onClick={() => handleSubscribe(plan.priceId)}
                       disabled={checkoutLoading === plan.priceId}
                     >
-                      {checkoutLoading === plan.priceId ? 'Redirecting…' : 'Subscribe'}
+                      {checkoutLoading === plan.priceId ? 'Redirectingâ¦' : 'Subscribe'}
                     </Button>
                   </div>
                 </div>
