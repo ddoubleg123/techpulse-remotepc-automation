@@ -89,13 +89,13 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
     setFileError(''); setShowPasteBox(false); setPdfBase64(undefined); setPdfName(undefined);
     const isPdfFile = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
     if (isPdfFile) {
-      // Read as base64 and send directly to Claude API — no client-side parsing needed
+      // Read as base64 and send directly to Claude API â no client-side parsing needed
       setUploadedFile(file);
       setPdfName(file.name);
       const ab = await file.arrayBuffer();
       const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
       setPdfBase64(b64);
-      setUploadedContent('__pdf__');  // sentinel — actual content sent as document block
+      setUploadedContent('__pdf__');  // sentinel â actual content sent as document block
       return;
     }
     // Plain text files
@@ -163,7 +163,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 background: vin.length >= 10 ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
                 color: vin.length >= 10 ? '#fff' : 'var(--text-3)', fontSize:13, fontWeight:700,
                 display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
-              <Search size={14} /> {lookingUp ? 'Looking upÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¦' : 'Look Up'}
+              <Search size={14} /> {lookingUp ? 'Looking upÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¦' : 'Look Up'}
             </button>
           </div>
           {vin.length > 0 && vin.length < 17 && <div style={{ fontSize:11, color:'var(--text-3)', marginTop:6 }}>{17 - vin.length} characters remaining</div>}
@@ -196,14 +196,14 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
           <div style={{ flex:1, height:1, background:'var(--border-card)' }} />
         </div>
 
-        {/* Upload ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ accept=* so all files show in picker; binary detected in JS */}
+        {/* Upload ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ accept=* so all files show in picker; binary detected in JS */}
         <div onDrop={handleDrop} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
           onClick={() => !uploadedFile && fileRef.current?.click()}
           style={{ padding:'28px 20px', borderRadius:16, textAlign:'center', cursor: uploadedFile ? 'default' : 'pointer',
             background: dragOver ? 'rgba(0,195,255,0.06)' : uploadedFile ? 'rgba(16,185,129,0.06)' : 'var(--bg-feed)',
             border: `2px dashed ${dragOver ? 'var(--accent)' : uploadedFile ? '#10b981' : fileError ? '#ef4444' : 'var(--border-card)'}`,
             transition:'all 0.2s', marginBottom: fileError ? 8 : 16 }}>
-          {/* accept=* ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ all files visible in picker; PDF/binary rejected in handleFile */}
+          {/* accept=* ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ all files visible in picker; PDF/binary rejected in handleFile */}
           <input ref={fileRef} type='file' style={{ display:'none' }}
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           {uploadedFile ? (
@@ -227,7 +227,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 <Upload size={22} color='var(--text-3)' />
               </div>
               <div style={{ fontSize:14, fontWeight:700, color:'var(--text-1)', marginBottom:4 }}>Upload Diagnostic Report</div>
-              <div style={{ fontSize:13, color:'var(--text-3)' }}>Drag & drop or click to browse ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ all file types accepted</div>
+              <div style={{ fontSize:13, color:'var(--text-3)' }}>Drag & drop or click to browse ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ all file types accepted</div>
             </>
           )}
         </div>
@@ -242,8 +242,8 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
           <div style={{ padding:'16px', borderRadius:12, background:'rgba(245,158,11,0.06)', border:'1px solid rgba(245,158,11,0.25)', marginBottom:16 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
               <AlertTriangle size={14} color='#f59e0b' />
-              <span style={{ fontSize:13, fontWeight:700, color:'#f59e0b' }}>PDF detected ÃÂ¢ÃÂÃÂ paste the text instead</span>
-              <button onClick={() => { setShowPasteBox(false); setPastedContent(''); }} style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:18, lineHeight:1 }}>ÃÂÃÂ</button>
+              <span style={{ fontSize:13, fontWeight:700, color:'#f59e0b' }}>PDF detected ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ paste the text instead</span>
+              <button onClick={() => { setShowPasteBox(false); setPastedContent(''); }} style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:18, lineHeight:1 }}>ÃÂÃÂÃÂÃÂ</button>
             </div>
             <p style={{ fontSize:12, color:'var(--text-2)', margin:'0 0 10px', lineHeight:1.5 }}>Open your PDF, select all text (Ctrl+A), copy it (Ctrl+C), then paste it below.</p>
             <textarea
@@ -256,7 +256,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
             {pastedContent.trim().length > 20 && (
               <button onClick={() => { setUploadedContent(pastedContent); setShowPasteBox(false); setUploadedFile({ name:'pasted-report.txt', size: pastedContent.length } as File); }}
                 style={{ marginTop:10, width:'100%', padding:'10px', borderRadius:9, background:'linear-gradient(135deg,#f59e0b,#d97706)', border:'none', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer' }}>
-                Use This Text ÃÂ¢ÃÂÃÂ
+                Use This Text ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
               </button>
             )}
           </div>
@@ -296,12 +296,16 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         setCodes(extracted.length > 0 ? extracted : [{ code:'', description:'' }]);
       }
       const nl = String.fromCharCode(10);
-      // Skip line extraction if content looks like PDF/binary garbage
-      const looksClean = !uploadedReport.includes('%PDF') && !uploadedReport.includes('endobj') && !uploadedReport.includes('stream');
-      if (looksClean) {
-      const lines = uploadedReport.split(nl).filter((l: string) => l.trim().length > 15 && l.trim().length < 150).slice(0, 4);
-      if (lines.length > 0) setSymptoms(lines.join(nl));
-    }
+      // Only extract symptoms from clean text — never from PDFs or binary files
+      const isPdfContent = !uploadedReport || uploadedReport === '__pdf__' || uploadedReport.startsWith('%PDF') || uploadedReport.includes('obj<') || uploadedReport.includes('00000 n');
+      if (!isPdfContent) {
+        const nl2 = String.fromCharCode(10);
+        const readable = uploadedReport.split(nl2).filter((l: string) => {
+          const t = l.trim();
+          return t.length > 15 && t.length < 150 && !t.includes('obj<') && !t.includes('stream') && !t.includes('endobj');
+        }).slice(0, 4);
+        if (readable.length > 0) setSymptoms(readable.join(nl2));
+      }
   }, [uploadedReport]);
   const addCode = () => setCodes(p => [...p, { code:'', description:'' }]);
   const removeCode = (i: number) => setCodes(p => p.filter((_,idx) => idx !== i));
@@ -315,13 +319,13 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         <div style={{ padding:'12px 16px', borderRadius:12, background:'var(--bg-feed)', border:'1px solid var(--border-card)', marginBottom:24, display:'flex', alignItems:'center', gap:10 }}>
           <Car size={15} color='var(--accent)' />
           <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)' }}>
-            {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : 'Vehicle'}
+            {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : 'Vehicle'}
           </span>
           {uploadedReport && <span style={{ marginLeft:'auto', padding:'2px 8px', borderRadius:6, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.2)', fontSize:11, fontWeight:700, color:'#10b981' }}>{fileName || 'Report loaded'}</span>}
         </div>
         <div style={{ marginBottom:20 }}>
           <h2 style={{ fontSize:22, fontWeight:800, color:'var(--text-1)', margin:'0 0 6px' }}>DTC Codes</h2>
-          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>{uploadedReport && validCodes.length > 0 ? 'Codes extracted from your report ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ review and edit as needed.' : 'Enter fault codes from your scanner, or describe the symptoms.'}</p>
+          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>{uploadedReport && validCodes.length > 0 ? 'Codes extracted from your report ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ review and edit as needed.' : 'Enter fault codes from your scanner, or describe the symptoms.'}</p>
         </div>
         <div style={{ marginBottom:16 }}>
           {codes.map((c, i) => (
@@ -368,7 +372,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     vehicle.year && vehicle.make ? `Vehicle: ${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : null,
     codes.length > 0 ? `DTC Codes: ${codes.map(c => c.code + (c.description ? ' (' + c.description + ')' : '')).join(', ')}` : null,
     symptoms ? `Symptoms: ${symptoms}` : null,
-    (uploadedReport && uploadedReport !== '__pdf__') ? `${nl}Scanner Data (from ${fileName || 'uploaded file'}):${nl}${uploadedReport.substring(0, 1500)}` : null,
+    (uploadedReport && uploadedReport !== '__pdf__' && !pdfBase64 && !uploadedReport.startsWith('%PDF') && !uploadedReport.includes('obj<')) ? `${NL}Scanner Data (${fileName || 'file'}):${NL}${uploadedReport.substring(0, 1200)}` : null,
   ].filter(Boolean).join(nl);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -379,7 +383,19 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages]);
   const sendMessage = async (text: string) => {
     if (!text.trim() || loading) return;
-    const userMsg: Message = { id: Date.now()+'u', role:'user', content:text, ts:Date.now() };
+    // Clean user bubble — never show binary/huge initMsg verbatim
+    const isPdfSession = (pdfBase64 || (uploadedReport && uploadedReport.startsWith('%PDF'))) && messages.length === 0;
+    const isBigInit = messages.length === 0 && text.length > 400;
+    let bubbleText = text;
+    if (isPdfSession || isBigInit) {
+      bubbleText = [
+        vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : null,
+        codes.length > 0 ? `Codes: ${codes.map(c => c.code).join(', ')}` : null,
+        pdfBase64 ? `Document: ${pdfName || 'diagnostic_report.pdf'}` : null,
+        (symptoms && !symptoms.startsWith('%PDF') && !symptoms.includes('obj<') && symptoms.length < 300) ? `Symptoms: ${symptoms}` : null,
+      ].filter(Boolean).join(String.fromCharCode(10)) || 'Starting diagnostic analysis...';
+    }
+    const userMsg: Message = { id: Date.now()+'u', role:'user', content:bubbleText, ts:Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
@@ -433,7 +449,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
           {apiStatus==='placeholder' && <span style={{ padding:'2px 8px', borderRadius:6, background:'rgba(245,158,11,0.1)', border:'1px solid rgba(245,158,11,0.25)', fontSize:11, color:'#f59e0b' }}>Full engine deploying</span>}
         </div>
         <div style={{ display:'flex', gap:8 }}>
-          <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}>ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Back</button>
+          <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}>ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Back</button>
           <button onClick={() => messages.length > 1 && onReport(buildReport(), messages)} disabled={messages.length < 2}
             style={{ padding:'6px 14px', borderRadius:8, background: messages.length > 1 ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)', border:'none', color: messages.length > 1 ? '#fff' : 'var(--text-3)', fontSize:12, fontWeight:700, cursor: messages.length > 1 ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', gap:6 }}>
             <FileText size={13} /> View Report
@@ -466,7 +482,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       <div style={{ padding:'14px 20px', borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', display:'flex', gap:10, flexShrink:0 }}>
         <textarea rows={1} value={input} onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }}}
-          placeholder='Ask Synth a follow-up question or provide more detailsÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¦'
+          placeholder='Ask Synth a follow-up question or provide more detailsÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¦'
           style={{ flex:1, padding:'11px 14px', borderRadius:11, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-1)', fontSize:13, outline:'none', resize:'none' }} />
         <button onClick={() => sendMessage(input)} disabled={loading || !input.trim()}
           style={{ width:42, height:42, borderRadius:11, background:'linear-gradient(135deg,#00c3ff,#0055ff)', border:'none', display:'flex', alignItems:'center', justifyContent:'center', cursor: loading||!input.trim()?'not-allowed':'pointer', opacity: loading||!input.trim()?0.5:1, flexShrink:0 }}>
@@ -498,7 +514,7 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack }:
           <div style={{ padding:'12px 14px', borderRadius:10, background:'var(--bg-feed)', border:'1px solid var(--border-card)' }}>
             <div style={{ fontSize:12, color:'var(--text-3)', marginBottom:4 }}>Vehicle</div>
             <div style={{ fontSize:14, fontWeight:600, color:'var(--text-1)' }}>
-              {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine?' ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ '+vehicle.engine:''}` : `VIN: ${vehicle.vin}`}
+              {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine?' ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ '+vehicle.engine:''}` : `VIN: ${vehicle.vin}`}
             </div>
           </div>
         </div>
@@ -575,7 +591,7 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
         <div style={{ marginBottom:28 }}>
           <label style={{ fontSize:13, fontWeight:600, color:'var(--text-2)', display:'block', marginBottom:12 }}>Was the vehicle repaired?</label>
           <div style={{ display:'flex', gap:10 }}>
-            {[{v:true,label:'Yes ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Fixed'},{v:false,label:'Not Yet'}].map(({v,label}) => (
+            {[{v:true,label:'Yes ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Fixed'},{v:false,label:'Not Yet'}].map(({v,label}) => (
               <button key={String(v)} onClick={() => setRepaired(v)} style={{ flex:1, padding:'12px', borderRadius:12, cursor:'pointer', background: repaired===v ? (v?'rgba(16,185,129,0.12)':'rgba(245,158,11,0.12)') : 'var(--bg-input)', border: repaired===v ? `1px solid ${v?'#10b981':'#f59e0b'}` : '1px solid var(--border-input)', color: repaired===v ? (v?'#10b981':'#f59e0b') : 'var(--text-2)', fontSize:13, fontWeight:600, transition:'all 0.15s' }}>{label}</button>
             ))}
           </div>
