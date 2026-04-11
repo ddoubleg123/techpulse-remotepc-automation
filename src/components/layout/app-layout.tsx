@@ -13,7 +13,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const token = params.get('token');
     const email = params.get('email');
     if (token && email) {
-      signIn({ id: '1', email, name: email.split('@')[0] }, token);
+      signIn({ id: '1', email, name: email.split('@')[0], hasPaymentMethodOnFile: false }, token);
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
