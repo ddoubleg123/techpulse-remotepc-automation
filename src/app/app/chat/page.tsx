@@ -40,7 +40,7 @@ function isBinaryContent(content: string): boolean {
   const nonPrintable = content.split('').filter(
     (c: string) => c.charCodeAt(0) < 32 && c !== '\n' && c !== '\r' && c !== '\t'
   ).length;
-  return (nonPrintable / Math.max(content.length, 1)) > 0.03;
+  return (nonPrintable / Math.max(content.length, 1)) > 0.15;
 }
 
 function StepBar({ step }: { step: Step }) {
@@ -70,58 +70,42 @@ function StepBar({ step }: { step: Step }) {
   );
 }
 
-function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: string, fileName?: string, pdfBase64?: string, pdfName?: string) => void }) {
+function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: string, fileName?: string) => void }) {
   const [vin, setVin] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedContent, setUploadedContent] = useState('');
   const [fileError, setFileError] = useState('');
-  const [showPasteBox, setShowPasteBox] = useState(false);
-  const [pdfBase64, setPdfBase64] = useState<string|undefined>();
-  const [pdfName, setPdfName] = useState<string|undefined>();
-  const [pastedContent, setPastedContent] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
   const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', vin:'' });
   const [showManual, setShowManual] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = async (file: File) => {
-    setFileError(''); setShowPasteBox(false); setPdfBase64(undefined); setPdfName(undefined);
-    const isPdfFile = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
-    if (isPdfFile) {
-      // Read as base64 and send directly to Claude API ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ no client-side parsing needed
-      setUploadedFile(file);
-      setPdfName(file.name);
-      const ab = await file.arrayBuffer();
-      const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
-      setPdfBase64(b64);
-      setUploadedContent('__pdf__');  // sentinel ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ actual content sent as document block
-      return;
-    }
-    // Plain text files
+  const handleFile = (file: File) => {
+    setFileError('');
     setUploadedFile(file);
     const reader = new FileReader();
     reader.onload = (e) => {
       const raw = e.target?.result as string;
-      const isPdf = raw.startsWith('%PDF') || raw.substring(0, 10).includes('%PDF');
-      if (isPdf) {
-        setPdfName(file.name);
-        file.arrayBuffer().then(ab => {
-          const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
-          setPdfBase64(b64); setUploadedContent('__pdf__');
-        });
+      // Detect binary/PDF content
+      if (isBinaryContent(raw)) {
+        setFileError(
+          file.name.toLowerCase().endsWith('.pdf')
+            ? 'PDF files cannot be read as text. In your scanner tool, use Save/Export to save as .txt or .csv instead.'
+            : 'This file appears to contain binary data. Please use a plain text export from your scanner (.txt or .csv).'
+        );
+        setUploadedFile(null);
         return;
       }
-      if (isBinaryContent(raw)) {
-        setFileError('This file appears to be binary. Please use a plain text export (.txt or .csv).');
-        setUploadedFile(null); return;
-      }
-      setUploadedContent(cleanFileContent(raw));
+      const cleaned = cleanFileContent(raw);
+      setUploadedContent(cleaned);
+      // Auto-detect VIN
       const vinMatch = raw.match(/\b[A-HJ-NPR-Z0-9]{17}\b/);
       if (vinMatch) setVin(vinMatch[0]);
     };
     reader.readAsText(file);
   };
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setDragOver(false);
     const file = e.dataTransfer.files[0];
@@ -137,7 +121,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
     setShowManual(true);
   };
 
-  const canProceed = !!uploadedFile || pastedContent.trim().length > 20 || vin.length >= 10 || (vehicle.year && vehicle.make && vehicle.model && vehicle.engine);
+  const canProceed = !!uploadedFile || vin.length >= 10 || (vehicle.year && vehicle.make && vehicle.model && vehicle.engine);
   const inp: React.CSSProperties = { width:'100%', padding:'11px 14px', borderRadius:10, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-1)', fontSize:14, outline:'none', boxSizing:'border-box' };
 
   return (
@@ -163,7 +147,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 background: vin.length >= 10 ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
                 color: vin.length >= 10 ? '#fff' : 'var(--text-3)', fontSize:13, fontWeight:700,
                 display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
-              <Search size={14} /> {lookingUp ? 'Looking upÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¦' : 'Look Up'}
+              <Search size={14} /> {lookingUp ? 'Looking upÃ¢ÂÂ¦' : 'Look Up'}
             </button>
           </div>
           {vin.length > 0 && vin.length < 17 && <div style={{ fontSize:11, color:'var(--text-3)', marginTop:6 }}>{17 - vin.length} characters remaining</div>}
@@ -196,14 +180,14 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
           <div style={{ flex:1, height:1, background:'var(--border-card)' }} />
         </div>
 
-        {/* Upload ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ accept=* so all files show in picker; binary detected in JS */}
+        {/* Upload Ã¢ÂÂ accept=* so all files show in picker; binary detected in JS */}
         <div onDrop={handleDrop} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
           onClick={() => !uploadedFile && fileRef.current?.click()}
           style={{ padding:'28px 20px', borderRadius:16, textAlign:'center', cursor: uploadedFile ? 'default' : 'pointer',
             background: dragOver ? 'rgba(0,195,255,0.06)' : uploadedFile ? 'rgba(16,185,129,0.06)' : 'var(--bg-feed)',
             border: `2px dashed ${dragOver ? 'var(--accent)' : uploadedFile ? '#10b981' : fileError ? '#ef4444' : 'var(--border-card)'}`,
             transition:'all 0.2s', marginBottom: fileError ? 8 : 16 }}>
-          {/* accept=* ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ all files visible in picker; PDF/binary rejected in handleFile */}
+          {/* accept=* Ã¢ÂÂ all files visible in picker; PDF/binary rejected in handleFile */}
           <input ref={fileRef} type='file' style={{ display:'none' }}
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           {uploadedFile ? (
@@ -216,7 +200,8 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 <div style={{ fontSize:12, color:'var(--text-3)' }}>{(uploadedFile.size / 1024).toFixed(1)} KB uploaded</div>
                 {vin && <div style={{ fontSize:12, color:'var(--text-2)', marginTop:2 }}>VIN detected: <strong style={{ color:'var(--text-1)', fontFamily:'monospace' }}>{vin}</strong></div>}
               </div>
-              <button onClick={e => { e.stopPropagation(); setUploadedFile(null); setUploadedContent(''); setFileError(''); setShowPasteBox(false); setPastedContent(''); if (fileRef.current) fileRef.current.value = ''; }}
+              <button onClick={e => { e.stopPropagation(); setUploadedFile(null); setUploadedContent(''); setFileError(''); if (fileRef.current) fileRef.current.value = ''; }}
+              setStep(2);
                 style={{ marginLeft:8, width:28, height:28, borderRadius:7, background:'rgba(239,68,68,0.1)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <X size={14} color='#f87171' />
               </button>
@@ -227,7 +212,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 <Upload size={22} color='var(--text-3)' />
               </div>
               <div style={{ fontSize:14, fontWeight:700, color:'var(--text-1)', marginBottom:4 }}>Upload Diagnostic Report</div>
-              <div style={{ fontSize:13, color:'var(--text-3)' }}>Drag & drop or click to browse ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ all file types accepted</div>
+              <div style={{ fontSize:13, color:'var(--text-3)' }}>Drag & drop or click to browse Ã¢ÂÂ all file types accepted</div>
             </>
           )}
         </div>
@@ -238,29 +223,6 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
             <span style={{ fontSize:13, color:'#f87171', lineHeight:1.5 }}>{fileError}</span>
           </div>
         )}
-        {showPasteBox && (
-          <div style={{ padding:'16px', borderRadius:12, background:'rgba(245,158,11,0.06)', border:'1px solid rgba(245,158,11,0.25)', marginBottom:16 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-              <AlertTriangle size={14} color='#f59e0b' />
-              <span style={{ fontSize:13, fontWeight:700, color:'#f59e0b' }}>PDF detected ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ paste the text instead</span>
-              <button onClick={() => { setShowPasteBox(false); setPastedContent(''); }} style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:18, lineHeight:1 }}>ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ</button>
-            </div>
-            <p style={{ fontSize:12, color:'var(--text-2)', margin:'0 0 10px', lineHeight:1.5 }}>Open your PDF, select all text (Ctrl+A), copy it (Ctrl+C), then paste it below.</p>
-            <textarea
-              value={pastedContent}
-              onChange={e => setPastedContent(e.target.value)}
-              placeholder='Paste your diagnostic report text here...'
-              rows={6}
-              style={{ width:'100%', padding:'10px 12px', borderRadius:9, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-1)', fontSize:12, outline:'none', resize:'none', boxSizing:'border-box', lineHeight:1.5 }}
-            />
-            {pastedContent.trim().length > 20 && (
-              <button onClick={() => { setUploadedContent(pastedContent); setShowPasteBox(false); setUploadedFile({ name:'pasted-report.txt', size: pastedContent.length } as File); }}
-                style={{ marginTop:10, width:'100%', padding:'10px', borderRadius:9, background:'linear-gradient(135deg,#f59e0b,#d97706)', border:'none', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer' }}>
-                Use This Text ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ
-              </button>
-            )}
-          </div>
-        )}
 
         <div style={{ padding:'10px 14px', borderRadius:10, background:'var(--bg-feed)', border:'1px solid var(--border-card)', display:'flex', gap:8, alignItems:'flex-start', marginBottom:20 }}>
           <Info size={14} color='var(--text-3)' style={{ flexShrink:0, marginTop:1 }} />
@@ -269,7 +231,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
           </span>
         </div>
 
-        <button onClick={() => canProceed && onNext({ ...vehicle, vin }, uploadedContent || pastedContent || undefined, uploadedFile?.name || (pastedContent ? 'pasted-report.txt' : undefined), pdfBase64, pdfName)}
+        <button onClick={() => canProceed && onNext({ ...vehicle, vin }, uploadedContent || undefined, uploadedFile?.name)}
           disabled={!canProceed}
           style={{ width:'100%', padding:'14px', borderRadius:12,
             background: canProceed ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
@@ -296,16 +258,8 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         setCodes(extracted.length > 0 ? extracted : [{ code:'', description:'' }]);
       }
       const nl = String.fromCharCode(10);
-      // Only extract symptoms from clean text ÃÂ¢ÃÂÃÂ never from PDFs or binary files
-      const isPdfContent = !uploadedReport || uploadedReport === '__pdf__' || uploadedReport.startsWith('%PDF') || uploadedReport.includes('obj<') || uploadedReport.includes('00000 n');
-      if (!isPdfContent) {
-        const nl2 = String.fromCharCode(10);
-        const readable = uploadedReport.split(nl2).filter((l: string) => {
-          const t = l.trim();
-          return t.length > 15 && t.length < 150 && !t.includes('obj<') && !t.includes('stream') && !t.includes('endobj');
-        }).slice(0, 4);
-        if (readable.length > 0) setSymptoms(readable.join(nl2));
-      }
+      const lines = uploadedReport.split(nl).filter((l: string) => l.trim().length > 15 && l.trim().length < 150).slice(0, 4);
+      if (lines.length > 0) setSymptoms(lines.join(nl));
     }
   }, [uploadedReport]);
   const addCode = () => setCodes(p => [...p, { code:'', description:'' }]);
@@ -320,13 +274,13 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         <div style={{ padding:'12px 16px', borderRadius:12, background:'var(--bg-feed)', border:'1px solid var(--border-card)', marginBottom:24, display:'flex', alignItems:'center', gap:10 }}>
           <Car size={15} color='var(--accent)' />
           <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)' }}>
-            {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : 'Vehicle'}
+            {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' Ã¢ÂÂ ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : 'Vehicle'}
           </span>
           {uploadedReport && <span style={{ marginLeft:'auto', padding:'2px 8px', borderRadius:6, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.2)', fontSize:11, fontWeight:700, color:'#10b981' }}>{fileName || 'Report loaded'}</span>}
         </div>
         <div style={{ marginBottom:20 }}>
           <h2 style={{ fontSize:22, fontWeight:800, color:'var(--text-1)', margin:'0 0 6px' }}>DTC Codes</h2>
-          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>{uploadedReport && validCodes.length > 0 ? 'Codes extracted from your report ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ review and edit as needed.' : 'Enter fault codes from your scanner, or describe the symptoms.'}</p>
+          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>{uploadedReport && validCodes.length > 0 ? 'Codes extracted from your report Ã¢ÂÂ review and edit as needed.' : 'Enter fault codes from your scanner, or describe the symptoms.'}</p>
         </div>
         <div style={{ marginBottom:16 }}>
           {codes.map((c, i) => (
@@ -364,8 +318,8 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
   );
 }
 
-function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, pdfName, sessionId, onReport, onBack }:
-  { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; pdfBase64?: string; pdfName?: string; sessionId: string;
+function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, sessionId, onReport, onBack }:
+  { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; sessionId: string;
     onReport: (report: DiagnosticReport, messages: Message[]) => void; onBack: () => void }
 ) {
   const nl = String.fromCharCode(10);
@@ -373,7 +327,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     vehicle.year && vehicle.make ? `Vehicle: ${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : null,
     codes.length > 0 ? `DTC Codes: ${codes.map(c => c.code + (c.description ? ' (' + c.description + ')' : '')).join(', ')}` : null,
     symptoms ? `Symptoms: ${symptoms}` : null,
-    (uploadedReport && uploadedReport !== '__pdf__' && !pdfBase64 && !uploadedReport.startsWith('%PDF') && !uploadedReport.includes('obj<')) ? `${nl}Scanner Data (${fileName || 'file'}):${nl}${uploadedReport.substring(0, 1200)}` : null,
+    uploadedReport ? `${nl}Scanner Data (from ${fileName || 'uploaded file'}):${nl}${uploadedReport.substring(0, 1500)}` : null,
   ].filter(Boolean).join(nl);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -385,19 +339,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages]);
   const sendMessage = async (text: string) => {
     if (!text.trim() || loading) return;
-    // Clean user bubble ÃÂ¢ÃÂÃÂ never show binary/huge initMsg verbatim
-    const isPdfSession = (pdfBase64 || (uploadedReport && uploadedReport.startsWith('%PDF'))) && messages.length === 0;
-    const isBigInit = messages.length === 0 && text.length > 400;
-    let bubbleText = text;
-    if (isPdfSession || isBigInit) {
-      bubbleText = [
-        vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : null,
-        codes.length > 0 ? `Codes: ${codes.map(c => c.code).join(', ')}` : null,
-        pdfBase64 ? `Document: ${pdfName || 'diagnostic_report.pdf'}` : null,
-        (symptoms && !symptoms.startsWith('%PDF') && !symptoms.includes('obj<') && symptoms.length < 300) ? `Symptoms: ${symptoms}` : null,
-      ].filter(Boolean).join(String.fromCharCode(10)) || 'Starting diagnostic analysis...';
-    }
-    const userMsg: Message = { id: Date.now()+'u', role:'user', content:bubbleText, ts:Date.now() };
+    const userMsg: Message = { id: Date.now()+'u', role:'user', content:text, ts:Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
@@ -408,47 +350,37 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       const res = await fetch(SYNTH_API + '/api/diagnostic/stream', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + API_TOKEN },
-        body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...(pdfBase64 && pdfName ? { pdf_base64: pdfBase64, pdf_name: pdfName } : {}) }),
+        body: JSON.stringify({ session_id:sessionId, message:text, vehicle }),
         signal: controller.signal,
       });
         clearTimeout(abortTimer);
         clearTimeout(warmTimer);
         setWarmingUp(false);
       if (!res.ok) {
-        if (res.status === 401) throw new Error('Authentication failed â please sign out and sign back in.');
+        if (res.status === 401) throw new Error('Authentication failed - please sign out and sign back in.');
         if (res.status === 403) throw new Error('Access denied. Please contact support.');
         throw new Error(`Synth is unavailable (${res.status}). Please try again.`);
       }
-      // Stream response body; SSE tokens if available, JSON fallback
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let rawText = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        rawText += decoder.decode(value, { stream: !done });
-      }
+      while (true) { const { done, value } = await reader.read(); if (done) break; rawText += decoder.decode(value, { stream: !done }); }
       let sseContent = '';
       for (const ln of rawText.split('\n')) {
         if (!ln.startsWith('data: ')) continue;
         const payload = ln.slice(6).trim();
         if (payload === '[DONE]') continue;
-        try {
-          const p = JSON.parse(payload);
-          sseContent += p.token ?? p.response ?? p.message ?? '';
-        } catch { if (payload) sseContent += payload; }
+        try { const p = JSON.parse(payload); sseContent += p.token ?? p.response ?? p.message ?? ""; }
+        catch { if (payload) sseContent += payload; }
       }
-      const data = sseContent
-        ? { response: sseContent, message: sseContent }
-        : JSON.parse(rawText);
+      const data = sseContent ? { response: sseContent, message: sseContent } : JSON.parse(rawText);
       const reply = data.response || data.message || '';
       if (reply.includes('Synth API online') || reply.includes('full agent loop')) {
         setApiStatus('placeholder');
         const vLabel = vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}` : vehicle.vin ? `VIN ${vehicle.vin}` : 'vehicle';
-        const docLabel = pdfBase64 ? ` with PDF: ${pdfName}` : '';
         const cLabel = codes.length > 0 ? `${nl}Codes detected: ${codes.map(c=>c.code).join(', ')}` : '';
         setMessages(prev => [...prev, { id: Date.now()+'s', role:'synth',
-          content: `I can see your diagnostic data for the ${vLabel}${docLabel}.${cLabel}${nl}${nl}The full Synth diagnostic engine is being deployed. Please describe your specific question and I will assist with what is available.`,
+          content: `I can see your diagnostic data for the ${vLabel}.${cLabel}${nl}${nl}The full Synth diagnostic engine is being deployed. Please describe your specific question and I will assist with what is available.`,
           ts: Date.now() }]);
       } else {
         setApiStatus('ok');
@@ -457,7 +389,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
         setWarmingUp(false);
-        setMessages((prev: any[]) => [...prev, { role: 'assistant', content: 'Request timed out â the server may be starting up. Please try again in a moment.' }]);
+        setMessages((prev: any[]) => [...prev, { role: 'assistant', content: 'Request timed out - please try again in a moment.' }]);
       } else {
       setApiStatus('error');
       setMessages(prev => [...prev, { id: Date.now()+'e', role:'synth', content:'Unable to connect to Synth. Please check your connection and try again.', ts:Date.now() }]);
@@ -476,7 +408,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   });
   const iconStyle: React.CSSProperties = { width:30, height:30, borderRadius:8, background:'linear-gradient(135deg,#00c3ff,#0055ff)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, alignSelf:'flex-end' };
   return (
-    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', minHeight:0 }}>
+    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
       <div style={{ padding:'10px 20px', borderBottom:'1px solid var(--border-card)', background:'var(--bg-feed)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
           <div style={{ display:'flex', alignItems:'center', gap:6 }}>
@@ -488,14 +420,14 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
           {apiStatus==='placeholder' && <span style={{ padding:'2px 8px', borderRadius:6, background:'rgba(245,158,11,0.1)', border:'1px solid rgba(245,158,11,0.25)', fontSize:11, color:'#f59e0b' }}>Full engine deploying</span>}
         </div>
         <div style={{ display:'flex', gap:8 }}>
-          <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}>ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Back</button>
+          <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}>Ã¢ÂÂ Back</button>
           <button onClick={() => messages.length > 1 && onReport(buildReport(), messages)} disabled={messages.length < 2}
             style={{ padding:'6px 14px', borderRadius:8, background: messages.length > 1 ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)', border:'none', color: messages.length > 1 ? '#fff' : 'var(--text-3)', fontSize:12, fontWeight:700, cursor: messages.length > 1 ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', gap:6 }}>
             <FileText size={13} /> View Report
           </button>
         </div>
       </div>
-      <div style={{ flex:1, overflowY:'auto', padding:'20px', minHeight:0 }}>
+      <div style={{ flex:1, overflowY:'auto', padding:'20px' }}>
         {messages.map(msg => (
           msg.role === 'user' ? (
             <div key={msg.id} style={{ display:'flex', justifyContent:'flex-end', marginBottom:14 }}>
@@ -512,7 +444,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
           <div style={{ display:'flex', gap:10, marginBottom:14 }}>
         {warmingUp && (
           <p className="text-xs text-amber-500 animate-pulse px-4 py-1">
-            Synth is warming up â this may take a momentâ¦
+            Synth is warming up - this may take a moment...
           </p>
         )}
             <div style={iconStyle}><Zap size={14} color='#fff' fill='#fff' /></div>
@@ -526,7 +458,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       <div style={{ padding:'14px 20px', borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', display:'flex', gap:10, flexShrink:0 }}>
         <textarea rows={1} value={input} onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }}}
-          placeholder='Ask Synth a follow-up question or provide more detailsÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¦'
+          placeholder='Ask Synth a follow-up question or provide more detailsÃ¢ÂÂ¦'
           style={{ flex:1, padding:'11px 14px', borderRadius:11, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-1)', fontSize:13, outline:'none', resize:'none' }} />
         <button onClick={() => sendMessage(input)} disabled={loading || !input.trim()}
           style={{ width:42, height:42, borderRadius:11, background:'linear-gradient(135deg,#00c3ff,#0055ff)', border:'none', display:'flex', alignItems:'center', justifyContent:'center', cursor: loading||!input.trim()?'not-allowed':'pointer', opacity: loading||!input.trim()?0.5:1, flexShrink:0 }}>
@@ -558,7 +490,7 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack }:
           <div style={{ padding:'12px 14px', borderRadius:10, background:'var(--bg-feed)', border:'1px solid var(--border-card)' }}>
             <div style={{ fontSize:12, color:'var(--text-3)', marginBottom:4 }}>Vehicle</div>
             <div style={{ fontSize:14, fontWeight:600, color:'var(--text-1)' }}>
-              {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine?' ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ '+vehicle.engine:''}` : `VIN: ${vehicle.vin}`}
+              {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine?' Ã¢ÂÂ '+vehicle.engine:''}` : `VIN: ${vehicle.vin}`}
             </div>
           </div>
         </div>
@@ -635,7 +567,7 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
         <div style={{ marginBottom:28 }}>
           <label style={{ fontSize:13, fontWeight:600, color:'var(--text-2)', display:'block', marginBottom:12 }}>Was the vehicle repaired?</label>
           <div style={{ display:'flex', gap:10 }}>
-            {[{v:true,label:'Yes ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Fixed'},{v:false,label:'Not Yet'}].map(({v,label}) => (
+            {[{v:true,label:'Yes Ã¢ÂÂ Fixed'},{v:false,label:'Not Yet'}].map(({v,label}) => (
               <button key={String(v)} onClick={() => setRepaired(v)} style={{ flex:1, padding:'12px', borderRadius:12, cursor:'pointer', background: repaired===v ? (v?'rgba(16,185,129,0.12)':'rgba(245,158,11,0.12)') : 'var(--bg-input)', border: repaired===v ? `1px solid ${v?'#10b981':'#f59e0b'}` : '1px solid var(--border-input)', color: repaired===v ? (v?'#10b981':'#f59e0b') : 'var(--text-2)', fontSize:13, fontWeight:600, transition:'all 0.15s' }}>{label}</button>
             ))}
           </div>
@@ -655,8 +587,6 @@ export default function ChatPage() {
   const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', vin:'' });
   const [uploadedReport, setUploadedReport] = useState<string|undefined>();
   const [fileName, setFileName] = useState<string|undefined>();
-  const [pdfBase64, setPdfBase64] = useState<string|undefined>();
-  const [pdfName, setPdfName] = useState<string|undefined>();
   const [codes, setCodes] = useState<DtcCode[]>([]);
   const [symptoms, setSymptoms] = useState('');
   const [report, setReport] = useState<DiagnosticReport|null>(null);
@@ -674,18 +604,19 @@ export default function ChatPage() {
   if (!user) return null;
   const restart = () => {
     setStep('vin'); setVehicle({ year:'', make:'', model:'', engine:'', vin:'' });
-    setUploadedReport(undefined); setFileName(undefined); setPdfBase64(undefined); setPdfName(undefined);
+    setUploadedReport(undefined); setFileName(undefined);
     setCodes([]); setSymptoms(''); setReport(null); setChatMessages([]);
     localStorage.removeItem('synth-session-id');
   };
   return (
-    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-page)', minHeight:0 }}>
+    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-page)' }}>
       <StepBar step={step} />
-      {step==='vin'      && <VinStep onNext={(v,r,fn,pb,pn) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setPdfBase64(pb); setPdfName(pn); setStep('codes'); }} />}
+      {step==='vin'      && <VinStep onNext={(v,r,fn) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setStep('codes'); }} />}
       {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} onNext={(c,s) => { setCodes(c); setSymptoms(s); setStep('chat'); }} onBack={() => setStep('vin')} />}
-      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} fileName={fileName} pdfBase64={pdfBase64} pdfName={pdfName} sessionId={sessionId} onReport={(r,msgs) => { setReport(r); setChatMessages(msgs); setStep('report'); }} onBack={() => setStep('codes')} />}
+      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} fileName={fileName} sessionId={sessionId} onReport={(r,msgs) => { setReport(r); setChatMessages(msgs); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && report && <ReportStep report={report} vehicle={vehicle} codes={codes} messages={chatMessages} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep onRestart={restart} />}
     </div>
   );
                        }
+
