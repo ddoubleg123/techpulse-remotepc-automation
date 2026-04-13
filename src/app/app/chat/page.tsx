@@ -189,7 +189,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
             transition:'all 0.2s', marginBottom: fileError ? 8 : 16 }}>
           {/* accept=*  all files visible in picker; PDF/binary rejected in handleFile */}
           <input ref={fileRef} type='file' style={{ display:'none' }}
-            onChange={e => { handleFile(e.target.files?.[0]); setStep(2); }} />
+            onChange={e => { const f = e.target.files?.[0]; if (f) { handleFile(f); setStep(2); } }} />
           {uploadedFile ? (
             <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10 }}>
               <div style={{ width:36, height:36, borderRadius:10, background:'rgba(16,185,129,0.15)', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -618,6 +618,7 @@ export default function ChatPage() {
     </div>
   );
                        }
+
 
 
 
