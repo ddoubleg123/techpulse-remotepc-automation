@@ -99,6 +99,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
       }
       const cleaned = cleanFileContent(raw);
       setUploadedContent(cleaned);
+      setStep(2);
       // Auto-detect VIN
       const vinMatch = raw.match(/\b[A-HJ-NPR-Z0-9]{17}\b/);
       if (vinMatch) setVin(vinMatch[0]);
@@ -201,7 +202,6 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 {vin && <div style={{ fontSize:12, color:'var(--text-2)', marginTop:2 }}>VIN detected: <strong style={{ color:'var(--text-1)', fontFamily:'monospace' }}>{vin}</strong></div>}
               </div>
               <button onClick={e => { e.stopPropagation(); setUploadedFile(null); setUploadedContent(''); setFileError(''); if (fileRef.current) fileRef.current.value = ''; }}
-              setStep(2);
                 style={{ marginLeft:8, width:28, height:28, borderRadius:7, background:'rgba(239,68,68,0.1)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <X size={14} color='#f87171' />
               </button>
@@ -619,5 +619,6 @@ export default function ChatPage() {
     </div>
   );
                        }
+
 
 
