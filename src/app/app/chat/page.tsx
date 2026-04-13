@@ -147,7 +147,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 background: vin.length >= 10 ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
                 color: vin.length >= 10 ? '#fff' : 'var(--text-3)', fontSize:13, fontWeight:700,
                 display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
-              <Search size={14} /> {lookingUp ? 'Looking upÃ¢ÂÂ¦' : 'Look Up'}
+              <Search size={14} /> {lookingUp ? 'Looking up' : 'Look Up'}
             </button>
           </div>
           {vin.length > 0 && vin.length < 17 && <div style={{ fontSize:11, color:'var(--text-3)', marginTop:6 }}>{17 - vin.length} characters remaining</div>}
@@ -180,14 +180,14 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
           <div style={{ flex:1, height:1, background:'var(--border-card)' }} />
         </div>
 
-        {/* Upload Ã¢ÂÂ accept=* so all files show in picker; binary detected in JS */}
+        {/* Upload  accept=* so all files show in picker; binary detected in JS */}
         <div onDrop={handleDrop} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
           onClick={() => !uploadedFile && fileRef.current?.click()}
           style={{ padding:'28px 20px', borderRadius:16, textAlign:'center', cursor: uploadedFile ? 'default' : 'pointer',
             background: dragOver ? 'rgba(0,195,255,0.06)' : uploadedFile ? 'rgba(16,185,129,0.06)' : 'var(--bg-feed)',
             border: `2px dashed ${dragOver ? 'var(--accent)' : uploadedFile ? '#10b981' : fileError ? '#ef4444' : 'var(--border-card)'}`,
             transition:'all 0.2s', marginBottom: fileError ? 8 : 16 }}>
-          {/* accept=* Ã¢ÂÂ all files visible in picker; PDF/binary rejected in handleFile */}
+          {/* accept=*  all files visible in picker; PDF/binary rejected in handleFile */}
           <input ref={fileRef} type='file' style={{ display:'none' }}
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           {uploadedFile ? (
@@ -212,7 +212,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 <Upload size={22} color='var(--text-3)' />
               </div>
               <div style={{ fontSize:14, fontWeight:700, color:'var(--text-1)', marginBottom:4 }}>Upload Diagnostic Report</div>
-              <div style={{ fontSize:13, color:'var(--text-3)' }}>Drag & drop or click to browse Ã¢ÂÂ all file types accepted</div>
+              <div style={{ fontSize:13, color:'var(--text-3)' }}>Drag & drop or click to browse  all file types accepted</div>
             </>
           )}
         </div>
@@ -274,13 +274,13 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         <div style={{ padding:'12px 16px', borderRadius:12, background:'var(--bg-feed)', border:'1px solid var(--border-card)', marginBottom:24, display:'flex', alignItems:'center', gap:10 }}>
           <Car size={15} color='var(--accent)' />
           <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)' }}>
-            {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' Ã¢ÂÂ ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : 'Vehicle'}
+            {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? '  ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : 'Vehicle'}
           </span>
           {uploadedReport && <span style={{ marginLeft:'auto', padding:'2px 8px', borderRadius:6, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.2)', fontSize:11, fontWeight:700, color:'#10b981' }}>{fileName || 'Report loaded'}</span>}
         </div>
         <div style={{ marginBottom:20 }}>
           <h2 style={{ fontSize:22, fontWeight:800, color:'var(--text-1)', margin:'0 0 6px' }}>DTC Codes</h2>
-          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>{uploadedReport && validCodes.length > 0 ? 'Codes extracted from your report Ã¢ÂÂ review and edit as needed.' : 'Enter fault codes from your scanner, or describe the symptoms.'}</p>
+          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>{uploadedReport && validCodes.length > 0 ? 'Codes extracted from your report  review and edit as needed.' : 'Enter fault codes from your scanner, or describe the symptoms.'}</p>
         </div>
         <div style={{ marginBottom:16 }}>
           {codes.map((c, i) => (
@@ -420,7 +420,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, sessionI
           {apiStatus==='placeholder' && <span style={{ padding:'2px 8px', borderRadius:6, background:'rgba(245,158,11,0.1)', border:'1px solid rgba(245,158,11,0.25)', fontSize:11, color:'#f59e0b' }}>Full engine deploying</span>}
         </div>
         <div style={{ display:'flex', gap:8 }}>
-          <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}>Ã¢ÂÂ Back</button>
+          <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}> Back</button>
           <button onClick={() => messages.length > 1 && onReport(buildReport(), messages)} disabled={messages.length < 2}
             style={{ padding:'6px 14px', borderRadius:8, background: messages.length > 1 ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)', border:'none', color: messages.length > 1 ? '#fff' : 'var(--text-3)', fontSize:12, fontWeight:700, cursor: messages.length > 1 ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', gap:6 }}>
             <FileText size={13} /> View Report
@@ -458,7 +458,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, sessionI
       <div style={{ padding:'14px 20px', borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', display:'flex', gap:10, flexShrink:0 }}>
         <textarea rows={1} value={input} onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }}}
-          placeholder='Ask Synth a follow-up question or provide more detailsÃ¢ÂÂ¦'
+          placeholder='Ask Synth a follow-up question or provide more details'
           style={{ flex:1, padding:'11px 14px', borderRadius:11, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-1)', fontSize:13, outline:'none', resize:'none' }} />
         <button onClick={() => sendMessage(input)} disabled={loading || !input.trim()}
           style={{ width:42, height:42, borderRadius:11, background:'linear-gradient(135deg,#00c3ff,#0055ff)', border:'none', display:'flex', alignItems:'center', justifyContent:'center', cursor: loading||!input.trim()?'not-allowed':'pointer', opacity: loading||!input.trim()?0.5:1, flexShrink:0 }}>
@@ -490,7 +490,7 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack }:
           <div style={{ padding:'12px 14px', borderRadius:10, background:'var(--bg-feed)', border:'1px solid var(--border-card)' }}>
             <div style={{ fontSize:12, color:'var(--text-3)', marginBottom:4 }}>Vehicle</div>
             <div style={{ fontSize:14, fontWeight:600, color:'var(--text-1)' }}>
-              {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine?' Ã¢ÂÂ '+vehicle.engine:''}` : `VIN: ${vehicle.vin}`}
+              {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine?'  '+vehicle.engine:''}` : `VIN: ${vehicle.vin}`}
             </div>
           </div>
         </div>
@@ -567,7 +567,7 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
         <div style={{ marginBottom:28 }}>
           <label style={{ fontSize:13, fontWeight:600, color:'var(--text-2)', display:'block', marginBottom:12 }}>Was the vehicle repaired?</label>
           <div style={{ display:'flex', gap:10 }}>
-            {[{v:true,label:'Yes Ã¢ÂÂ Fixed'},{v:false,label:'Not Yet'}].map(({v,label}) => (
+            {[{v:true,label:'Yes  Fixed'},{v:false,label:'Not Yet'}].map(({v,label}) => (
               <button key={String(v)} onClick={() => setRepaired(v)} style={{ flex:1, padding:'12px', borderRadius:12, cursor:'pointer', background: repaired===v ? (v?'rgba(16,185,129,0.12)':'rgba(245,158,11,0.12)') : 'var(--bg-input)', border: repaired===v ? `1px solid ${v?'#10b981':'#f59e0b'}` : '1px solid var(--border-input)', color: repaired===v ? (v?'#10b981':'#f59e0b') : 'var(--text-2)', fontSize:13, fontWeight:600, transition:'all 0.15s' }}>{label}</button>
             ))}
           </div>
@@ -619,4 +619,5 @@ export default function ChatPage() {
     </div>
   );
                        }
+
 
