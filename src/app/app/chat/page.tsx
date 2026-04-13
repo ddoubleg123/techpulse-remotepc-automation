@@ -99,7 +99,6 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
       }
       const cleaned = cleanFileContent(raw);
       setUploadedContent(cleaned);
-      setStep(2);
       // Auto-detect VIN
       const vinMatch = raw.match(/\b[A-HJ-NPR-Z0-9]{17}\b/);
       if (vinMatch) setVin(vinMatch[0]);
@@ -190,7 +189,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
             transition:'all 0.2s', marginBottom: fileError ? 8 : 16 }}>
           {/* accept=*  all files visible in picker; PDF/binary rejected in handleFile */}
           <input ref={fileRef} type='file' style={{ display:'none' }}
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+            onChange={e => { handleFile(e.target.files?.[0]); setStep(2); }}} />
           {uploadedFile ? (
             <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10 }}>
               <div style={{ width:36, height:36, borderRadius:10, background:'rgba(16,185,129,0.15)', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -619,6 +618,7 @@ export default function ChatPage() {
     </div>
   );
                        }
+
 
 
 
