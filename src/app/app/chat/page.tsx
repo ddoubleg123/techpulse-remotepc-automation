@@ -462,7 +462,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, sessionI
       </div>
       <div style={{ padding:'14px 20px', borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', display:'flex', gap:10, flexShrink:0 }}>
         <textarea rows={1} value={input} onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }}}
+          onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }}
           placeholder='Ask Synth a follow-up question or provide more details'
           style={{ flex:1, padding:'11px 14px', borderRadius:11, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-1)', fontSize:13, outline:'none', resize:'none' }} />
         <button onClick={() => sendMessage(input)} disabled={loading || !input.trim()}
@@ -624,6 +624,7 @@ export default function ChatPage() {
     </div>
   );
                        }
+
 
 
 
