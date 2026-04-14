@@ -84,6 +84,12 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
   const handleFile = (file: File) => {
     setFileError('');
     setUploadedFile(file);
+    // PDF early exit: show clean label instead of reading binary
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      setUploadedFile(file);
+      setUploadedContent(`[PDF: ${file.name} (${(file.size/1024).toFixed(0)} KB) - Enter DTC codes above and describe symptoms below.]`);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       const raw = e.target?.result as string;
@@ -618,6 +624,7 @@ export default function ChatPage() {
     </div>
   );
                        }
+
 
 
 
