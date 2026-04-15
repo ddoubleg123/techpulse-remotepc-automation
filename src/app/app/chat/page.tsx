@@ -411,6 +411,13 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, sessionI
     estimatedTime: '1-3 hours',
     additionalNotes: symptoms,
   });
+
+  // Warm up Synth API on load (Render free tier spins down after inactivity)
+  useEffect(() => {
+    fetch(`${SYNTH_API}/health`, { method: 'GET' })
+      .then(r => r.ok && setApiStatus('online'))
+      .catch(() => {});
+  }, []);
   const iconStyle: React.CSSProperties = { width:30, height:30, borderRadius:8, background:'linear-gradient(135deg,#00c3ff,#0055ff)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, alignSelf:'flex-end' };
   return (
     <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
@@ -624,6 +631,7 @@ export default function ChatPage() {
     </div>
   );
                        }
+
 
 
 
