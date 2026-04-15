@@ -366,31 +366,10 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, sessionI
         if (res.status === 403) throw new Error('Access denied. Please contact support.');
         throw new Error(`Synth is unavailable (${res.status}). Please try again.`);
       }
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let rawText = '';
-      while (true) { const { done, value } = await reader.read(); if (done) break; rawText += decoder.decode(value, { stream: !done }); }
-      let sseContent = '';
-      for (const ln of rawText.split('\n')) {
-        if (!ln.startsWith('data: ')) continue;
-        const payload = ln.slice(6).trim();
-        if (payload === '[DONE]') continue;
-        try { const p = JSON.parse(payload); sseContent += p.token ?? p.response ?? p.message ?? ""; }
-        catch { if (payload) sseContent += payload; }
-      }
-      const data = sseContent ? { response: sseContent, message: sseContent } : JSON.parse(rawText);
-      const reply = data.response || data.message || '';
-      if (reply.includes('Synth API online') || reply.includes('full agent loop')) {
-        setApiStatus('placeholder');
-        const vLabel = vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}` : vehicle.vin ? `VIN ${vehicle.vin}` : 'vehicle';
-        const cLabel = codes.length > 0 ? `${nl}Codes detected: ${codes.map(c=>c.code).join(', ')}` : '';
-        setMessages(prev => [...prev, { id: Date.now()+'s', role:'synth',
-          content: `I can see your diagnostic data for the ${vLabel}.${cLabel}${nl}${nl}The full Synth diagnostic engine is being deployed. Please describe your specific question and I will assist with what is available.`,
-          ts: Date.now() }]);
-      } else {
-        setApiStatus('ok');
-        setMessages(prev => [...prev, { id: Date.now()+'s', role:'synth', content:reply, ts:Date.now() }]);
-      }
+      const data = await res.json();
+      const responseText = data.response || data.message || data.content || 'No response received from Synth.';
+      setMessages((prev: any[]) => [...prev, { role: 'assistant', content: responseText }]);
+      setApiStatus('ok');
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
         setWarmingUp(false);
@@ -631,6 +610,7 @@ export default function ChatPage() {
     </div>
   );
                        }
+
 
 
 
