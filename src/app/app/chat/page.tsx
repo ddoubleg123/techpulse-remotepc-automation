@@ -366,9 +366,20 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, sessionI
         if (res.status === 403) throw new Error('Access denied. Please contact support.');
         throw new Error(`Synth is unavailable (${res.status}). Please try again.`);
       }
-      const data = await res.json();
-      const responseText = data.response || data.message || data.content || 'No response received from Synth.';
-      setMessages((prev: any[]) => [...prev, { role: 'assistant', content: responseText }]);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let rawText = '';
+      while (true) { const { done, value } = await reader.read(); if (done) break; rawText += decoder.decode(value, { stream: true }); }
+      let sseContent = '';
+      for (const ln of rawText.split('\n')) {
+        if (!ln.startsWith('data: ')) continue;
+        const payload = ln.slice(6).trim();
+        if (payload === '[DONE]') continue;
+        try { const p = JSON.parse(payload); sseContent += p.token ?? p.text ?? p.response ?? p.message ?? ''; }
+        catch { if (payload) sseContent += payload; }
+      }
+      const reply = sseContent || (()=>{ try { return JSON.parse(rawText).response || JSON.parse(rawText).message || ''; } catch { return rawText.trim(); } })();
+      setMessages(prev => [...prev, { id: Date.now()+'s', role: 'synth', content: reply, ts: Date.now() }]);
       setApiStatus('ok');
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
@@ -610,6 +621,7 @@ export default function ChatPage() {
     </div>
   );
                        }
+
 
 
 
