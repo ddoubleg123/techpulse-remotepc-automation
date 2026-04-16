@@ -348,6 +348,18 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, sessionI
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
+    // Read PDF as base64 to send to Synth API
+    let pdfBase64 = '';
+    let pdfName = '';
+    if (uploadedFile && (uploadedFile.type === 'application/pdf' || uploadedFile.name.toLowerCase().endsWith('.pdf'))) {
+      pdfBase64 = await new Promise<string>((resolve) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(((fr.result as string) || '').split(',')[1] || '');
+        fr.readAsDataURL(uploadedFile!);
+      });
+      pdfName = uploadedFile.name;
+    }
+
     try {
       const controller = new AbortController();
       const abortTimer = setTimeout(() => controller.abort(), 60000);
@@ -355,7 +367,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, sessionI
       const res = await fetch(SYNTH_API + '/api/diagnostic/stream', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + API_TOKEN },
-        body: JSON.stringify({ session_id:sessionId, message:text, vehicle }),
+        body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...(pdfBase64 ? { pdf_base64: pdfBase64, pdf_name: pdfName } : {}) }),
         signal: controller.signal,
       });
         clearTimeout(abortTimer);
@@ -423,7 +435,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, sessionI
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}> Back</button>
-          <button onClick={() => messages.length > 1 && onReport(buildReport(), messages)} disabled={messages.length < 2}
+          <button onClick={() => messages.filter((m:any)=>m.role==='synth'||m.role==='assistant').length > 0 && onReport(buildReport(), messages)} disabled={messages.filter((m:any)=>m.role==='synth'||m.role==='assistant').length===0}
             style={{ padding:'6px 14px', borderRadius:8, background: messages.length > 1 ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)', border:'none', color: messages.length > 1 ? '#fff' : 'var(--text-3)', fontSize:12, fontWeight:700, cursor: messages.length > 1 ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', gap:6 }}>
             <FileText size={13} /> View Report
           </button>
@@ -621,6 +633,7 @@ export default function ChatPage() {
     </div>
   );
                        }
+
 
 
 
