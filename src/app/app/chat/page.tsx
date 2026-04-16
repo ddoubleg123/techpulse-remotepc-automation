@@ -241,10 +241,10 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
         onClick={async () => {
           if (!canProceed) return;
           let b64 = '';
-          if (uploadedFile && (uploadedFile.type==='application/pdf'||uploadedFile.name.toLowerCase().endsWith('.pdf'))) {
+          if (uploadedFile && (uploadedFile.type === 'application/pdf' || uploadedFile.name.toLowerCase().endsWith('.pdf'))) {
             b64 = await new Promise<string>(resolve => {
               const fr = new FileReader();
-              fr.onload = () => resolve(((fr.result as string)||'').split(',')[1] || '');
+              fr.onload = () => resolve(((fr.result as string) || '').split(',')[1] || '');
               fr.readAsDataURL(uploadedFile!);
             });
           }
@@ -638,7 +638,6 @@ export default function ChatPage() {
     </div>
   );
                        }
-
 
 
 
