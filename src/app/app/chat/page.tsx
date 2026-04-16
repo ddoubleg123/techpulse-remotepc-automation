@@ -70,11 +70,12 @@ function StepBar({ step }: { step: Step }) {
   );
 }
 
-function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: string, fileName?: string) => void }) {
+function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: string, fileName?: string, pdfBase64?: string) => void }) {
   const [vin, setVin] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedContent, setUploadedContent] = useState('');
+  const [pdfBase64, setPdfBase64] = useState('');
   const [fileError, setFileError] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
   const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', vin:'' });
@@ -88,6 +89,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
       setUploadedFile(file);
       setUploadedContent(`[PDF: ${file.name} (${(file.size/1024).toFixed(0)} KB) - Enter DTC codes above and describe symptoms below.]`);
+      const fr=new FileReader(); fr.onload=()=>setPdfBase64(((fr.result as string)||'').split(',')[1]||''); fr.readAsDataURL(file);
       return;
     }
     const reader = new FileReader();
@@ -236,7 +238,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
           </span>
         </div>
 
-        <button onClick={() => canProceed && onNext({ ...vehicle, vin }, uploadedContent || undefined, uploadedFile?.name)}
+        <button onClick={() => canProceed && onNext({ ...vehicle, vin }, uploadedContent || undefined, uploadedFile?.name, pdfBase64 || undefined)}
           disabled={!canProceed}
           style={{ width:'100%', padding:'14px', borderRadius:12,
             background: canProceed ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
@@ -323,8 +325,8 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
   );
 }
 
-function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfFile, sessionId, onReport, onBack }:
-  { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; pdfFile?: File | null; sessionId: string;
+function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, sessionId, onReport, onBack }:
+  { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; pdfBase64?: string; sessionId: string;
     onReport: (report: DiagnosticReport, messages: Message[]) => void; onBack: () => void }
 ) {
   const nl = String.fromCharCode(10);
@@ -348,17 +350,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfFile,
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
-    // Read PDF as base64 to send to Synth API
-    let pdfBase64 = '';
-    let pdfName = '';
-    if (pdfFile && (pdfFile.type === 'application/pdf' || pdfFile.name.toLowerCase().endsWith('.pdf'))) {
-      pdfBase64 = await new Promise<string>((resolve) => {
-        const fr = new FileReader();
-        fr.onload = () => resolve(((fr.result as string) || '').split(',')[1] || '');
-        fr.readAsDataURL(pdfFile!);
-      });
-      pdfName = pdfFile.name;
-    }
+    const pdfToSend = pdfBase64 || '';
+    const pdfNameToSend = pdfToSend ? (fileName || 'scan.pdf') : '';
 
     try {
       const controller = new AbortController();
@@ -367,7 +360,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfFile,
       const res = await fetch(SYNTH_API + '/api/diagnostic/stream', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + API_TOKEN },
-        body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...(pdfBase64 ? { pdf_base64: pdfBase64, pdf_name: pdfName } : {}) }),
+        body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...(pdfToSend ? { pdf_base64: pdfToSend, pdf_name: pdfNameToSend } : {}) }),
         signal: controller.signal,
       });
         clearTimeout(abortTimer);
@@ -601,6 +594,7 @@ export default function ChatPage() {
   const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', vin:'' });
   const [uploadedReport, setUploadedReport] = useState<string|undefined>();
   const [fileName, setFileName] = useState<string|undefined>();
+  const [uploadedPdfBase64, setUploadedPdfBase64] = useState<string>('');
   const [codes, setCodes] = useState<DtcCode[]>([]);
   const [symptoms, setSymptoms] = useState('');
   const [report, setReport] = useState<DiagnosticReport|null>(null);
@@ -625,14 +619,15 @@ export default function ChatPage() {
   return (
     <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-page)' }}>
       <StepBar step={step} />
-      {step==='vin'      && <VinStep onNext={(v,r,fn) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setStep('codes'); }} />}
+      {step==='vin'      && <VinStep onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); setStep('codes'); }} />}
       {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} onNext={(c,s) => { setCodes(c); setSymptoms(s); setStep('chat'); }} onBack={() => setStep('vin')} />}
-      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfFile={uploadedFile} fileName={fileName} sessionId={sessionId} onReport={(r,msgs) => { setReport(r); setChatMessages(msgs); setStep('report'); }} onBack={() => setStep('codes')} />}
+      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} onReport={(r,msgs) => { setReport(r); setChatMessages(msgs); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && report && <ReportStep report={report} vehicle={vehicle} codes={codes} messages={chatMessages} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep onRestart={restart} />}
     </div>
   );
                        }
+
 
 
 
