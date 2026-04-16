@@ -249,7 +249,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
             });
           }
           onNext({ ...vehicle, vin }, uploadedContent || undefined, uploadedFile?.name, b64 || undefined);
-        }
+        }}
           disabled={!canProceed}
           style={{ width:'100%', padding:'14px', borderRadius:12,
             background: canProceed ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
@@ -638,6 +638,7 @@ export default function ChatPage() {
     </div>
   );
                        }
+
 
 
 
