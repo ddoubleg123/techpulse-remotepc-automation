@@ -295,7 +295,8 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
   const [symptoms, setSymptoms] = useState('');
   useEffect(() => {
     if (uploadedReport) {
-      const matches = [...uploadedReport.matchAll(/\b([PBCU][0-9]{4})\b/gi)];
+      // OBD-II style: P/B/C/U + 4 hex chars (covers P0171 and manufacturer hex like P134F); not extracted from PDF placeholder text
+      const matches = [...uploadedReport.matchAll(/\b([PBCU][0-9A-F]{4})\b/gi)];
       if (matches.length > 0) {
         const seen = new Set<string>();
         const extracted = matches.map(m => m[1].toUpperCase()).filter(c => { if (seen.has(c)) return false; seen.add(c); return true; }).map(c => ({ code:c, description:'' }));
@@ -344,8 +345,21 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         <div style={{ marginBottom:16 }}>
           {codes.map((c, i) => (
             <div key={i} style={{ display:'flex', gap:8, marginBottom:8, alignItems:'center' }}>
-              <input value={c.code} onChange={e => updateCode(i,'code',e.target.value.toUpperCase())} placeholder='P0171' style={{ ...inp, width:100, textTransform:'uppercase', fontWeight:700, letterSpacing:'0.05em' }} />
-              <input value={c.description} onChange={e => updateCode(i,'description',e.target.value)} placeholder='Description (optional)' style={{ ...inp, flex:1 }} />
+              <input
+                value={c.code}
+                onChange={e => updateCode(i,'code',e.target.value.toUpperCase())}
+                placeholder="Pxxxx"
+                autoComplete="off"
+                name={`dtc-code-${i}`}
+                style={{ ...inp, width:100, textTransform:'uppercase', fontWeight:700, letterSpacing:'0.05em' }}
+              />
+              <input
+                value={c.description}
+                onChange={e => updateCode(i,'description',e.target.value)}
+                placeholder="Description (optional)"
+                autoComplete="off"
+                style={{ ...inp, flex:1 }}
+              />
               {codes.length > 1 && (
                 <button onClick={() => removeCode(i)} style={{ width:32, height:32, borderRadius:8, background:'rgba(239,68,68,0.1)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                   <X size={14} color='#f87171' />
