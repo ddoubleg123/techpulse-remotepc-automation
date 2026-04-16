@@ -238,18 +238,19 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
           </span>
         </div>
 
-        onClick={async () => {
-          if (!canProceed) return;
-          let b64 = '';
-          if (uploadedFile && (uploadedFile.type === 'application/pdf' || uploadedFile.name.toLowerCase().endsWith('.pdf'))) {
-            b64 = await new Promise<string>(resolve => {
-              const fr = new FileReader();
-              fr.onload = () => resolve(((fr.result as string) || '').split(',')[1] || '');
-              fr.readAsDataURL(uploadedFile!);
-            });
-          }
-          onNext({ ...vehicle, vin }, uploadedContent || undefined, uploadedFile?.name, b64 || undefined);
-        }}
+        <button
+          onClick={async () => {
+            if (!canProceed) return;
+            let b64 = '';
+            if (uploadedFile && (uploadedFile.type==='application/pdf'||uploadedFile.name.toLowerCase().endsWith('.pdf'))) {
+              b64 = await new Promise<string>(resolve => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(((fr.result as string)||'').split(',')[1]||'');
+                fr.readAsDataURL(uploadedFile!);
+              });
+            }
+            onNext({ ...vehicle, vin }, uploadedContent || undefined, uploadedFile?.name, b64 || undefined);
+          }}
           disabled={!canProceed}
           style={{ width:'100%', padding:'14px', borderRadius:12,
             background: canProceed ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
