@@ -317,7 +317,9 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
   const removeCode = (i: number) => setCodes(p => p.filter((_,idx) => idx !== i));
   const updateCode = (i: number, field: keyof DtcCode, val: string) => setCodes(p => p.map((c,idx) => idx===i ? {...c,[field]:val} : c));
   const validCodes = codes.filter(c => c.code.trim());
-  const canProceed = validCodes.length > 0 || symptoms.trim().length > 5;
+  const hasUploadedReport = Boolean(uploadedReport?.trim());
+  const canProceed =
+    validCodes.length > 0 || symptoms.trim().length > 5 || hasUploadedReport;
   const inp: React.CSSProperties = { padding:'10px 12px', borderRadius:9, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-1)', fontSize:13, outline:'none', boxSizing:'border-box' };
   return (
     <div style={{ flex:1, overflowY:'auto', padding:'32px', display:'flex', flexDirection:'column', alignItems:'center' }}>
@@ -331,7 +333,13 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         </div>
         <div style={{ marginBottom:20 }}>
           <h2 style={{ fontSize:22, fontWeight:800, color:'var(--text-1)', margin:'0 0 6px' }}>DTC Codes</h2>
-          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>{uploadedReport && validCodes.length > 0 ? 'Codes extracted from your report  review and edit as needed.' : 'Enter fault codes from your scanner, or describe the symptoms.'}</p>
+          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>
+            {uploadedReport && validCodes.length > 0
+              ? 'Codes extracted from your report — review and edit as needed.'
+              : hasUploadedReport
+                ? 'Add codes or symptoms if you want — or start diagnosis using your uploaded report alone.'
+                : 'Enter fault codes from your scanner, or describe the symptoms.'}
+          </p>
         </div>
         <div style={{ marginBottom:16 }}>
           {codes.map((c, i) => (
@@ -350,9 +358,9 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
           </button>
         </div>
         <div style={{ marginBottom:24 }}>
-          <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-2)', marginBottom:6 }}>Symptoms / Additional Context</label>
+          <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-2)', marginBottom:6 }}>Symptoms / Additional Context (optional if you uploaded a report)</label>
           <textarea value={symptoms} onChange={e => setSymptoms(e.target.value)} rows={4}
-            placeholder='Describe what the vehicle is doing, when it happens, recent repairs...'
+            placeholder='Optional — Synth can use your uploaded report alone. Add details here if you want.'
             style={{ ...inp, width:'100%', resize:'none', lineHeight:1.5 }} />
         </div>
         <div style={{ display:'flex', gap:10 }}>
