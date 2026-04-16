@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { assertAcceptableScannerPdf, getPdfSizeViolationMessage, readPdfAsRawBase64 } from '@/lib/scannerPdf';
 import {
   Send, Zap, Plus, X, ChevronRight, ChevronLeft,
   CheckCircle, AlertTriangle, FileText, ThumbsUp, ThumbsDown,
@@ -75,8 +76,9 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedContent, setUploadedContent] = useState('');
-  const [pdfBase64, setPdfBase64] = useState('');
   const [fileError, setFileError] = useState('');
+  const [pdfHandoffError, setPdfHandoffError] = useState('');
+  const [isPreparingPdf, setIsPreparingPdf] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
   const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', vin:'' });
   const [showManual, setShowManual] = useState(false);
@@ -84,14 +86,20 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
 
   const handleFile = (file: File) => {
     setFileError('');
-    setUploadedFile(file);
-    // PDF early exit: show clean label instead of reading binary
+    setPdfHandoffError('');
+    // PDF: size gate at upload only — base64 is read on "Continue" (avoids FileReader race)
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      const sizeMsg = getPdfSizeViolationMessage(file);
+      if (sizeMsg) {
+        setFileError(sizeMsg);
+        if (fileRef.current) fileRef.current.value = '';
+        return;
+      }
       setUploadedFile(file);
       setUploadedContent(`[PDF: ${file.name} (${(file.size/1024).toFixed(0)} KB) - Enter DTC codes above and describe symptoms below.]`);
-      const fr=new FileReader(); fr.onload=()=>setPdfBase64(((fr.result as string)||'').split(',')[1]||''); fr.readAsDataURL(file);
       return;
     }
+    setUploadedFile(file);
     const reader = new FileReader();
     reader.onload = (e) => {
       const raw = e.target?.result as string;
@@ -208,7 +216,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 <div style={{ fontSize:12, color:'var(--text-3)' }}>{(uploadedFile.size / 1024).toFixed(1)} KB uploaded</div>
                 {vin && <div style={{ fontSize:12, color:'var(--text-2)', marginTop:2 }}>VIN detected: <strong style={{ color:'var(--text-1)', fontFamily:'monospace' }}>{vin}</strong></div>}
               </div>
-              <button onClick={e => { e.stopPropagation(); setUploadedFile(null); setUploadedContent(''); setFileError(''); if (fileRef.current) fileRef.current.value = ''; }}
+              <button onClick={e => { e.stopPropagation(); setUploadedFile(null); setUploadedContent(''); setFileError(''); setPdfHandoffError(''); if (fileRef.current) fileRef.current.value = ''; }}
                 style={{ marginLeft:8, width:28, height:28, borderRadius:7, background:'rgba(239,68,68,0.1)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <X size={14} color='#f87171' />
               </button>
@@ -231,32 +239,49 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
           </div>
         )}
 
+        {pdfHandoffError && (
+          <div style={{ padding:'12px 14px', borderRadius:10, background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', display:'flex', gap:8, alignItems:'flex-start', marginBottom:16 }}>
+            <AlertTriangle size={15} color='#f87171' style={{ flexShrink:0, marginTop:1 }} />
+            <span style={{ fontSize:13, color:'#f87171', lineHeight:1.5 }} role="alert">{pdfHandoffError}</span>
+          </div>
+        )}
+
         <div style={{ padding:'10px 14px', borderRadius:10, background:'var(--bg-feed)', border:'1px solid var(--border-card)', display:'flex', gap:8, alignItems:'flex-start', marginBottom:20 }}>
           <Info size={14} color='var(--text-3)' style={{ flexShrink:0, marginTop:1 }} />
           <span style={{ fontSize:12, color:'var(--text-3)', lineHeight:1.5 }}>
-            <strong style={{ color:'var(--text-2)' }}>Scanner tip:</strong> Export your data as .txt or .csv from your scanner tool (AUTEL, Launch, Snap-on all have a Save/Export option). If your report is a PDF, open it and copy the text into the symptoms field instead.
+            <strong style={{ color:'var(--text-2)' }}>Scanner tip:</strong> You can upload a PDF directly; wait for &quot;Preparing PDF…&quot; to finish before codes if the file is large. .txt or .csv exports work too (AUTEL, Launch, Snap-on Save/Export).
           </span>
         </div>
 
         <button
           onClick={async () => {
-            if (!canProceed) return;
-            let b64 = '';
-            if (uploadedFile && (uploadedFile.type==='application/pdf'||uploadedFile.name.toLowerCase().endsWith('.pdf'))) {
-              b64 = await new Promise<string>(resolve => {
-                const fr = new FileReader();
-                fr.onload = () => resolve(((fr.result as string)||'').split(',')[1]||'');
-                fr.readAsDataURL(uploadedFile!);
-              });
+            if (!canProceed || isPreparingPdf) return;
+            const fileAtClick = uploadedFile;
+            const vehicleAtClick = { ...vehicle, vin };
+            const contentAtClick = uploadedContent || undefined;
+            const nameAtClick = fileAtClick?.name;
+            setPdfHandoffError('');
+            let b64: string | undefined;
+            if (fileAtClick && (fileAtClick.type === 'application/pdf' || fileAtClick.name.toLowerCase().endsWith('.pdf'))) {
+              setIsPreparingPdf(true);
+              try {
+                assertAcceptableScannerPdf(fileAtClick);
+                b64 = await readPdfAsRawBase64(fileAtClick);
+              } catch (e) {
+                setPdfHandoffError(e instanceof Error ? e.message : "Couldn't read PDF, try re-uploading.");
+                return;
+              } finally {
+                setIsPreparingPdf(false);
+              }
             }
-            onNext({ ...vehicle, vin }, uploadedContent || undefined, uploadedFile?.name, b64 || undefined);
+            onNext(vehicleAtClick, contentAtClick, nameAtClick, b64);
           }}
-          disabled={!canProceed}
+          disabled={!canProceed || isPreparingPdf}
           style={{ width:'100%', padding:'14px', borderRadius:12,
-            background: canProceed ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
-            color: canProceed ? '#fff' : 'var(--text-3)', fontSize:15, fontWeight:700, border:'none',
-            cursor: canProceed ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-          Continue to Codes <ChevronRight size={18} />
+            background: canProceed && !isPreparingPdf ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
+            color: canProceed && !isPreparingPdf ? '#fff' : 'var(--text-3)', fontSize:15, fontWeight:700, border:'none',
+            cursor: canProceed && !isPreparingPdf ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+          {isPreparingPdf ? 'Preparing PDF…' : (<><span>Continue to Codes</span> <ChevronRight size={18} /></>)}
         </button>
       </div>
     </div>
@@ -342,11 +367,18 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     onReport: (report: DiagnosticReport, messages: Message[]) => void; onBack: () => void }
 ) {
   const nl = String.fromCharCode(10);
+  const hasPdfAttachment = Boolean(pdfBase64 && pdfBase64.length > 0);
+  const scannerContextLine =
+    uploadedReport && hasPdfAttachment
+      ? `${nl}Scanner PDF attached: ${fileName || 'report.pdf'} (full document sent separately for analysis).`
+      : uploadedReport
+        ? `${nl}Scanner Data (from ${fileName || 'uploaded file'}):${nl}${uploadedReport.substring(0, 1500)}`
+        : null;
   const initMsg = [
     vehicle.year && vehicle.make ? `Vehicle: ${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : null,
     codes.length > 0 ? `DTC Codes: ${codes.map(c => c.code + (c.description ? ' (' + c.description + ')' : '')).join(', ')}` : null,
     symptoms ? `Symptoms: ${symptoms}` : null,
-    uploadedReport ? `${nl}Scanner Data (from ${fileName || 'uploaded file'}):${nl}${uploadedReport.substring(0, 1500)}` : null,
+    scannerContextLine,
   ].filter(Boolean).join(nl);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -624,7 +656,7 @@ export default function ChatPage() {
   if (!user) return null;
   const restart = () => {
     setStep('vin'); setVehicle({ year:'', make:'', model:'', engine:'', vin:'' });
-    setUploadedReport(undefined); setFileName(undefined);
+    setUploadedReport(undefined); setFileName(undefined); setUploadedPdfBase64('');
     setCodes([]); setSymptoms(''); setReport(null); setChatMessages([]);
     localStorage.removeItem('synth-session-id');
   };
@@ -638,7 +670,7 @@ export default function ChatPage() {
       {step==='feedback' && <FeedbackStep onRestart={restart} />}
     </div>
   );
-                       }
+}
 
 
 
