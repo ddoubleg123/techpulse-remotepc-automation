@@ -302,7 +302,14 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         setCodes(extracted.length > 0 ? extracted : [{ code:'', description:'' }]);
       }
       const nl = String.fromCharCode(10);
-      const lines = uploadedReport.split(nl).filter((l: string) => l.trim().length > 15 && l.trim().length < 150).slice(0, 4);
+      const lines = uploadedReport
+        .split(nl)
+        .filter((l: string) => {
+          const t = l.trim();
+          if (t.startsWith('[PDF:')) return false;
+          return t.length > 15 && t.length < 150;
+        })
+        .slice(0, 4);
       if (lines.length > 0) setSymptoms(lines.join(nl));
     }
   }, [uploadedReport]);
@@ -368,6 +375,13 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
 ) {
   const nl = String.fromCharCode(10);
   const hasPdfAttachment = Boolean(pdfBase64 && pdfBase64.length > 0);
+  const symptomsForSynth = (() => {
+    const s = symptoms?.trim();
+    if (!s) return null;
+    if (!hasPdfAttachment) return s;
+    const cleaned = s.split(/\r?\n/).filter((l) => !l.trim().startsWith('[PDF:')).join(nl).trim();
+    return cleaned || null;
+  })();
   const scannerContextLine =
     uploadedReport && hasPdfAttachment
       ? `${nl}Scanner PDF attached: ${fileName || 'report.pdf'} (full document sent separately for analysis).`
@@ -377,7 +391,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const initMsg = [
     vehicle.year && vehicle.make ? `Vehicle: ${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : null,
     codes.length > 0 ? `DTC Codes: ${codes.map(c => c.code + (c.description ? ' (' + c.description + ')' : '')).join(', ')}` : null,
-    symptoms ? `Symptoms: ${symptoms}` : null,
+    symptomsForSynth ? `Symptoms: ${symptomsForSynth}` : null,
     scannerContextLine,
   ].filter(Boolean).join(nl);
   const [messages, setMessages] = useState<Message[]>([]);
