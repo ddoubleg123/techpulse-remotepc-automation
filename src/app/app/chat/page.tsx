@@ -76,9 +76,9 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [scanningVin, setScanningVin] = useState(false);
-  const videoRef = React.useRef<HTMLVideoElement>(null);
-  const canvasRef = React.useRef<HTMLCanvasElement>(null);
-  const streamRef = React.useRef<MediaStream|null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream|null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedContent, setUploadedContent] = useState('');
@@ -561,7 +561,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       }
     } finally { setLoading(false); setWarmingUp(false); }
   };
-  useEffect(() => { if (!autoSent && initMsg) { setAutoSent(true); sendMessage(initMsg, [vehicle.year && vehicle.make ? 'Analyzing: ' + vehicle.year + ' ' + vehicle.make + ' ' + vehicle.model : 'Analyzing scanner data', fileName ? '(' + fileName + ')' : '', codes.filter((c:any)=>c.code).length > 0 ? codes.filter((c:any)=>c.code).length + ' fault code(s) detected' : '', symptoms ? 'Symptoms: ' + symptoms.substring(0,80) : ''].filter(Boolean).join(' — ')); } }, []);
+  useEffect(() => { if (!autoSent && initMsg) { setAutoSent(true); sendMessage(initMsg, [vehicle.year && vehicle.make ? 'Analyzing: ' + vehicle.year + ' ' + vehicle.make + ' ' + vehicle.model : 'Analyzing scanner data', fileName ? '(' + fileName + ')' : '', codes.filter((c:any)=>c.code).length > 0 ? codes.filter((c:any)=>c.code).length + ' fault code(s) detected' : '', symptoms ? 'Symptoms: ' + symptoms.substring(0,80) : ''].filter(Boolean).join(' -- ')); } }, []);
   const buildReport = (): DiagnosticReport => ({
     summary: `Diagnostic for ${vehicle.year||''} ${vehicle.make||''} ${vehicle.model||''}`.trim(),
     rootCause: messages.filter(m => m.role==='synth').slice(-1)[0]?.content.substring(0,300) || 'See conversation',
@@ -569,8 +569,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     recommendedActions: (() => {
       const synthText = messages.filter((m:any)=>m.role==='synth').slice(-1)[0]?.content || '';
       const numbered = synthText.match(/^\d+\.\s+.+/gm) || [];
-      const bulleted = synthText.match(/^[-*•]\s+.+/gm) || [];
-      const found = [...numbered, ...bulleted].map((s:string)=>s.replace(/^[\d.\-*•\s]+/,'')).filter(Boolean).slice(0,6);
+      const bulleted = synthText.match(/^[-*]\s+.+/gm) || [];
+      const found = [...numbered, ...bulleted].map((s:string)=>s.replace(/^[\d.\-*\s]+/,'')).filter(Boolean).slice(0,6);
       return found.length > 0 ? found : ['Review Synth findings above', 'Verify with physical inspection', 'Clear codes after repair'];
     })(),
     partsNeeded: codes.map(c => c.code),
@@ -798,6 +798,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
