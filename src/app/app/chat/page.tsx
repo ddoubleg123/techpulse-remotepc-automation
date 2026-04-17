@@ -500,8 +500,6 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     codes.length > 0 ? `DTC Codes: ${codes.map(c => c.code + (c.description ? ' (' + c.description + ')' : '')).join(', ')}` : null,
     symptomsForSynth ? `Symptoms: ${symptomsForSynth}` : null,
     scannerContextLine,
-    {vehicle.vin && <div style={{ fontSize:12, color:'var(--text-3)', marginTop:3 }}>VIN: {vehicle.vin}</div>}
-    {!vehicle.vin && !vehicle.year && <div style={{ fontSize:12, color:'#f59e0b', marginTop:3 }}>VIN not provided</div>}
   ].filter(Boolean).join(nl);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -511,9 +509,9 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [apiStatus, setApiStatus] = useState<'ok'|'placeholder'|'error'>('ok');
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages]);
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (text: string, displayText?: string) => {
     if (!text.trim() || loading) return;
-    const userMsg: Message = { id: Date.now()+'u', role:'user', content:text, ts:Date.now() };
+    const userMsg: Message = { id: Date.now()+'u', role:'user', content: displayText || text, ts:Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
@@ -563,12 +561,18 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       }
     } finally { setLoading(false); setWarmingUp(false); }
   };
-  useEffect(() => { if (!autoSent && initMsg) { setAutoSent(true); sendMessage(initMsg); } }, []);
+  useEffect(() => { if (!autoSent && initMsg) { setAutoSent(true); sendMessage(initMsg, [vehicle.year && vehicle.make ? 'Analyzing: ' + vehicle.year + ' ' + vehicle.make + ' ' + vehicle.model : 'Analyzing scanner data', fileName ? '(' + fileName + ')' : '', codes.filter((c:any)=>c.code).length > 0 ? codes.filter((c:any)=>c.code).length + ' fault code(s) detected' : '', symptoms ? 'Symptoms: ' + symptoms.substring(0,80) : ''].filter(Boolean).join(' — ')); } }, []);
   const buildReport = (): DiagnosticReport => ({
     summary: `Diagnostic for ${vehicle.year||''} ${vehicle.make||''} ${vehicle.model||''}`.trim(),
     rootCause: messages.filter(m => m.role==='synth').slice(-1)[0]?.content.substring(0,300) || 'See conversation',
-    confidence: 82,
-    recommendedActions: ['Review Synth findings', 'Verify with physical inspection', 'Clear codes after repair'],
+    confidence: messages.filter((m:any)=>m.role==='synth').length > 0 ? 85 : 0,
+    recommendedActions: (() => {
+      const synthText = messages.filter((m:any)=>m.role==='synth').slice(-1)[0]?.content || '';
+      const numbered = synthText.match(/^\d+\.\s+.+/gm) || [];
+      const bulleted = synthText.match(/^[-*•]\s+.+/gm) || [];
+      const found = [...numbered, ...bulleted].map((s:string)=>s.replace(/^[\d.\-*•\s]+/,'')).filter(Boolean).slice(0,6);
+      return found.length > 0 ? found : ['Review Synth findings above', 'Verify with physical inspection', 'Clear codes after repair'];
+    })(),
     partsNeeded: codes.map(c => c.code),
     estimatedTime: '1-3 hours',
     additionalNotes: symptoms,
@@ -794,6 +798,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
