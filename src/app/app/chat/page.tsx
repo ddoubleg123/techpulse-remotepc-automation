@@ -87,7 +87,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
   const handleFile = (file: File) => {
     setFileError('');
     setPdfHandoffError('');
-    // PDF: size gate at upload only â base64 is read on "Continue" (avoids FileReader race)
+    // PDF: size gate at upload only ------ base64 is read on "Continue" (avoids FileReader race)
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
       const sizeMsg = getPdfSizeViolationMessage(file);
       if (sizeMsg) {
@@ -115,6 +115,16 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
       }
       const cleaned = cleanFileContent(raw);
       setUploadedContent(cleaned);
+      // Extract vehicle info from .pids XML attributes
+      const pidsMatch = cleaned.match(/pids-collection[^>]+year=["']([^"']+)["'][^>]+make=["']([^"']+)["'][^>]+model=["']([^"']+)["']/i)
+        || cleaned.match(/pids-collection[^>]+make=["']([^"']+)["'][^>]+model=["']([^"']+)["']/i);
+      if (pidsMatch) {
+        const yr = pidsMatch[1]||"", mk = pidsMatch[2]||"", mdl = (pidsMatch[3]||pidsMatch[2]||"").replace(/\s*\([^)]*\)/,"").trim();
+        setVehicle(v => ({ ...v, year: yr||v.year, make: mk||v.make, model: mdl||v.model }));
+      }
+      // Extract VIN from uploaded file (17-char alphanumeric)
+      const fileVinMatch = cleaned.match(/\b([A-HJ-NPR-Z0-9]{17})\b/);
+      if (fileVinMatch) { setVin(fileVinMatch[1]); setVehicle(v => ({ ...v, vin: fileVinMatch[1] })); }
       // Auto-detect VIN
       const vinMatch = raw.match(/\b[A-HJ-NPR-Z0-9]{17}\b/);
       if (vinMatch) setVin(vinMatch[0]);
@@ -249,7 +259,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
         <div style={{ padding:'10px 14px', borderRadius:10, background:'var(--bg-feed)', border:'1px solid var(--border-card)', display:'flex', gap:8, alignItems:'flex-start', marginBottom:20 }}>
           <Info size={14} color='var(--text-3)' style={{ flexShrink:0, marginTop:1 }} />
           <span style={{ fontSize:12, color:'var(--text-3)', lineHeight:1.5 }}>
-            <strong style={{ color:'var(--text-2)' }}>Scanner tip:</strong> You can upload a PDF directly; wait for &quot;Preparing PDFâ¦&quot; to finish before codes if the file is large. .txt or .csv exports work too (AUTEL, Launch, Snap-on Save/Export).
+            <strong style={{ color:'var(--text-2)' }}>Scanner tip:</strong> You can upload a PDF directly; wait for &quot;Preparing PDF------&quot; to finish before codes if the file is large. .txt or .csv exports work too (AUTEL, Launch, Snap-on Save/Export).
           </span>
         </div>
 
@@ -281,7 +291,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
             background: canProceed && !isPreparingPdf ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
             color: canProceed && !isPreparingPdf ? '#fff' : 'var(--text-3)', fontSize:15, fontWeight:700, border:'none',
             cursor: canProceed && !isPreparingPdf ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-          {isPreparingPdf ? 'Preparing PDFâ¦' : (<><span>Continue to Codes</span> <ChevronRight size={18} /></>)}
+          {isPreparingPdf ? 'Preparing PDF------' : (<><span>Continue to Codes</span> <ChevronRight size={18} /></>)}
         </button>
       </div>
     </div>
@@ -318,7 +328,9 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         <div style={{ padding:'12px 16px', borderRadius:12, background:'var(--bg-feed)', border:'1px solid var(--border-card)', marginBottom:24, display:'flex', alignItems:'center', gap:10 }}>
           <Car size={15} color='var(--accent)' />
           <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)' }}>
-            {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? '  ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : 'Vehicle'}
+            {vehicle.year && vehicle.make
+              ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? '  ' + vehicle.engine : ''}`
+              : vehicle.vin ? `VIN: ${vehicle.vin}` : 'Vehicle not specified'}
           </span>
           {uploadedReport && <span style={{ marginLeft:'auto', padding:'2px 8px', borderRadius:6, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.2)', fontSize:11, fontWeight:700, color:'#10b981' }}>{fileName || 'Report loaded'}</span>}
         </div>
@@ -326,7 +338,7 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
           <h2 style={{ fontSize:22, fontWeight:800, color:'var(--text-1)', margin:'0 0 6px' }}>DTC Codes</h2>
           <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>
             {uploadedReport && validCodes.length > 0
-              ? 'Codes extracted from your report â review and edit as needed.'
+              ? 'Codes extracted from your report ------ review and edit as needed.'
               : hasUploadedReport
 
                 {uploadedReport && (
@@ -339,7 +351,7 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
                   </div>
                 )}
 
-                ? 'Add codes or symptoms if you want â or start diagnosis using your uploaded report alone.'
+                ? 'Add codes or symptoms if you want ------ or start diagnosis using your uploaded report alone.'
                 : 'Enter fault codes from your scanner, or describe the symptoms.'}
           </p>
         </div>
@@ -416,6 +428,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     codes.length > 0 ? `DTC Codes: ${codes.map(c => c.code + (c.description ? ' (' + c.description + ')' : '')).join(', ')}` : null,
     symptomsForSynth ? `Symptoms: ${symptomsForSynth}` : null,
     scannerContextLine,
+    {vehicle.vin && <div style={{ fontSize:12, color:'var(--text-3)', marginTop:3 }}>VIN: {vehicle.vin}</div>}
+    {!vehicle.vin && !vehicle.year && <div style={{ fontSize:12, color:'#f59e0b', marginTop:3 }}>VIN not provided</div>}
   ].filter(Boolean).join(nl);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -708,6 +722,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
