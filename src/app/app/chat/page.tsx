@@ -87,7 +87,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
   const handleFile = (file: File) => {
     setFileError('');
     setPdfHandoffError('');
-    // PDF: size gate at upload only — base64 is read on "Continue" (avoids FileReader race)
+    // PDF: size gate at upload only â base64 is read on "Continue" (avoids FileReader race)
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
       const sizeMsg = getPdfSizeViolationMessage(file);
       if (sizeMsg) {
@@ -249,7 +249,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
         <div style={{ padding:'10px 14px', borderRadius:10, background:'var(--bg-feed)', border:'1px solid var(--border-card)', display:'flex', gap:8, alignItems:'flex-start', marginBottom:20 }}>
           <Info size={14} color='var(--text-3)' style={{ flexShrink:0, marginTop:1 }} />
           <span style={{ fontSize:12, color:'var(--text-3)', lineHeight:1.5 }}>
-            <strong style={{ color:'var(--text-2)' }}>Scanner tip:</strong> You can upload a PDF directly; wait for &quot;Preparing PDF…&quot; to finish before codes if the file is large. .txt or .csv exports work too (AUTEL, Launch, Snap-on Save/Export).
+            <strong style={{ color:'var(--text-2)' }}>Scanner tip:</strong> You can upload a PDF directly; wait for &quot;Preparing PDFâ¦&quot; to finish before codes if the file is large. .txt or .csv exports work too (AUTEL, Launch, Snap-on Save/Export).
           </span>
         </div>
 
@@ -281,7 +281,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
             background: canProceed && !isPreparingPdf ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
             color: canProceed && !isPreparingPdf ? '#fff' : 'var(--text-3)', fontSize:15, fontWeight:700, border:'none',
             cursor: canProceed && !isPreparingPdf ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-          {isPreparingPdf ? 'Preparing PDF…' : (<><span>Continue to Codes</span> <ChevronRight size={18} /></>)}
+          {isPreparingPdf ? 'Preparing PDFâ¦' : (<><span>Continue to Codes</span> <ChevronRight size={18} /></>)}
         </button>
       </div>
     </div>
@@ -302,16 +302,6 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         const extracted = matches.map(m => m[1].toUpperCase()).filter(c => { if (seen.has(c)) return false; seen.add(c); return true; }).map(c => ({ code:c, description:'' }));
         setCodes(extracted.length > 0 ? extracted : [{ code:'', description:'' }]);
       }
-      const nl = String.fromCharCode(10);
-      const lines = uploadedReport
-        .split(nl)
-        .filter((l: string) => {
-          const t = l.trim();
-          if (t.startsWith('[PDF:')) return false;
-          return t.length > 15 && t.length < 150;
-        })
-        .slice(0, 4);
-      if (lines.length > 0) setSymptoms(lines.join(nl));
     }
   }, [uploadedReport]);
   const addCode = () => setCodes(p => [...p, { code:'', description:'' }]);
@@ -336,9 +326,20 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
           <h2 style={{ fontSize:22, fontWeight:800, color:'var(--text-1)', margin:'0 0 6px' }}>DTC Codes</h2>
           <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>
             {uploadedReport && validCodes.length > 0
-              ? 'Codes extracted from your report — review and edit as needed.'
+              ? 'Codes extracted from your report â review and edit as needed.'
               : hasUploadedReport
-                ? 'Add codes or symptoms if you want — or start diagnosis using your uploaded report alone.'
+
+                {uploadedReport && (
+                  <div style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:10, padding:'10px 14px', marginBottom:8, display:'flex', alignItems:'center', gap:10 }}>
+                    <span style={{ fontSize:20, color:'#10b981' }}>&#10003;</span>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:700, color:'#10b981' }}>Scanner report uploaded &#8212; {fileName || 'file'}</div>
+                      <div style={{ fontSize:12, color:'var(--text-2)', marginTop:2 }}>Synth will read the full report automatically. Add P-codes or extra notes below if needed, or just click Start Diagnosis.</div>
+                    </div>
+                  </div>
+                )}
+
+                ? 'Add codes or symptoms if you want â or start diagnosis using your uploaded report alone.'
                 : 'Enter fault codes from your scanner, or describe the symptoms.'}
           </p>
         </div>
@@ -374,7 +375,7 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         <div style={{ marginBottom:24 }}>
           <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-2)', marginBottom:6 }}>Symptoms / Additional Context (optional if you uploaded a report)</label>
           <textarea value={symptoms} onChange={e => setSymptoms(e.target.value)} rows={4}
-            placeholder='Optional — Synth can use your uploaded report alone. Add details here if you want.'
+            placeholder='Optional: add extra context for Synth (symptoms, recent repairs, etc.)'
             style={{ ...inp, width:'100%', resize:'none', lineHeight:1.5 }} />
         </div>
         <div style={{ display:'flex', gap:10 }}>
@@ -707,6 +708,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
