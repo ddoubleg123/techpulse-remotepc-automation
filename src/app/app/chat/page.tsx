@@ -73,6 +73,12 @@ function StepBar({ step }: { step: Step }) {
 
 function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: string, fileName?: string, pdfBase64?: string) => void }) {
   const [vin, setVin] = useState('');
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [scanningVin, setScanningVin] = useState(false);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const streamRef = React.useRef<MediaStream|null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedContent, setUploadedContent] = useState('');
@@ -138,6 +144,49 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
     if (file) handleFile(file);
   }, []);
 
+  const stopCamera = () => {
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t=>t.stop()); streamRef.current=null; }
+    setShowCamera(false); setCameraError('');
+  };
+  const startCamera = async () => {
+    setCameraError(''); setShowCamera(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width:{ideal:1280}, height:{ideal:720} } });
+      streamRef.current = stream;
+      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+    } catch(e) { setCameraError('Camera access denied. Please allow camera permissions.'); setShowCamera(false); }
+  };
+  const captureAndScanVin = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    setScanningVin(true);
+    const ctx2 = canvasRef.current.getContext('2d')!;
+    canvasRef.current.width = videoRef.current.videoWidth;
+    canvasRef.current.height = videoRef.current.videoHeight;
+    ctx2.drawImage(videoRef.current, 0, 0);
+    const base64 = canvasRef.current.toDataURL('image/jpeg', 0.9).split(',')[1];
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:100,
+          messages:[{ role:'user', content:[
+            { type:'image', source:{ type:'base64', media_type:'image/jpeg', data:base64 }},
+            { type:'text', text:'Extract the 17-character VIN (Vehicle Identification Number) from this image. Reply with ONLY the 17-character VIN, nothing else. If you cannot find a valid 17-character VIN, reply with NONE.' }
+          ]}]
+        })
+      });
+      const json = await res.json();
+      const text = (json.content?.[0]?.text||'').trim().toUpperCase();
+      const vinMatch = text.match(/\b[A-HJ-NPR-Z0-9]{17}\b/);
+      if (vinMatch) {
+        setVin(vinMatch[0]);
+        setVehicle((v:any)=>({...v, vin:vinMatch[0]}));
+        stopCamera();
+        setTimeout(handleVinLookup, 100);
+      } else { setCameraError('No VIN found in image. Try again with better lighting.'); }
+    } catch(e) { setCameraError('Scan failed. Try typing the VIN manually.'); }
+    setScanningVin(false);
+  };
+
   const handleVinLookup = async () => {
     if (vin.length < 10) return;
     setLookingUp(true);
@@ -175,7 +224,29 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
               <Search size={14} /> {lookingUp ? 'Looking up' : 'Look Up'}
             </button>
+          <button onClick={showCamera ? stopCamera : startCamera}
+            title='Scan VIN with camera'
+            style={{ padding:'11px 14px', borderRadius:10, border:'1px solid var(--border-card)', cursor:'pointer',
+              background: showCamera ? '#ef4444' : 'var(--bg-input)', color: showCamera ? '#fff' : 'var(--text-2)',
+              fontSize:18, display:'flex', alignItems:'center', flexShrink:0 }}>
+            {showCamera ? '&#x2715;' : '&#x1F4F7;'}
+          </button>
           </div>
+          {cameraError && <p style={{ color:'#ef4444', fontSize:12, marginTop:4 }}>{cameraError}</p>}
+          {showCamera && (
+            <div style={{ marginTop:12, borderRadius:12, overflow:'hidden', border:'1px solid var(--border-card)', position:'relative' }}>
+              <video ref={videoRef} autoPlay playsInline muted style={{ width:'100%', display:'block', borderRadius:12 }} />
+              <canvas ref={canvasRef} style={{ display:'none' }} />
+              <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'12px', background:'linear-gradient(transparent,rgba(0,0,0,0.7))', display:'flex', alignItems:'center', gap:8 }}>
+                <button onClick={captureAndScanVin} disabled={scanningVin}
+                  style={{ padding:'10px 18px', borderRadius:10, border:'none', cursor: scanningVin?'not-allowed':'pointer',
+                    background:'linear-gradient(135deg,#00c3ff,#0055ff)', color:'#fff', fontWeight:700, fontSize:14, flexShrink:0 }}>
+                  {scanningVin ? 'Scanning...' : 'Scan VIN'}
+                </button>
+                <p style={{ color:'rgba(255,255,255,0.75)', fontSize:11, margin:0 }}>Point at VIN sticker (door jamb or windshield)</p>
+              </div>
+            </div>
+          )}
           {vin.length > 0 && vin.length < 17 && <div style={{ fontSize:11, color:'var(--text-3)', marginTop:6 }}>{17 - vin.length} characters remaining</div>}
           {(showManual || vin.length === 17) && (
             <div style={{ marginTop:16, paddingTop:16, borderTop:'1px solid var(--border-card)' }}>
@@ -722,6 +793,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
