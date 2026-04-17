@@ -412,19 +412,20 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
               ? 'Codes extracted from your report ------ review and edit as needed.'
               : hasUploadedReport
 
-                {uploadedReport && (
-                  <div style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:10, padding:'10px 14px', marginBottom:8, display:'flex', alignItems:'center', gap:10 }}>
-                    <span style={{ fontSize:20, color:'#10b981' }}>&#10003;</span>
-                    <div>
-                      <div style={{ fontSize:13, fontWeight:700, color:'#10b981' }}>Scanner report uploaded &#8212; {fileName || 'file'}</div>
-                      <div style={{ fontSize:12, color:'var(--text-2)', marginTop:2 }}>Synth will read the full report automatically. Add P-codes or extra notes below if needed, or just click Start Diagnosis.</div>
-                    </div>
-                  </div>
-                )}
-
                 ? 'Add codes or symptoms if you want ------ or start diagnosis using your uploaded report alone.'
                 : 'Enter fault codes from your scanner, or describe the symptoms.'}
           </p>
+
+          {uploadedReport && (
+            <div style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:10, padding:'10px 14px', marginBottom:8, marginTop:8, display:'flex', alignItems:'center', gap:10 }}>
+              <span style={{ fontSize:20, color:'#10b981' }}>&#10003;</span>
+              <div>
+                <div style={{ fontSize:13, fontWeight:700, color:'#10b981' }}>Scanner report uploaded &#8212; {fileName || 'file'}</div>
+                <div style={{ fontSize:12, color:'var(--text-2)', marginTop:2 }}>Synth will read the full report automatically. Add P-codes or extra notes below if needed, or just click Start Diagnosis.</div>
+              </div>
+            </div>
+          )}
+
         </div>
         <div style={{ marginBottom:16 }}>
           {codes.map((c, i) => (
@@ -793,6 +794,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
