@@ -503,6 +503,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [diagnosisComplete, setDiagnosisComplete] = useState(false);
   const [showVinGate, setShowVinGate] = useState(false);
   const [vinGateInput, setVinGateInput] = useState('');
   const [vinValidating, setVinValidating] = useState(false);
@@ -679,8 +680,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}> Back</button>
-          <button onClick={() => { if (vehicle.vin) { onReport(buildReport(), messages); } else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); } }} disabled={messages.filter((m:any)=>m.role==='synth'||m.role==='assistant').length===0}
-            style={{ padding:'6px 14px', borderRadius:8, background: messages.length > 1 ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)', border:'none', color: messages.length > 1 ? '#fff' : 'var(--text-3)', fontSize:12, fontWeight:700, cursor: messages.length > 1 ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', gap:6 }}>
+          <button disabled={!diagnosisComplete} onClick={() => { if (vehicle.vin) { onReport(buildReport(), messages); } else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); } }} disabled={messages.filter((m:any)=>m.role==='synth'||m.role==='assistant').length===0}
+            style={{ padding:'6px 14px', borderRadius:8, background: diagnosisComplete ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)', border:'none', color: messages.length > 1 ? '#fff' : 'var(--text-3)', fontSize:12, fontWeight:700, cursor: messages.length > 1 ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', gap:6 }}>
             <FileText size={13} /> View Report
           </button>
         </div>
@@ -713,6 +714,15 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         )}
         <div ref={bottomRef} />
       </div>
+      {messages.filter((m:any)=>m.role==='synth').length > 0 && !diagnosisComplete && (
+        <div style={{padding:'0 20px 12px'}}>
+          <button onClick={()=>{ setDiagnosisComplete(true); setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }}
+            style={{width:'100%',padding:'13px',borderRadius:12,border:'none',background:'linear-gradient(135deg,#10b981,#059669)',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+            Diagnosis Complete — Generate Report
+          </button>
+        </div>
+      )}
+
       <div style={{ padding:'14px 20px', borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', display:'flex', gap:10, flexShrink:0 }}>
         <textarea rows={1} value={input} onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }}}
@@ -878,5 +888,6 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
