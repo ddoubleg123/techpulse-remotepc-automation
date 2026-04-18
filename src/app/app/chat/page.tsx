@@ -625,11 +625,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         if (!ln.startsWith('data: ')) continue;
         const payload = ln.slice(6).trim();
         if (payload === '[DONE]') continue;
-        try { const p = JSON.parse(payload); sseContent += p.token ?? p.text ?? p.response ?? p.message ?? ''; }
-        if (p.ready_for_report === true) {
-          setDiagnosisComplete(true);
-          if (p.confidence) setSynthConfidence(Number(p.confidence));
-        }
+        try { const p = JSON.parse(payload); sseContent += p.token ?? p.text ?? p.response ?? p.message ?? ''; if (p.ready_for_report === true) { setDiagnosisComplete(true); if (p.confidence) setSynthConfidence(Number(p.confidence)); } }
         catch { if (payload) sseContent += payload; }
       }
       const reply = sseContent || (()=>{ try { return JSON.parse(rawText).response || JSON.parse(rawText).message || ''; } catch { return rawText.trim(); } })();
@@ -893,6 +889,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
