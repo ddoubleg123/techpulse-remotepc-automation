@@ -505,6 +505,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [loading, setLoading] = useState(false);
   const [diagnosisComplete, setDiagnosisComplete] = useState(false);
   const [synthConfidence, setSynthConfidence] = useState<number>(0);
+  const [pdfBase64Report, setPdfBase64Report] = useState<string>('');
+  const [pdfFilenameReport, setPdfFilenameReport] = useState<string>('');
   const [chatAttachment, setChatAttachment] = useState<{name:string;base64:string}|null>(null);
   const [showVinGate, setShowVinGate] = useState(false);
   const [vinGateInput, setVinGateInput] = useState('');
@@ -629,7 +631,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         if (!ln.startsWith('data: ')) continue;
         const payload = ln.slice(6).trim();
         if (payload === '[DONE]') continue;
-        try { const p = JSON.parse(payload); sseContent += p.token ?? p.text ?? p.response ?? p.message ?? ''; if (p.ready_for_report === true) { setDiagnosisComplete(true); if (p.confidence) setSynthConfidence(Number(p.confidence)); } }
+        try { const p = JSON.parse(payload); sseContent += p.token ?? p.text ?? p.response ?? p.message ?? ''; if (p.ready_for_report === true) { setDiagnosisComplete(true); if (p.confidence) setSynthConfidence(Number(p.confidence)); if (p.pdf_base64) setPdfBase64Report(String(p.pdf_base64)); if (p.pdf_filename) setPdfFilenameReport(String(p.pdf_filename)); } }
         catch { if (payload) sseContent += payload; }
       }
       const reply = sseContent || (()=>{ try { return JSON.parse(rawText).response || JSON.parse(rawText).message || ''; } catch { return rawText.trim(); } })();
@@ -752,8 +754,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   );
 }
 
-function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack }:
-  { report: DiagnosticReport; vehicle: Vehicle; codes: DtcCode[]; messages: Message[]; onFeedback: () => void; onBack: () => void }
+function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack, pdfBase64, pdfFilename }:
+  { report: DiagnosticReport; vehicle: Vehicle; codes: DtcCode[]; messages: Message[]; onFeedback: () => void; onBack: () => void; pdfBase64?: string; pdfFilename?: string }
 ) {
   const lastSynth = messages.filter(m => m.role==='synth').slice(-1)[0]?.content || '';
   return (
@@ -805,6 +807,18 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack }:
         </div>
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={onBack} style={{ padding:'12px 18px', borderRadius:12, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:14, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}><ChevronLeft size={16} /> Back</button>
+          {pdfBase64 && (
+          <button onClick={()=>{
+            const bytes=Uint8Array.from(atob(pdfBase64),c=>c.charCodeAt(0));
+            const blob=new Blob([bytes],{type:'application/pdf'});
+            const url=URL.createObjectURL(blob);
+            const a=document.createElement('a');a.href=url;a.download=pdfFilename||'TechPulse_Report.pdf';a.click();
+            URL.revokeObjectURL(url);
+          }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px 20px',borderRadius:11,border:'none',background:'linear-gradient(135deg,#1B4F8A,#2E75B6)',color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer',marginBottom:12,width:'100%'}}>
+            <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' y1='15' x2='12' y2='3'/></svg>
+            Download PDF Report
+          </button>
+          )}
           <button onClick={onFeedback} style={{ flex:1, padding:'13px', borderRadius:12, background:'linear-gradient(135deg,#00c3ff,#0055ff)', border:'none', color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>Confirm & Rate <ChevronRight size={18} /></button>
         </div>
       </div>
@@ -905,6 +919,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
