@@ -812,7 +812,7 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack }:
   );
 }
 
-function FeedbackStep({ onRestart }: { onRestart: () => void }) {
+function FeedbackStep({ onRestart, onBack }: { onRestart: () => void; onBack: () => void }) {
   const [rating, setRating] = useState<'accurate'|'partial'|'inaccurate'|null>(null);
   const [repaired, setRepaired] = useState<boolean|null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -857,6 +857,7 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
         </div>
         <button onClick={() => setSubmitted(true)} disabled={!rating||repaired===null}
           style={{ width:'100%', padding:'14px', borderRadius:12, background: rating&&repaired!==null?'linear-gradient(135deg,#00c3ff,#0055ff)':'var(--bg-input)', color: rating&&repaired!==null?'#fff':'var(--text-3)', fontSize:15, fontWeight:700, border:'none', cursor: rating&&repaired!==null?'pointer':'not-allowed' }}>
+          <button onClick={onBack} style={{width:'100%',padding:'12px',borderRadius:10,border:'1px solid var(--border-card)',background:'var(--bg-input)',color:'var(--text-2)',fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:10}}>Back to Report</button>
           Submit Feedback
         </button>
       </div>
@@ -899,10 +900,11 @@ export default function ChatPage() {
       {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} onNext={(c,s) => { setCodes(c); setSymptoms(s); setStep('chat'); }} onBack={() => setStep('vin')} />}
       {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} onReport={(r,msgs) => { setReport(r); setChatMessages(msgs); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && report && <ReportStep report={report} vehicle={vehicle} codes={codes} messages={chatMessages} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
-      {step==='feedback' && <FeedbackStep onRestart={restart} />}
+      {step==='feedback' && <FeedbackStep onRestart={restart} onBack={()=>setStep('report')} />}
     </div>
   );
 }
+
 
 
 
