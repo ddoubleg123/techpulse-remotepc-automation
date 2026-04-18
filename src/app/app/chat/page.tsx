@@ -1,6 +1,7 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+      {repaired===false&&<p style={{fontSize:12,color:'var(--text-3)',margin:'8px 0 0',textAlign:'center'}}>You can rate accuracy after the repair is complete.</p>}
 import { assertAcceptableScannerPdf, getPdfSizeViolationMessage, readPdfAsRawBase64 } from '@/lib/scannerPdf';
 import {
   Send, Zap, Plus, X, ChevronRight, ChevronLeft,
@@ -728,7 +729,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         </div>
       )}
 
-      <div style={{ padding:'10px 20px 14px',display:'flex',flexDirection:'column',gap:6, borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', display:'flex', gap:10, flexShrink:0 }}>
+      <div style={{ padding:'10px 20px 14px', display:'flex', flexDirection:'column', gap:6, borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', flexShrink:0 }}>
         {chatAttachment && (<div style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',background:'rgba(0,195,255,0.1)',borderRadius:8,fontSize:11,color:'var(--text-2)'}}>
           <span style={{maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{chatAttachment.name}</span>
           <button onClick={()=>setChatAttachment(null)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-3)',fontSize:14,padding:0,lineHeight:1}}>x</button>
@@ -856,7 +857,6 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
               <button key={String(v)} onClick={() => setRepaired(v)} style={{ flex:1, padding:'12px', borderRadius:12, cursor:'pointer', background: repaired===v ? (v?'rgba(16,185,129,0.12)':'rgba(245,158,11,0.12)') : 'var(--bg-input)', border: repaired===v ? `1px solid ${v?'#10b981':'#f59e0b'}` : '1px solid var(--border-input)', color: repaired===v ? (v?'#10b981':'#f59e0b') : 'var(--text-2)', fontSize:13, fontWeight:600, transition:'all 0.15s' }}>{label}</button>
             ))}
           </div>
-            {repaired===false&&<p style={{fontSize:12,color:'var(--text-3)',margin:'8px 0 0',textAlign:'center'}}>You can rate accuracy after the repair is complete.</p>}
         </div>
         <button onClick={() => setSubmitted(true)} disabled={repaired===null||(repaired===true&&!rating)}
           style={{ width:'100%', padding:'14px', borderRadius:12, background: repaired!==null&&(repaired===false||rating)?'linear-gradient(135deg,#00c3ff,#0055ff)':'var(--bg-input)', color: rating&&repaired!==null?'#fff':'var(--text-3)', fontSize:15, fontWeight:700, border:'none', cursor: rating&&repaired!==null?'pointer':'not-allowed' }}>
