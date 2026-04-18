@@ -1,7 +1,6 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/stores/authStore';
-      {repaired===false&&<p style={{fontSize:12,color:'var(--text-3)',margin:'8px 0 0',textAlign:'center'}}>You can rate accuracy after the repair is complete.</p>}
 import { assertAcceptableScannerPdf, getPdfSizeViolationMessage, readPdfAsRawBase64 } from '@/lib/scannerPdf';
 import {
   Send, Zap, Plus, X, ChevronRight, ChevronLeft,
@@ -906,6 +905,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
