@@ -505,6 +505,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [loading, setLoading] = useState(false);
   const [diagnosisComplete, setDiagnosisComplete] = useState(false);
   const [synthConfidence, setSynthConfidence] = useState<number>(0);
+  const [chatAttachment, setChatAttachment] = useState<{name:string;base64:string}|null>(null);
   const [showVinGate, setShowVinGate] = useState(false);
   const [vinGateInput, setVinGateInput] = useState('');
   const [vinValidating, setVinValidating] = useState(false);
@@ -597,6 +598,9 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     setLoading(true);
     const pdfToSend = pdfBase64 || '';
     const pdfNameToSend = pdfToSend ? (fileName || 'scan.pdf') : '';
+    const attachBase64 = chatAttachment?.base64 || '';
+    const attachName = chatAttachment?.name || '';
+    if (chatAttachment) setChatAttachment(null);
 
     try {
       const controller = new AbortController();
@@ -605,7 +609,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       const res = await fetch(SYNTH_API + '/api/diagnostic/stream', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + API_TOKEN },
-        body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...(pdfToSend ? { pdf_base64: pdfToSend, pdf_name: pdfNameToSend } : {}) }),
+        body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...(attachBase64 ? { pdf_base64: attachBase64, pdf_name: attachName } : pdfToSend ? { pdf_base64: pdfToSend, pdf_name: pdfNameToSend } : {}) }),
         signal: controller.signal,
       });
         clearTimeout(abortTimer);
@@ -718,13 +722,22 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       {messages.filter((m:any)=>m.role==='synth').length > 0 && !diagnosisComplete && (
         <div style={{padding:'0 20px 12px'}}>
           <button onClick={()=>{ setDiagnosisComplete(true); setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }}
-            style={{width:'100%',padding:'13px',borderRadius:12,border:'none',background:diagnosisComplete?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#6B7280,#4B5563)',boxShadow:diagnosisComplete?'0 0 20px rgba(16,185,129,0.4)':'none',transition:'all 0.3s',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+            style={{width:'100%',padding:'13px',borderRadius:12,border:'none',background:diagnosisComplete?'linear-gradient(135deg,#ef4444,#dc2626)':'linear-gradient(135deg,#6B7280,#4B5563)',boxShadow:diagnosisComplete?'0 0 16px rgba(239,68,68,0.4)':'none',transition:'all 0.3s ease',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
             {diagnosisComplete ? 'Synth Is Ready -- Generate Report' : 'Diagnosis Complete -- Generate Report'}
           </button>
         </div>
       )}
 
-      <div style={{ padding:'14px 20px', borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', display:'flex', gap:10, flexShrink:0 }}>
+      <div style={{ padding:'10px 20px 14px',display:'flex',flexDirection:'column',gap:6, borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', display:'flex', gap:10, flexShrink:0 }}>
+        {chatAttachment && (<div style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',background:'rgba(0,195,255,0.1)',borderRadius:8,fontSize:11,color:'var(--text-2)'}}>
+          <span style={{maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{chatAttachment.name}</span>
+          <button onClick={()=>setChatAttachment(null)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-3)',fontSize:14,padding:0,lineHeight:1}}>x</button>
+        </div>)}
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <input type='file' id='chat-file-input' accept='.pids,.pdf,.txt,.csv,.png,.jpg,.jpeg' style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{const b64=(r.result as string).split(',')[1]||'';setChatAttachment({name:f.name,base64:b64});};r.readAsDataURL(f);e.target.value='';}} />
+        <button onClick={()=>document.getElementById('chat-file-input')?.click()} title='Attach file' style={{width:38,height:38,borderRadius:9,background:'var(--bg-input)',border:'1px solid var(--border-card)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,color:chatAttachment?'#00c3ff':'var(--text-2)'}}>
+          <svg width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'><path d='m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'/></svg>
+        </button>
         <textarea rows={1} value={input} onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }}}
           placeholder='Ask Synth a follow-up question or provide more details'
@@ -733,6 +746,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
           style={{ width:42, height:42, borderRadius:11, background:'linear-gradient(135deg,#00c3ff,#0055ff)', border:'none', display:'flex', alignItems:'center', justifyContent:'center', cursor: loading||!input.trim()?'not-allowed':'pointer', opacity: loading||!input.trim()?0.5:1, flexShrink:0 }}>
           <Send size={17} color='#fff' />
         </button>
+        </div>
       </div>
     </div>
   );
@@ -889,6 +903,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
