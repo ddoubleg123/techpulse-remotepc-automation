@@ -1,5 +1,40 @@
 'use client';
 
+    {/* VIN Gate Modal */}
+    {showVinGate && (
+      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+        <div style={{ background:'var(--bg-card)', borderRadius:20, padding:28, width:'100%', maxWidth:440, border:'1px solid var(--border-card)' }}>
+          <div style={{ fontSize:20, fontWeight:800, color:'var(--text-1)', marginBottom:6 }}>VIN Required</div>
+          <div style={{ fontSize:13, color:'var(--text-2)', marginBottom:20 }}>We need your VIN to verify this diagnostic matches your vehicle before generating the report.</div>
+          {/* Camera section */}
+          {!vinGateCamera && (<button onClick={startVinGateCamera} style={{ width:'100%', padding:'11px', borderRadius:10, border:'1px solid var(--border-card)', background:'var(--bg-input)', color:'var(--text-1)', fontWeight:700, fontSize:14, cursor:'pointer', marginBottom:12, display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>Scan VIN with Camera</button>)}
+          {vinGateCamera && (
+            <div style={{ borderRadius:12, overflow:'hidden', border:'1px solid var(--border-card)', marginBottom:12, position:'relative' }}>
+              <video ref={vinGateVideoRef} autoPlay playsInline muted style={{ width:'100%', display:'block' }} />
+              <canvas ref={vinGateCanvasRef} style={{ display:'none' }} />
+              <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'10px 12px', background:'linear-gradient(transparent,rgba(0,0,0,0.8))', display:'flex', gap:8, alignItems:'center' }}>
+                <button onClick={captureVinGate} disabled={vinGateScanningVin} style={{ flex:1, padding:'9px', borderRadius:9, border:'none', cursor:vinGateScanningVin?'not-allowed':'pointer', background:'linear-gradient(135deg,#00c3ff,#0055ff)', color:'#fff', fontWeight:700, fontSize:13 }}>
+                  {vinGateScanningVin ? 'Scanning...' : 'Capture VIN'}
+                </button>
+                <button onClick={stopVinGateCamera} style={{ padding:'9px 14px', borderRadius:9, border:'none', background:'#ef4444', color:'#fff', fontWeight:700, fontSize:13, cursor:'pointer' }}>Cancel</button>
+              </div>
+            </div>
+          )}
+          <div style={{ fontSize:12, color:'var(--text-3)', textAlign:'center', marginBottom:8 }}>-- or type it manually --</div>
+          <input value={vinGateInput} onChange={e=>setVinGateInput(e.target.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,''))} placeholder='Enter 17-character VIN' maxLength={17}
+            style={{ width:'100%', padding:'11px 12px', borderRadius:10, border:'1px solid var(--border-card)', background:'var(--bg-input)', color:'var(--text-1)', fontSize:15, fontFamily:'monospace', letterSpacing:'0.1em', fontWeight:700, boxSizing:'border-box', marginBottom:8 }} />
+          {vinGateError && <div style={{ fontSize:12, color:'#ef4444', marginBottom:8, lineHeight:1.5 }}>{vinGateError}</div>}
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={()=>{ stopVinGateCamera(); setShowVinGate(false); }} style={{ flex:1, padding:'11px', borderRadius:10, border:'1px solid var(--border-card)', background:'var(--bg-input)', color:'var(--text-2)', fontWeight:700, fontSize:14, cursor:'pointer' }}>Cancel</button>
+            <button onClick={validateAndViewReport} disabled={vinGateInput.length!==17||vinValidating} style={{ flex:2, padding:'11px', borderRadius:10, border:'none', cursor:vinGateInput.length===17&&!vinValidating?'pointer':'not-allowed', background:vinGateInput.length===17&&!vinValidating?'linear-gradient(135deg,#10b981,#059669)':'var(--bg-input)', color:vinGateInput.length===17&&!vinValidating?'#fff':'var(--text-3)', fontWeight:700, fontSize:14 }}>
+              {vinValidating ? 'Verifying...' : 'Verify & View Report'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { assertAcceptableScannerPdf, getPdfSizeViolationMessage, readPdfAsRawBase64 } from '@/lib/scannerPdf';
@@ -504,11 +539,88 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showVinGate, setShowVinGate] = useState(false);
+  const [vinGateInput, setVinGateInput] = useState('');
+  const [vinValidating, setVinValidating] = useState(false);
+  const [vinGateError, setVinGateError] = useState('');
+  const [vinGateCamera, setVinGateCamera] = useState(false);
+  const [vinGateScanningVin, setVinGateScanningVin] = useState(false);
+  const vinGateVideoRef = useRef<HTMLVideoElement>(null);
+  const vinGateCanvasRef = useRef<HTMLCanvasElement>(null);
+  const vinGateStreamRef = useRef<MediaStream|null>(null);
   const [warmingUp, setWarmingUp] = useState(false);
   const [autoSent, setAutoSent] = useState(false);
   const [apiStatus, setApiStatus] = useState<'ok'|'placeholder'|'error'>('ok');
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages]);
+  const stopVinGateCamera = () => {
+    if (vinGateStreamRef.current) { vinGateStreamRef.current.getTracks().forEach((t:any)=>t.stop()); vinGateStreamRef.current=null; }
+    setVinGateCamera(false);
+  };
+  const startVinGateCamera = async () => {
+    setVinGateError(''); setVinGateCamera(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} } });
+      vinGateStreamRef.current = stream;
+      if (vinGateVideoRef.current) { vinGateVideoRef.current.srcObject=stream; vinGateVideoRef.current.play(); }
+    } catch(e) { setVinGateError('Camera access denied. Type the VIN manually below.'); setVinGateCamera(false); }
+  };
+  const captureVinGate = async () => {
+    if (!vinGateVideoRef.current || !vinGateCanvasRef.current) return;
+    setVinGateScanningVin(true);
+    const ctx2 = vinGateCanvasRef.current.getContext('2d')!;
+    vinGateCanvasRef.current.width = vinGateVideoRef.current.videoWidth;
+    vinGateCanvasRef.current.height = vinGateVideoRef.current.videoHeight;
+    ctx2.drawImage(vinGateVideoRef.current, 0, 0);
+    const b64 = vinGateCanvasRef.current.toDataURL('image/jpeg',0.9).split(',')[1];
+    try {
+      const res = await fetch('https://techpulse-api.onrender.com/api/ocr-vin', {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+API_TOKEN},
+        body:JSON.stringify({image_base64:b64})
+      });
+      const json = await res.json();
+      const extracted = (json.vin||'').trim().toUpperCase();
+      const vm = extracted.match(/[A-HJ-NPR-Z0-9]{17}/);
+      if (vm) { setVinGateInput(vm[0]); stopVinGateCamera(); }
+      else { setVinGateError('No VIN found in image. Try again or type it manually.'); }
+    } catch(e) { setVinGateError('Scan failed. Type the VIN manually.'); }
+    setVinGateScanningVin(false);
+  };
+  const validateAndViewReport = async () => {
+    const vin = vinGateInput.trim().toUpperCase();
+    if (vin.length !== 17 || !/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
+      setVinGateError('Please enter a valid 17-character VIN.');
+      return;
+    }
+    setVinValidating(true); setVinGateError('');
+    try {
+      const res = await fetch('https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/'+vin+'?format=json');
+      const json = await res.json();
+      const get = (label:string) => (json.Results||[]).find((r:any)=>r.Variable===label)?.Value?.toUpperCase()||'';
+      const decodedMake = get('Make');
+      const decodedModel = get('Model');
+      const decodedYear = get('Model Year');
+      const scanMake = (vehicle.make||'').toUpperCase();
+      const scanModel = (vehicle.model||'').toUpperCase();
+      const scanYear = (vehicle.year||'').toUpperCase();
+      // If we have scanner data, verify it matches
+      if (scanMake && decodedMake && !decodedMake.includes(scanMake) && !scanMake.includes(decodedMake)) {
+        setVinGateError('VIN '+vin+' decodes to a '+decodedYear+' '+decodedMake+' '+decodedModel+' -- this does not match your scanner data ('+vehicle.year+' '+vehicle.make+' '+vehicle.model+'). Please check your VIN and try again.');
+        setVinValidating(false); return;
+      }
+      // Passed -- update vehicle vin and proceed to report
+      const updatedVehicle = { ...vehicle, vin, make: vehicle.make||decodedMake, model: vehicle.model||decodedModel, year: vehicle.year||decodedYear };
+      stopVinGateCamera();
+      setShowVinGate(false);
+      onReport(buildReport(), messages, updatedVehicle);
+    } catch(e) {
+      // NHTSA API failed -- just accept the VIN and proceed
+      stopVinGateCamera(); setShowVinGate(false);
+      onReport(buildReport(), messages, {...vehicle, vin});
+    }
+    setVinValidating(false);
+  };
+
   const sendMessage = async (text: string, displayText?: string) => {
     if (!text.trim() || loading) return;
     const userMsg: Message = { id: Date.now()+'u', role:'user', content: displayText || text, ts:Date.now() };
@@ -599,7 +711,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}> Back</button>
-          <button onClick={() => messages.filter((m:any)=>m.role==='synth'||m.role==='assistant').length > 0 && onReport(buildReport(), messages)} disabled={messages.filter((m:any)=>m.role==='synth'||m.role==='assistant').length===0}
+          <button onClick={() => { if (vehicle.vin) { onReport(buildReport(), messages); } else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); } }} disabled={messages.filter((m:any)=>m.role==='synth'||m.role==='assistant').length===0}
             style={{ padding:'6px 14px', borderRadius:8, background: messages.length > 1 ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)', border:'none', color: messages.length > 1 ? '#fff' : 'var(--text-3)', fontSize:12, fontWeight:700, cursor: messages.length > 1 ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', gap:6 }}>
             <FileText size={13} /> View Report
           </button>
@@ -798,6 +910,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
