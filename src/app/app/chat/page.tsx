@@ -548,6 +548,15 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const vinGateVideoRef = useRef<HTMLVideoElement>(null);
   const vinGateCanvasRef = useRef<HTMLCanvasElement>(null);
   const vinGateStreamRef = useRef<MediaStream|null>(null);
+  const [showVinGate, setShowVinGate] = useState(false);
+  const [vinGateInput, setVinGateInput] = useState('');
+  const [vinValidating, setVinValidating] = useState(false);
+  const [vinGateError, setVinGateError] = useState('');
+  const [vinGateCamera, setVinGateCamera] = useState(false);
+  const [vinGateScanningVin, setVinGateScanningVin] = useState(false);
+  const vinGateVideoRef = useRef<HTMLVideoElement>(null);
+  const vinGateCanvasRef = useRef<HTMLCanvasElement>(null);
+  const vinGateStreamRef = useRef<MediaStream|null>(null);
   const [warmingUp, setWarmingUp] = useState(false);
   const [autoSent, setAutoSent] = useState(false);
   const [apiStatus, setApiStatus] = useState<'ok'|'placeholder'|'error'>('ok');
@@ -620,6 +629,11 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     }
     setVinValidating(false);
   };
+
+  const stopVinGateCamera = () => { if(vinGateStreamRef.current){vinGateStreamRef.current.getTracks().forEach((t:any)=>t.stop());vinGateStreamRef.current=null;} setVinGateCamera(false); };
+  const startVinGateCamera = async () => { setVinGateError(''); setVinGateCamera(true); try { const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}); vinGateStreamRef.current=stream; if(vinGateVideoRef.current){vinGateVideoRef.current.srcObject=stream;vinGateVideoRef.current.play();} } catch(e){setVinGateError('Camera denied. Type VIN manually.');setVinGateCamera(false);} };
+  const captureVinGate = async () => { if(!vinGateVideoRef.current||!vinGateCanvasRef.current)return; setVinGateScanningVin(true); const c=vinGateCanvasRef.current; const ctx2=c.getContext('2d')!; c.width=vinGateVideoRef.current.videoWidth; c.height=vinGateVideoRef.current.videoHeight; ctx2.drawImage(vinGateVideoRef.current,0,0); const b64=c.toDataURL('image/jpeg',0.9).split(',')[1]; try { const res=await fetch('https://techpulse-api.onrender.com/api/ocr-vin',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+API_TOKEN},body:JSON.stringify({image_base64:b64})}); const json=await res.json(); const vm=(json.vin||'').toUpperCase().match(/[A-HJ-NPR-Z0-9]{17}/); if(vm){setVinGateInput(vm[0]);stopVinGateCamera();}else{setVinGateError('No VIN found. Try again or type manually.');} } catch(e){setVinGateError('Scan failed. Type VIN manually.');} setVinGateScanningVin(false); };
+  const validateAndViewReport = async () => { const vin=vinGateInput.trim().toUpperCase(); if(vin.length!==17||!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)){setVinGateError('Enter a valid 17-character VIN.');return;} setVinValidating(true);setVinGateError(''); try { const res=await fetch('https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/'+vin+'?format=json'); const json=await res.json(); const get=(v:string)=>(json.Results||[]).find((r:any)=>r.Variable===v)?.Value?.toUpperCase()||''; const dMake=get('Make'),dYear=get('Model Year'),dModel=get('Model'); const sMake=(vehicle.make||'').toUpperCase(); if(sMake&&dMake&&!dMake.includes(sMake)&&!sMake.includes(dMake)){setVinGateError('VIN '+vin+' is a '+dYear+' '+dMake+' '+dModel+' -- does not match scanner data ('+vehicle.year+' '+vehicle.make+' '+vehicle.model+'). Check and re-enter.');setVinValidating(false);return;} const upd={...vehicle,vin,make:vehicle.make||dMake,model:vehicle.model||dModel,year:vehicle.year||dYear}; stopVinGateCamera();setShowVinGate(false);onReport(buildReport(),messages,upd); } catch(e){stopVinGateCamera();setShowVinGate(false);onReport(buildReport(),messages,{...vehicle,vin});} setVinValidating(false); };
 
   const sendMessage = async (text: string, displayText?: string) => {
     if (!text.trim() || loading) return;
@@ -698,6 +712,25 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   }, []);
   const iconStyle: React.CSSProperties = { width:30, height:30, borderRadius:8, background:'linear-gradient(135deg,#00c3ff,#0055ff)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, alignSelf:'flex-end' };
   return (
+    {/* === VIN Gate Modal === */}
+    {showVinGate && (
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+        <div style={{background:'var(--bg-card)',borderRadius:20,padding:28,width:'100%',maxWidth:440,border:'1px solid var(--border-card)'}}>
+          <div style={{fontSize:20,fontWeight:800,color:'var(--text-1)',marginBottom:6}}>VIN Required</div>
+          <div style={{fontSize:13,color:'var(--text-2)',marginBottom:20}}>We need your VIN to verify this diagnostic matches your vehicle.</div>
+          {!vinGateCamera && <button onClick={startVinGateCamera} style={{width:'100%',padding:'11px',borderRadius:10,border:'1px solid var(--border-card)',background:'var(--bg-input)',color:'var(--text-1)',fontWeight:700,fontSize:14,cursor:'pointer',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>Scan VIN with Camera</button>}
+          {vinGateCamera && (<div style={{borderRadius:12,overflow:'hidden',border:'1px solid var(--border-card)',marginBottom:12,position:'relative'}}><video ref={vinGateVideoRef} autoPlay playsInline muted style={{width:'100%',display:'block'}} /><canvas ref={vinGateCanvasRef} style={{display:'none'}} /><div style={{position:'absolute',bottom:0,left:0,right:0,padding:'10px',background:'linear-gradient(transparent,rgba(0,0,0,0.8))',display:'flex',gap:8,alignItems:'center'}}><button onClick={captureVinGate} disabled={vinGateScanningVin} style={{flex:1,padding:'9px',borderRadius:9,border:'none',background:'linear-gradient(135deg,#00c3ff,#0055ff)',color:'#fff',fontWeight:700,cursor:vinGateScanningVin?'not-allowed':'pointer'}}>{vinGateScanningVin?'Scanning...':'Capture VIN'}</button><button onClick={stopVinGateCamera} style={{padding:'9px 14px',borderRadius:9,border:'none',background:'#ef4444',color:'#fff',fontWeight:700,cursor:'pointer'}}>X</button></div></div>)}
+          <div style={{fontSize:12,color:'var(--text-3)',textAlign:'center',marginBottom:8}}>- or type manually -</div>
+          <input value={vinGateInput} onChange={e=>setVinGateInput(e.target.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,''))} placeholder='17-character VIN' maxLength={17} style={{width:'100%',padding:'11px 12px',borderRadius:10,border:'1px solid var(--border-card)',background:'var(--bg-input)',color:'var(--text-1)',fontSize:15,fontFamily:'monospace',letterSpacing:'0.08em',fontWeight:700,boxSizing:'border-box',marginBottom:8}} />
+          {vinGateError && <div style={{fontSize:12,color:'#ef4444',marginBottom:8,lineHeight:1.5}}>{vinGateError}</div>}
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={()=>{stopVinGateCamera();setShowVinGate(false);}} style={{flex:1,padding:'11px',borderRadius:10,border:'1px solid var(--border-card)',background:'var(--bg-input)',color:'var(--text-2)',fontWeight:700,fontSize:14,cursor:'pointer'}}>Cancel</button>
+            <button onClick={validateAndViewReport} disabled={vinGateInput.length!==17||vinValidating} style={{flex:2,padding:'11px',borderRadius:10,border:'none',background:vinGateInput.length===17&&!vinValidating?'linear-gradient(135deg,#10b981,#059669)':'var(--bg-input)',color:vinGateInput.length===17&&!vinValidating?'#fff':'var(--text-3)',fontWeight:700,fontSize:14,cursor:vinGateInput.length===17&&!vinValidating?'pointer':'not-allowed'}}>{vinValidating?'Verifying...':'Verify & View Report'}</button>
+          </div>
+        </div>
+      </div>
+    )}
+
     <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
       <div style={{ padding:'10px 20px', borderBottom:'1px solid var(--border-card)', background:'var(--bg-feed)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
@@ -910,6 +943,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
