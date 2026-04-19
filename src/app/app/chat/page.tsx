@@ -795,6 +795,49 @@ function PdfDownloadButton({ vehicle, codes, messages, pdfBase64, pdfFilename }:
     </button>);
 }
 
+function PdfDownloadButton({ vehicle, codes, messages, pdfBase64, pdfFilename }: { vehicle: any; codes: any[]; messages: any[]; pdfBase64?: string; pdfFilename?: string }) {
+  const [loading, setLoading] = useState(false);
+  const [localPdf, setLocalPdf] = useState('');
+  const [localFn, setLocalFn] = useState('');
+  const b64 = pdfBase64 || localPdf;
+  const fn = pdfFilename || localFn || 'TechPulse_Report.pdf';
+  const doDownload = (b: string, f: string) => {
+    const bytes = Uint8Array.from(atob(b), (c: string) => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], {type:'application/pdf'}));
+    const a = document.createElement('a'); a.href=url; a.download=f; a.click(); URL.revokeObjectURL(url);
+  };
+  const generate = async () => {
+    setLoading(true);
+    try {
+      const lastSynth = messages.filter((m: any) => m.role==='synth').slice(-1)[0]?.content || '';
+      const token = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
+      const res = await fetch('https://techpulse-api.onrender.com/api/pdf', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
+        body: JSON.stringify({ type:'diagnostic', shop_name:'TechPulse', vehicle,
+          complaint:'Customer diagnostic via TechPulse',
+          dtcs: codes.map((c: any) => typeof c==='string' ? c : c.code).filter(Boolean),
+          findings: lastSynth.substring(0,600), root_cause: lastSynth.substring(0,300),
+          recommendation: lastSynth.substring(0,400), technician:'Synth AI' }) });
+      const data = await res.json();
+      if (data.pdf_base64) { setLocalPdf(data.pdf_base64); setLocalFn(data.filename || fn); doDownload(data.pdf_base64, data.filename || fn); }
+    } catch(e) { console.error('PDF error:', e); }
+    setLoading(false);
+  };
+  if (b64) return (
+    <button onClick={() => doDownload(b64, fn)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px 20px',borderRadius:11,border:'none',background:'linear-gradient(135deg,#1B4F8A,#2E75B6)',color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer',marginBottom:12,width:'100%'}}>
+      <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' y1='15' x2='12' y2='3'/></svg>
+      Download PDF Report
+    </button>
+  );
+  return (
+    <button onClick={generate} disabled={loading} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px 20px',borderRadius:11,border:'none',background:loading?'#4B5563':'linear-gradient(135deg,#1B4F8A,#2E75B6)',color:'#fff',fontWeight:700,fontSize:14,cursor:loading?'not-allowed':'pointer',marginBottom:12,width:'100%'}}>
+      <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' y1='15' x2='12' y2='3'/></svg>
+      {loading ? 'Generating PDF...' : 'Download PDF Report'}
+    </button>
+  );
+}
+
 function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack, pdfBase64, pdfFilename }:
   <PdfDownloadButton vehicle={vehicle} codes={codes} messages={messages} pdfBase64={pdfBase64} pdfFilename={pdfFilename} />
   { report: DiagnosticReport; vehicle: Vehicle; codes: DtcCode[]; messages: Message[]; onFeedback: () => void; onBack: () => void; pdfBase64?: string; pdfFilename?: string }
@@ -847,6 +890,7 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack, pdfB
             </div>
           ))}
         </div>
+        <PdfDownloadButton vehicle={vehicle} codes={codes} messages={messages} pdfBase64={pdfBase64} pdfFilename={pdfFilename} />
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={onBack} style={{ padding:'12px 18px', borderRadius:12, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:14, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}><ChevronLeft size={16} /> Back</button>
           {pdfBase64 && (
@@ -961,6 +1005,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
