@@ -839,7 +839,6 @@ function PdfDownloadButton({ vehicle, codes, messages, pdfBase64, pdfFilename }:
 }
 
 function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack, pdfBase64, pdfFilename }:
-  <PdfDownloadButton vehicle={vehicle} codes={codes} messages={messages} pdfBase64={pdfBase64} pdfFilename={pdfFilename} />
   { report: DiagnosticReport; vehicle: Vehicle; codes: DtcCode[]; messages: Message[]; onFeedback: () => void; onBack: () => void; pdfBase64?: string; pdfFilename?: string }
 ) {
   const lastSynth = messages.filter(m => m.role==='synth').slice(-1)[0]?.content || '';
@@ -1005,6 +1004,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
