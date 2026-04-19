@@ -724,7 +724,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       {messages.filter((m:any)=>m.role==='synth').length > 0 && !diagnosisComplete && (
         <div style={{padding:'0 20px 12px'}}>
           <button onClick={()=>{ setDiagnosisComplete(true); setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }}
-            style={{width:'100%',padding:'13px',borderRadius:12,border:'none',background:diagnosisComplete?'linear-gradient(135deg,#ef4444,#dc2626)':'linear-gradient(135deg,#6B7280,#4B5563)',boxShadow:diagnosisComplete?'0 0 16px rgba(239,68,68,0.4)':'none',transition:'all 0.3s ease',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+            style={{width:'100%',padding:'13px',borderRadius:12,border:'none',background:diagnosisComplete?'linear-gradient(135deg,#ef4444,#dc2626)':'linear-gradient(135deg,#B05252,#8B3A3A)',boxShadow:diagnosisComplete?'0 0 20px rgba(239,68,68,0.5)':'0 0 8px rgba(176,82,82,0.25)',transition:'all 0.3s ease',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
             {diagnosisComplete ? 'Synth Is Ready -- Generate Report' : 'Diagnosis Complete -- Generate Report'}
           </button>
         </div>
@@ -919,6 +919,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
