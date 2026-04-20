@@ -1,94 +1,99 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useAuthStore } from "@/stores/authStore";
+const DOWNLOAD_URL = 'https://github.com/ddoubleg123/techpulse-remotepc-automation/releases/download/connector-v4/TechPulseConnectorSetup-v4-WithAPI.exe';
+const VERSION = 'v4';
+const FILE_SIZE = '24 MB';
 
 export default function SyncPage() {
-  const { devices } = useAuthStore();
-  const [selectedDevice, setSelectedDevice] = useState(devices[0]?.id || "");
-  const [syncing, setSyncing] = useState(false);
-  const [progress, setProgress] = useState(0);
-
-  const handleSync = async () => {
-    setSyncing(true);
-    setProgress(0);
-
-    // Simulate sync progress
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setSyncing(false);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 500);
-  };
+  const navy = '#1B3A6B';
+  const teal = '#2E75B6';
 
   return (
-    <div className="space-y-8">
-      <h1 className="text-3xl font-bold text-white">Data Sync</h1>
+    <div style={{ maxWidth: 680, margin: '0 auto' }}>
 
-      <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-        <h2 className="text-xl font-semibold text-white mb-4">RemotePC Sync</h2>
-        
-        <div className="space-y-4">
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ margin: '0 0 6px', fontSize: 24, fontWeight: 800, color: navy }}>TechPulse Connector</h1>
+        <p style={{ margin: 0, fontSize: 14, color: '#666' }}>
+          Install the Connector on your Windows shop PC. It automatically finds scanner files from your diagnostic tools and sends them directly to TechPulse — no manual uploads needed.
+        </p>
+      </div>
+
+      {/* Download card */}
+      <div style={{ background: `linear-gradient(135deg, ${navy}, ${teal})`, borderRadius: 16, padding: '28px 32px', marginBottom: 20, color: 'white' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Select Device
-            </label>
-            <select
-              value={selectedDevice}
-              onChange={(e) => setSelectedDevice(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white focus:outline-none focus:border-blue-500"
-            >
-              {devices.map((device) => (
-                <option key={device.id} value={device.id}>
-                  {device.name} ({device.status})
-                </option>
-              ))}
-            </select>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', opacity: 0.75, textTransform: 'uppercase', marginBottom: 4 }}>Windows Installer</div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>TechPulse Connector {VERSION}</div>
+            <div style={{ fontSize: 13, opacity: 0.8 }}>{FILE_SIZE} &nbsp;&bull;&nbsp; Windows 10 / 11 &nbsp;&bull;&nbsp; 64-bit</div>
           </div>
+          <a
+            href={DOWNLOAD_URL}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              background: 'white', color: navy,
+              padding: '13px 24px', borderRadius: 12,
+              fontWeight: 700, fontSize: 15, textDecoration: 'none',
+              flexShrink: 0,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Download Connector
+          </a>
+        </div>
+      </div>
 
-          {syncing && (
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm text-slate-300">
-                <span>Syncing...</span>
-                <span>{progress}%</span>
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-2">
-                <div
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${progress}%` }}
-                />
+      {/* How it works */}
+      <div style={{ background: 'white', border: '1px solid #E0E0E0', borderRadius: 16, padding: '24px', marginBottom: 20 }}>
+        <h2 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 700, color: navy }}>How to install</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {[
+            { n: '1', title: 'Download the installer', desc: 'Click the Download Connector button above. Your browser may warn about .exe files — click Keep or Allow to proceed.' },
+            { n: '2', title: 'Run the setup', desc: 'Double-click TechPulseConnectorSetup-v4-WithAPI.exe. If Windows shows a SmartScreen warning, click More info then Run anyway.' },
+            { n: '3', title: 'It finds files automatically', desc: 'The Connector scans your PC for scanner data files from your diagnostic tools and syncs them to TechPulse. No configuration needed.' },
+          ].map(step => (
+            <div key={step.n} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+              <div style={{ width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(135deg, ${navy}, ${teal})`, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{step.n}</div>
+              <div>
+                <p style={{ margin: '4px 0 2px', fontWeight: 600, fontSize: 14, color: navy }}>{step.title}</p>
+                <p style={{ margin: 0, fontSize: 13, color: '#555', lineHeight: 1.5 }}>{step.desc}</p>
               </div>
             </div>
-          )}
-
-          <button
-            onClick={handleSync}
-            disabled={syncing || !selectedDevice}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white rounded-md font-medium"
-          >
-            {syncing ? "Syncing..." : "Start Sync"}
-          </button>
+          ))}
         </div>
       </div>
 
-      <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-        <h3 className="text-lg font-semibold text-white mb-4">Sync History</h3>
-        <div className="space-y-3">
-          <div className="flex justify-between items-center py-2 border-b border-slate-700">
-            <span className="text-slate-300">Last sync: 5 minutes ago</span>
-            <span className="text-green-400">✓ Success</span>
-          </div>
-          <div className="flex justify-between items-center py-2 border-b border-slate-700">
-            <span className="text-slate-300">Previous sync: 2 hours ago</span>
-            <span className="text-green-400">✓ Success</span>
-          </div>
+      {/* What it finds */}
+      <div style={{ background: 'white', border: '1px solid #E0E0E0', borderRadius: 16, padding: '24px', marginBottom: 20 }}>
+        <h2 style={{ margin: '0 0 14px', fontSize: 16, fontWeight: 700, color: navy }}>What the Connector does</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          {[
+            { icon: '🔍', label: 'Finds scan files automatically', desc: 'Locates scanner data on your PC without manual searching' },
+            { icon: '📤', label: 'Sends to TechPulse', desc: 'Uploads directly to Synth for AI diagnosis' },
+            { icon: '🔄', label: 'Stays in sync', desc: 'Monitors for new files as you scan vehicles' },
+            { icon: '🔒', label: 'Secure', desc: 'Files go directly from your PC to your TechPulse account only' },
+          ].map(item => (
+            <div key={item.label} style={{ background: '#F8F9FA', borderRadius: 12, padding: '14px 16px' }}>
+              <div style={{ fontSize: 22, marginBottom: 6 }}>{item.icon}</div>
+              <p style={{ margin: '0 0 3px', fontWeight: 600, fontSize: 13, color: navy }}>{item.label}</p>
+              <p style={{ margin: 0, fontSize: 12, color: '#777' }}>{item.desc}</p>
+            </div>
+          ))}
         </div>
       </div>
+
+      {/* Requirements */}
+      <div style={{ background: '#F8F9FA', border: '1px solid #E8E8E8', borderRadius: 12, padding: '16px 20px' }}>
+        <p style={{ margin: 0, fontSize: 13, color: '#666' }}>
+          <strong style={{ color: navy }}>System requirements:</strong> Windows 10 or 11 (64-bit) &nbsp;&bull;&nbsp; Internet connection &nbsp;&bull;&nbsp; TechPulse account required
+        </p>
+      </div>
+
     </div>
   );
 }
+
