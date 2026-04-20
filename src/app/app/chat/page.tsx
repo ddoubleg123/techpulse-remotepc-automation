@@ -637,6 +637,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
           if (p.ready_for_report) { setStep('report'); }
           if (p.pdf_base64) { setPdfBase64Report(p.pdf_base64); }
           if (p.pdf_filename) { setPdfFilenameReport(p.pdf_filename); }
+        }
         catch { if (payload) sseContent += payload; }
       }
       const reply = sseContent || (()=>{ try { return JSON.parse(rawText).response || JSON.parse(rawText).message || ''; } catch { return rawText.trim(); } })();
@@ -949,6 +950,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
