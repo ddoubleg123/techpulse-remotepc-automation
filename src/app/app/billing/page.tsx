@@ -6,20 +6,38 @@ import { useAuthStore } from '@/stores/authStore';
 
 const CONNECTOR = 'https://techpulse-app.onrender.com';
 
-const TECHPULSE_PLAN = {
-  id: 'techpulse-pro',
-  name: 'TechPulse Pro',
-  price: 375,
-  priceId: 'price_techpulse_pro',
-  features: [
-    'Unlimited Synth AI diagnostic sessions',
-    'AI-powered PDF diagnostic reports',
-    'Scanner file upload & analysis',
-    'Mobile app access (iOS & Android)',
-    'Priority support',
-    'All future features included',
-  ],
-};
+const PLANS = [
+  {
+    id: 'automated',
+    name: 'Automated',
+    subtitle: 'Synth only  no human support',
+    price: 199,
+    priceId: 'price_automated',
+    badge: null,
+    features: [
+      'Unlimited scans with Synth (AI diagnostics)',
+      'TechPulse Connector  automatic scan data',
+      'Works with traditional diagnostic systems',
+      'PDF diagnosis for tech and customer',
+      'AI only  no human support',
+    ],
+  },
+  {
+    id: 'automated-human',
+    name: 'Automated + Human Support',
+    subtitle: 'Synth plus expert human backup',
+    price: 350,
+    priceId: 'price_automated_human',
+    badge: 'Most Popular',
+    features: [
+      'Everything in Automated',
+      'Human expert support when you need it',
+      'Guidance on tough cases and edge scenarios',
+      'Best for shops that want a safety net',
+      '$25 per additional user (e.g. 5 users = $450)',
+    ],
+  },
+];
 
 interface BillingStatus {
   planName: string;
@@ -33,7 +51,7 @@ function BillingPageInner() {
   const { token } = useAuthStore();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<BillingStatus | null>(null);
-  const [planPriceId, setPlanPriceId] = useState<string>(TECHPULSE_PLAN.priceId);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>('price_automated_human');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -58,7 +76,7 @@ function BillingPageInner() {
       if (plansRes.ok) {
         const plansData = await plansRes.json();
         const plans = Array.isArray(plansData) ? plansData : plansData.plans ?? [];
-        if (plans.length > 0 && plans[0].priceId) setPlanPriceId(plans[0].priceId);
+        // API plans override  when Stripe is configured, use those priceIds
       }
     } catch {
       // Non-fatal  use defaults
@@ -77,7 +95,7 @@ function BillingPageInner() {
       const res = await fetch(`${CONNECTOR}/api/billing/checkout-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ priceId: planPriceId }),
+        body: JSON.stringify({ priceId: selectedPlanId }),
       });
       if (!res.ok) throw new Error(`Checkout failed (${res.status})`);
       const data = await res.json();
@@ -172,41 +190,45 @@ function BillingPageInner() {
           )}
         </div>
 
-        {/* Plan card  show when not subscribed */}
+        {/* Plans  show when not subscribed */}
         {!loading && !hasSubscription && (
-          <div style={{ border:`2px solid ${teal}`, borderRadius:16, overflow:'hidden', marginBottom:20 }}>
-            <div style={{ background:`linear-gradient(135deg, ${navy}, ${teal})`, padding:'24px', color:'white' }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <div>
-                  <p style={{ margin:0, fontSize:11, fontWeight:600, letterSpacing:'0.1em', opacity:0.8, textTransform:'uppercase' }}>TechPulse Pro</p>
-                  <p style={{ margin:'4px 0 0', fontSize:32, fontWeight:800 }}>$375<span style={{ fontSize:16, fontWeight:400, opacity:0.8 }}>/month</span></p>
-                  <p style={{ margin:'4px 0 0', fontSize:13, opacity:0.8 }}>Per shop - cancel anytime</p>
-                </div>
-                <div style={{ fontSize:40 }}>&#x1F527;</div>
-              </div>
+          <>
+            <p style={{ margin:'0 0 12px', fontSize:13, color:'#888', textAlign:'center' }}>First month free on both plans. Cancel anytime.</p>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:4 }}>
+              {PLANS.map(plan => {
+                const isSelected = selectedPlanId === plan.priceId;
+                return (
+                  <div key={plan.id} onClick={() => setSelectedPlanId(plan.priceId)}
+                    style={{ border: isSelected ? `2px solid ${teal}` : '2px solid #E0E0E0', borderRadius:16, overflow:'hidden', cursor:'pointer', position:'relative' }}
+                  >
+                    {plan.badge && (<div style={{ position:'absolute', top:12, right:12, background:teal, color:'white', fontSize:10, fontWeight:700, padding:'3px 10px', borderRadius:20 }}>{plan.badge}</div>)}
+                    <div style={{ background: isSelected ? `linear-gradient(135deg, ${navy}, ${teal})` : '#F8F9FA', padding:'20px', color: isSelected ? 'white' : navy }}>
+                      <p style={{ margin:0, fontSize:11, fontWeight:600, letterSpacing:'0.08em', opacity: isSelected ? 0.8 : 0.6, textTransform:'uppercase' }}>{plan.name}</p>
+                      <p style={{ margin:'4px 0 0', fontSize:28, fontWeight:800 }}>${plan.price}<span style={{ fontSize:14, fontWeight:400, opacity:0.8 }}>/mo</span></p>
+                      <p style={{ margin:'4px 0 0', fontSize:12, opacity: isSelected ? 0.8 : 0.6 }}>{plan.subtitle}</p>
+                    </div>
+                    <div style={{ background:'white', padding:'16px 20px' }}>
+                      {plan.features.map(f => (
+                        <div key={f} style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:10 }}>
+                          <span style={{ color:'#27AE60', fontSize:14, flexShrink:0, marginTop:1 }}>&#x2713;</span>
+                          <span style={{ fontSize:13, color:'#333', lineHeight:'1.4' }}>{f}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <div style={{ background:'white', padding:'20px 24px' }}>
-              {TECHPULSE_PLAN.features.map(f => (
-                <div key={f} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
-                  <span style={{ color:'#27AE60', fontSize:16, flexShrink:0 }}>&#x2713;</span>
-                  <span style={{ fontSize:14, color:'#333' }}>{f}</span>
-                </div>
-              ))}
-              <button
-                onClick={handleSubscribe}
-                disabled={checkoutLoading}
-                style={{
-                  width:'100%', marginTop:16, padding:'14px', borderRadius:12, border:'none',
-                  background: checkoutLoading ? '#AAA' : `linear-gradient(135deg, ${navy}, ${teal})`,
-                  color:'white', fontWeight:700, fontSize:16, cursor: checkoutLoading ? 'default' : 'pointer',
-                }}
-              >
-                {checkoutLoading ? 'Redirecting to checkout...' : 'Subscribe Now - $375/mo'}
-              </button>
-              <p style={{ textAlign:'center', fontSize:12, color:'#999', marginTop:8 }}>Secure payment via Stripe. Cancel anytime.</p>
-            </div>
-          </div>
-        )}
+            <button onClick={handleSubscribe} disabled={checkoutLoading}
+              style={{ width:'100%', marginBottom:20, marginTop:16, padding:'14px', borderRadius:12, border:'none',
+                background: checkoutLoading ? '#AAA' : `linear-gradient(135deg, ${navy}, ${teal})`,
+                color:'white', fontWeight:700, fontSize:16, cursor: checkoutLoading ? 'default' : 'pointer' }}
+            >
+              {checkoutLoading ? 'Redirecting...' : `Subscribe to ${PLANS.find(p=>p.priceId===selectedPlanId)?.name} - $${PLANS.find(p=>p.priceId===selectedPlanId)?.price}/mo`}
+            </button>
+            <p style={{ textAlign:'center', fontSize:12, color:'#999', marginBottom:20 }}>Secure payment via Stripe. Cancel anytime.</p>
+          </>
+        ))
 
         {/* Billing history */}
         <div style={{ background:'white', border:'1px solid #E0E0E0', borderRadius:16, padding:'24px', marginBottom:20 }}>
@@ -242,4 +264,5 @@ export default function BillingPage() {
     </Suspense>
   );
 }
+
 
