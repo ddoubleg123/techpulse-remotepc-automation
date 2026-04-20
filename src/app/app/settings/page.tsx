@@ -3,103 +3,90 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, CreditCard, Bell, FileText, Shield, HelpCircle, ChevronRight, LogOut, Camera } from 'lucide-react';
+import { CreditCard, Bell, Shield, HelpCircle, LogOut, ChevronRight } from 'lucide-react';
 import { AppLayout } from '@/components/layout';
 import { useAuthStore } from '@/stores/authStore';
-
-const menuSections = [
-  {
-    title: 'Account',
-    items: [
-      { label: 'Edit Profile',           icon: User,       href: '/app/profile' },
-      { label: 'Billing & Subscription', icon: CreditCard, href: '/app/billing' },
-      { label: 'Notifications',          icon: Bell,       href: '/app/notifications' },
-    ],
-  },
-  {
-    title: 'Activity',
-    items: [{ label: 'My Reports', icon: FileText, href: '/app/reports' }],
-  },
-  {
-    title: 'More',
-    items: [
-      { label: 'Privacy & Security', icon: Shield,     href: '/app/settings/privacy' },
-      { label: 'Help & Support',     icon: HelpCircle, href: '/app/settings/help' },
-    ],
-  },
-];
 
 export default function SettingsPage() {
   const { user, signOut } = useAuthStore();
   const router = useRouter();
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
-
   const handleSignOut = () => { signOut(); router.push('/auth/login'); };
+  const navy = '#1B3A6B';
+  const teal = '#2E75B6';
 
   return (
     <AppLayout>
-      <div className="max-w-2xl space-y-6">
+      <div style={{ maxWidth: 520 }}>
 
         {/* Profile card */}
-        <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl p-6">
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <div className="w-16 h-16 rounded-full bg-[var(--accent)] flex items-center justify-center">
-                <span className="text-white text-xl font-bold">{user?.name?.slice(0, 2).toUpperCase() || 'ME'}</span>
-              </div>
-              <Link href="/app/profile" className="absolute -bottom-1 -right-1 w-6 h-6 bg-white border-2 border-[var(--border)] rounded-full flex items-center justify-center hover:bg-gray-50">
-                <Camera className="w-3 h-3 text-gray-600" />
-              </Link>
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-bold text-[var(--text-primary)] truncate">{user?.name || 'TechPulse User'}</h2>
-              <p className="text-sm text-[var(--text-secondary)] truncate">{user?.email || ''}</p>
-              <span className="inline-block mt-1 px-2 py-0.5 text-xs font-medium bg-[var(--accent)] text-white rounded-full">Mechanic</span>
-            </div>
-            <Link href="/app/profile" className="text-sm font-medium text-[var(--accent)] hover:underline">Edit</Link>
+        <div style={{ background:'white', border:'1px solid #E0E0E0', borderRadius:16, padding:'24px', marginBottom:20, display:'flex', alignItems:'center', gap:16 }}>
+          <div style={{ width:60, height:60, borderRadius:'50%', background:`linear-gradient(135deg, ${navy}, ${teal})`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <span style={{ color:'white', fontSize:20, fontWeight:700 }}>{user?.name?.slice(0,2).toUpperCase()||'ME'}</span>
           </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <p style={{ margin:0, fontWeight:700, fontSize:16, color:navy, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{user?.name||'TechPulse User'}</p>
+            <p style={{ margin:'2px 0 4px', fontSize:13, color:'#888', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{user?.email||''}</p>
+            <span style={{ display:'inline-block', background:teal, color:'white', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>Mechanic</span>
+          </div>
+          <Link href="/app/profile" style={{ fontSize:13, fontWeight:600, color:teal, textDecoration:'none', flexShrink:0 }}>Edit</Link>
         </div>
 
-        {/* Menu sections */}
-        {menuSections.map(section => (
-          <div key={section.title}>
-            <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider px-1 mb-2">{section.title}</h3>
-            <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl overflow-hidden divide-y divide-[var(--border)]">
-              {section.items.map(item => (
-                <Link key={item.href} href={item.href} className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--hover)] transition-colors">
-                  <div className="w-9 h-9 rounded-xl bg-[var(--hover)] flex items-center justify-center shrink-0">
-                    <item.icon className="w-4 h-4 text-[var(--accent)]" />
-                  </div>
-                  <span className="flex-1 text-sm font-medium text-[var(--text-primary)]">{item.label}</span>
-                  <ChevronRight className="w-4 h-4 text-[var(--text-secondary)]" />
-                </Link>
-              ))}
-            </div>
-          </div>
-        ))}
+        {/* Account settings */}
+        <div style={{ background:'white', border:'1px solid #E0E0E0', borderRadius:16, overflow:'hidden', marginBottom:20 }}>
+          {[
+            { label:'Billing & Subscription', icon:CreditCard, href:'/app/billing', desc:'Manage your plan and payments' },
+            { label:'Notifications',           icon:Bell,       href:'/app/notifications', desc:'Alert preferences' },
+            { label:'Privacy & Security',      icon:Shield,     href:'/app/settings/privacy', desc:'Account security settings' },
+            { label:'Help & Support',          icon:HelpCircle, href:'/app/settings/help', desc:'Get help with TechPulse' },
+          ].map((item, i, arr) => (
+            <Link key={item.href} href={item.href} style={{
+              display:'flex', alignItems:'center', gap:14, padding:'14px 20px',
+              borderBottom: i < arr.length-1 ? '1px solid #F0F0F0' : 'none',
+              textDecoration:'none', background:'white', transition:'background 0.15s',
+            }}
+            onMouseEnter={e=>(e.currentTarget.style.background='#F8F9FA')}
+            onMouseLeave={e=>(e.currentTarget.style.background='white')}>
+              <div style={{ width:36, height:36, borderRadius:10, background:'#F0F4FA', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <item.icon size={16} color={teal} />
+              </div>
+              <div style={{ flex:1 }}>
+                <p style={{ margin:0, fontSize:14, fontWeight:600, color:navy }}>{item.label}</p>
+                <p style={{ margin:0, fontSize:12, color:'#999' }}>{item.desc}</p>
+              </div>
+              <ChevronRight size={16} color="#CCC" />
+            </Link>
+          ))}
+        </div>
 
         {/* Sign out */}
-        <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl overflow-hidden">
+        <div style={{ background:'white', border:'1px solid #E0E0E0', borderRadius:16, overflow:'hidden', marginBottom:24 }}>
           {!showSignOutConfirm ? (
-            <button onClick={() => setShowSignOutConfirm(true)} className="flex items-center gap-4 px-5 py-4 w-full hover:bg-red-50 transition-colors">
-              <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
-                <LogOut className="w-4 h-4 text-red-500" />
+            <button onClick={()=>setShowSignOutConfirm(true)} style={{
+              display:'flex', alignItems:'center', gap:14, padding:'14px 20px', width:'100%',
+              background:'none', border:'none', cursor:'pointer', transition:'background 0.15s',
+            }}
+            onMouseEnter={e=>(e.currentTarget.style.background='#FFF5F5')}
+            onMouseLeave={e=>(e.currentTarget.style.background='none')}>
+              <div style={{ width:36, height:36, borderRadius:10, background:'#FFF0F0', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <LogOut size={16} color="#E74C3C" />
               </div>
-              <span className="flex-1 text-left text-sm font-medium text-red-500">Sign Out</span>
+              <span style={{ fontSize:14, fontWeight:600, color:'#E74C3C' }}>Sign Out</span>
             </button>
           ) : (
-            <div className="px-5 py-4 space-y-3">
-              <p className="text-sm font-medium text-[var(--text-primary)]">Sign out of TechPulse?</p>
-              <div className="flex gap-3">
-                <button onClick={handleSignOut} className="flex-1 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition-colors">Sign Out</button>
-                <button onClick={() => setShowSignOutConfirm(false)} className="flex-1 py-2 bg-[var(--hover)] text-[var(--text-primary)] text-sm font-medium rounded-lg transition-colors">Cancel</button>
+            <div style={{ padding:'16px 20px' }}>
+              <p style={{ margin:'0 0 12px', fontSize:14, fontWeight:600, color:navy }}>Sign out of TechPulse?</p>
+              <div style={{ display:'flex', gap:10 }}>
+                <button onClick={handleSignOut} style={{ flex:1, padding:'10px', background:'#E74C3C', color:'white', border:'none', borderRadius:10, fontWeight:700, cursor:'pointer', fontSize:13 }}>Sign Out</button>
+                <button onClick={()=>setShowSignOutConfirm(false)} style={{ flex:1, padding:'10px', background:'#F5F5F5', color:'#333', border:'none', borderRadius:10, fontWeight:600, cursor:'pointer', fontSize:13 }}>Cancel</button>
               </div>
             </div>
           )}
         </div>
 
-        <p className="text-center text-xs text-[var(--text-secondary)] pb-4">TechPulse v2.0</p>
+        <p style={{ textAlign:'center', fontSize:12, color:'#BBB' }}>TechPulse v2.0</p>
       </div>
     </AppLayout>
   );
 }
+
