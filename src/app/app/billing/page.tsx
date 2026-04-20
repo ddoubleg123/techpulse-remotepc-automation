@@ -228,7 +228,7 @@ function BillingPageInner() {
             </button>
             <p style={{ textAlign:'center', fontSize:12, color:'#999', marginBottom:20 }}>Secure payment via Stripe. Cancel anytime.</p>
           </>
-        ))
+        )}
 
         {/* Billing history */}
         <div style={{ background:'white', border:'1px solid #E0E0E0', borderRadius:16, padding:'24px', marginBottom:20 }}>
@@ -264,5 +264,6 @@ export default function BillingPage() {
     </Suspense>
   );
 }
+
 
 
