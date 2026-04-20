@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { AppLayout } from '@/components/layout';
 import { useAuthStore } from '@/stores/authStore';
 
 const CONNECTOR = 'https://techpulse-app.onrender.com';
@@ -62,7 +61,7 @@ function BillingPageInner() {
         if (plans.length > 0 && plans[0].priceId) setPlanPriceId(plans[0].priceId);
       }
     } catch {
-      // Non-fatal — use defaults
+      // Non-fatal  use defaults
     } finally {
       setLoading(false);
     }
@@ -101,13 +100,13 @@ function BillingPageInner() {
   const teal = '#2E75B6';
 
   return (
-    <AppLayout>
+    <>
       <div style={{ maxWidth: 600 }}>
 
         {successParam === 'true' && (
           <div style={{ background:'#E8F5E9', border:'1px solid #27AE60', borderRadius:12, padding:'14px 18px', marginBottom:20, display:'flex', alignItems:'center', gap:12 }}>
-            <span style={{ fontSize:20 }}>✅</span>
-            <p style={{ margin:0, color:'#1A5C38', fontWeight:600 }}>Subscription activated — welcome to TechPulse Pro!</p>
+            <span style={{ fontSize:20 }}></span>
+            <p style={{ margin:0, color:'#1A5C38', fontWeight:600 }}>Subscription activated  welcome to TechPulse Pro!</p>
           </div>
         )}
 
@@ -119,7 +118,7 @@ function BillingPageInner() {
 
         {isPastDue && (
           <div style={{ background:'linear-gradient(135deg, #E74C3C, #E67E22)', borderRadius:12, padding:'20px 24px', marginBottom:20, color:'white' }}>
-            <p style={{ margin:0, fontWeight:700, fontSize:16 }}>⚠️ Payment past due</p>
+            <p style={{ margin:0, fontWeight:700, fontSize:16 }}> Payment past due</p>
             <p style={{ margin:'4px 0 0', opacity:0.9, fontSize:14 }}>Update your payment method to keep access.</p>
           </div>
         )}
@@ -168,13 +167,13 @@ function BillingPageInner() {
             </>
           ) : (
             <div style={{ padding:'16px 0', textAlign:'center' }}>
-              <div style={{ fontSize:36, marginBottom:8 }}>💳</div>
+              <div style={{ fontSize:36, marginBottom:8 }}></div>
               <p style={{ margin:0, color:'#888', fontSize:14 }}>No active subscription</p>
             </div>
           )}
         </div>
 
-        {/* Plan card — always visible when not subscribed */}
+        {/* Plan card  always visible when not subscribed */}
         {!loading && !hasSubscription && (
           <div style={{ border:`2px solid ${teal}`, borderRadius:16, overflow:'hidden', marginBottom:20 }}>
             {/* Header */}
@@ -183,16 +182,16 @@ function BillingPageInner() {
                 <div>
                   <p style={{ margin:0, fontSize:11, fontWeight:600, letterSpacing:'0.1em', opacity:0.8, textTransform:'uppercase' }}>TechPulse Pro</p>
                   <p style={{ margin:'4px 0 0', fontSize:32, fontWeight:800 }}>$375<span style={{ fontSize:16, fontWeight:400, opacity:0.8 }}>/month</span></p>
-                  <p style={{ margin:'4px 0 0', fontSize:13, opacity:0.8 }}>Per shop — cancel anytime</p>
+                  <p style={{ margin:'4px 0 0', fontSize:13, opacity:0.8 }}>Per shop  cancel anytime</p>
                 </div>
-                <div style={{ fontSize:40 }}>🔧</div>
+                <div style={{ fontSize:40 }}></div>
               </div>
             </div>
             {/* Features */}
             <div style={{ background:'white', padding:'20px 24px' }}>
               {TECHPULSE_PLAN.features.map(f => (
                 <div key={f} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
-                  <span style={{ color:'#27AE60', fontSize:16, flexShrink:0 }}>✓</span>
+                  <span style={{ color:'#27AE60', fontSize:16, flexShrink:0 }}></span>
                   <span style={{ fontSize:14, color:'#333' }}>{f}</span>
                 </div>
               ))}
@@ -205,7 +204,7 @@ function BillingPageInner() {
                   color:'white', fontWeight:700, fontSize:16, cursor: checkoutLoading ? 'default' : 'pointer',
                 }}
               >
-                {checkoutLoading ? 'Redirecting to checkout...' : 'Subscribe Now — $375/mo'}
+                {checkoutLoading ? 'Redirecting to checkout...' : 'Subscribe Now  $375/mo'}
               </button>
               <p style={{ textAlign:'center', fontSize:12, color:'#999', marginTop:8 }}>Secure payment via Stripe. Cancel anytime.</p>
             </div>
@@ -216,7 +215,7 @@ function BillingPageInner() {
         <div style={{ background:'white', border:'1px solid #E0E0E0', borderRadius:16, padding:'24px' }}>
           <h3 style={{ margin:'0 0 16px', fontSize:16, fontWeight:700, color:navy }}>Billing History</h3>
           <div style={{ textAlign:'center', padding:'24px 0', color:'#BBB' }}>
-            <div style={{ fontSize:32, marginBottom:8 }}>📄</div>
+            <div style={{ fontSize:32, marginBottom:8 }}></div>
             <p style={{ margin:0, fontSize:13 }}>Payment history will appear here once available.</p>
           </div>
         </div>
@@ -235,7 +234,7 @@ function BillingPageInner() {
         )}
 
       </div>
-    </AppLayout>
+    </>
   );
 }
 
@@ -246,4 +245,5 @@ export default function BillingPage() {
     </Suspense>
   );
 }
+
 
