@@ -101,7 +101,7 @@ function BillingPageInner() {
 
   return (
     <>
-      <div style={{ maxWidth: 960, width: '100%' }}>
+      <div style={{ maxWidth: 700, width: '100%', margin: '0 auto' }}>
 
         {successParam === 'true' && (
           <div style={{ background:'#E8F5E9', border:'1px solid #27AE60', borderRadius:12, padding:'14px 18px', marginBottom:20, display:'flex', alignItems:'center', gap:12 }}>
@@ -129,9 +129,6 @@ function BillingPageInner() {
             <button onClick={fetchBilling} style={{ background:'none', border:'1px solid #C0392B', color:'#C0392B', borderRadius:8, padding:'4px 12px', cursor:'pointer', fontSize:13 }}>Retry</button>
           </div>
         )}
-
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20, alignItems:'start' }}>
-
         {/* Current plan card */}
         <div style={{ background:'white', border:'1px solid #E0E0E0', borderRadius:16, padding:'24px', marginBottom:20 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
@@ -249,6 +246,7 @@ export default function BillingPage() {
     </Suspense>
   );
 }
+
 
 
 
