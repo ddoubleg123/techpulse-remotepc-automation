@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { CreditCard, Bell, Shield, HelpCircle, LogOut, ChevronRight } from 'lucide-react';
-import { AppLayout } from '@/components/layout';
 import { useAuthStore } from '@/stores/authStore';
 
 export default function SettingsPage() {
@@ -16,7 +15,7 @@ export default function SettingsPage() {
   const teal = '#2E75B6';
 
   return (
-    <AppLayout>
+    <>
       <div style={{ maxWidth: 520 }}>
 
         {/* Profile card */}
@@ -86,7 +85,8 @@ export default function SettingsPage() {
 
         <p style={{ textAlign:'center', fontSize:12, color:'#BBB' }}>TechPulse v2.0</p>
       </div>
-    </AppLayout>
+    </>
   );
 }
+
 
