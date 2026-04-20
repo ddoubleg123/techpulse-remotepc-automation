@@ -634,7 +634,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         try {
           const p = JSON.parse(payload);
           sseContent += p.token ?? p.text ?? p.response ?? p.message ?? '';
-          if (p.ready_for_report) { setStep('report'); }
+          if (p.ready_for_report) { onReport(buildReport(), messages); }
           if (p.pdf_base64) { setPdfBase64Report(p.pdf_base64); }
           if (p.pdf_filename) { setPdfFilenameReport(p.pdf_filename); }
         }
@@ -950,6 +950,7 @@ export default function ChatPage() {
     </div>
   );
 }
+
 
 
 
