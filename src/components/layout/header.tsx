@@ -4,7 +4,6 @@ import { useAuthStore } from '@/stores/authStore';
 import { Search, Bell, Sun, Moon, X, FileText, Car } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -76,32 +75,23 @@ export default function Header() {
           found.push({
             type: 'vin',
             title: `${year} ${make} ${model}`.trim(),
-            subtitle: `VIN: ${q.toUpperCase()} — click to start diagnostic`,
+            subtitle: `VIN: ${q.toUpperCase()}  click to start diagnostic`,
             href: `/app/chat?vin=${q.toUpperCase()}`,
           });
         }
       }
 
       // 2. Search diagnostic_files in Supabase
-      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       const q_lower = q.toLowerCase();
-      let dbQuery = supabase
-        .from('diagnostic_files')
-        .select('id, filename, vehicle_make, vehicle_year, vehicle_model, created_at')
-        .order('created_at', { ascending: false })
-        .limit(8);
-
-      // DTC pattern — search filename
-      if (DTC_RE.test(q.trim())) {
-        dbQuery = dbQuery.ilike('filename', `%${q.toUpperCase()}%`);
-      } else {
-        // General search across vehicle fields and filename
-        dbQuery = dbQuery.or(
-          `filename.ilike.%${q}%,vehicle_make.ilike.%${q}%,vehicle_model.ilike.%${q}%,vehicle_year.ilike.%${q}%`
-        );
-      }
-
-      const { data: rows } = await dbQuery;
+      const isDtc = DTC_RE.test(q.trim());
+      const filter = isDtc
+        ? `filename=ilike.*${q.toUpperCase()}*`
+        : `or=(filename.ilike.*${q}*,vehicle_make.ilike.*${q}*,vehicle_model.ilike.*${q}*,vehicle_year.ilike.*${q}*)`;
+      const dbRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/diagnostic_files?select=id,filename,vehicle_make,vehicle_year,vehicle_model,created_at&${filter}&order=created_at.desc&limit=8`,
+        { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
+      );
+      const rows = dbRes.ok ? await dbRes.json() : [];
       if (rows) {
         rows.forEach((row: any) => {
           const veh = [row.vehicle_year, row.vehicle_make, row.vehicle_model].filter(Boolean).join(' ');
@@ -140,7 +130,7 @@ export default function Header() {
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500 }}>
-          {greeting}{firstName ? ', ' + firstName : ''} &nbsp;·&nbsp; Welcome back
+          {greeting}{firstName ? ', ' + firstName : ''} &nbsp;&nbsp; Welcome back
         </div>
         <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1.2 }}>{title}</div>
       </div>
@@ -219,4 +209,5 @@ export default function Header() {
     </header>
   );
 }
+
 
