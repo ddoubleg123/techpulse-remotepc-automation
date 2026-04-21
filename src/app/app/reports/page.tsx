@@ -16,7 +16,8 @@ interface Report {
 }
 
 export default function ReportsPage() {
-  const { token } = useAuthStore();
+  const { token: _jwt } = useAuthStore();
+  const token = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +46,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [synthToken]);
+  }, [token]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
