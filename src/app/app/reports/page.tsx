@@ -16,8 +16,7 @@ interface Report {
 }
 
 export default function ReportsPage() {
-  const { token: _userToken } = useAuthStore();
-  const synthToken = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
+  const { token } = useAuthStore();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +27,7 @@ export default function ReportsPage() {
   const teal = '#2E75B6';
 
   const fetchReports = useCallback(async (q = '') => {
-    if (!synthToken) return;
+    if (!token) return;
     setLoading(true);
     setError(null);
     try {
@@ -36,7 +35,7 @@ export default function ReportsPage() {
         ? `${SYNTH_API}/api/reports?search=${encodeURIComponent(q)}`
         : `${SYNTH_API}/api/reports`;
       const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${synthToken}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -46,7 +45,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [synthToken]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
