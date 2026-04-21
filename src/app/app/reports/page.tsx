@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { AppLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, Button } from '@/components/ui';
 import {
   Upload,
@@ -81,7 +80,7 @@ export default function ReportsPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       <div className="space-y-6">
         {/* Upload Area */}
         <Card>
@@ -115,7 +114,7 @@ export default function ReportsPage() {
                 Select Files
               </Button>
               <p className="text-xs text-gray-400 mt-4">
-                PDF files only • Unlimited uploads • Stored indefinitely
+                PDF files only  Unlimited uploads  Stored indefinitely
               </p>
             </div>
           </CardContent>
@@ -194,7 +193,7 @@ export default function ReportsPage() {
                     </p>
                     <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
                       <span>{formatFileSize(report.fileSize)}</span>
-                      <span>•</span>
+                      <span></span>
                       <span>{formatDate(report.uploadedAt)}</span>
                     </div>
                   </div>
@@ -215,6 +214,7 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
       </div>
-    </AppLayout>
+    </>
   );
 }
+
