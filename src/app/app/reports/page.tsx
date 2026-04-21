@@ -16,7 +16,8 @@ interface Report {
 }
 
 export default function ReportsPage() {
-  const { token } = useAuthStore();
+  const { token: _userToken } = useAuthStore();
+  const synthToken = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +28,7 @@ export default function ReportsPage() {
   const teal = '#2E75B6';
 
   const fetchReports = useCallback(async (q = '') => {
-    if (!token) return;
+    if (!synthToken) return;
     setLoading(true);
     setError(null);
     try {
@@ -35,7 +36,7 @@ export default function ReportsPage() {
         ? `${SYNTH_API}/api/reports?search=${encodeURIComponent(q)}`
         : `${SYNTH_API}/api/reports`;
       const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${synthToken}` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -72,7 +73,7 @@ export default function ReportsPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: navy }}>Reports</h1>
-          <p style={{ margin: '2px 0 0', fontSize: 13, color: '#888' }}>Diagnostic history — all platforms</p>
+          <p style={{ margin: '2px 0 0', fontSize: 13, color: '#888' }}>Diagnostic history  all platforms</p>
         </div>
         {/* Search */}
         <form onSubmit={handleSearch} style={{ display: 'flex', gap: 8 }}>
@@ -99,8 +100,8 @@ export default function ReportsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
           {[
             { label: 'Total Reports', value: totalReports },
-            { label: 'Most Recent', value: reports[0] ? formatDate(reports[0].created_at) : '—' },
-            { label: 'Vehicles', value: new Set(reports.map(r => [r.vehicle_make, r.vehicle_model].filter(Boolean).join(' '))).size || '—' },
+            { label: 'Most Recent', value: reports[0] ? formatDate(reports[0].created_at) : '' },
+            { label: 'Vehicles', value: new Set(reports.map(r => [r.vehicle_make, r.vehicle_model].filter(Boolean).join(' '))).size || '' },
           ].map(stat => (
             <div key={stat.label} style={{ background: 'white', border: '1px solid #E8E8E8', borderRadius: 12, padding: '16px 20px' }}>
               <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: navy }}>{stat.value}</p>
@@ -123,7 +124,7 @@ export default function ReportsPage() {
           </div>
         ) : reports.length === 0 ? (
           <div style={{ padding: 56, textAlign: 'center', color: '#888' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+            <div style={{ fontSize: 40, marginBottom: 12 }}></div>
             <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: navy }}>
               {search ? `No reports matching "${search}"` : 'No diagnostic reports yet'}
             </p>
@@ -138,14 +139,14 @@ export default function ReportsPage() {
               borderBottom: i < reports.length - 1 ? '1px solid #F0F0F0' : 'none',
             }}>
               <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FFF0EE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>
-                📄
+                
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: navy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {r.filename || 'Diagnostic Report'}
                 </p>
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: '#888' }}>
-                  {vehicleLabel(r)} &nbsp;·&nbsp; {formatDate(r.created_at)}
+                  {vehicleLabel(r)} &nbsp;&nbsp; {formatDate(r.created_at)}
                 </p>
               </div>
               <span style={{ fontSize: 11, color: '#AAA', flexShrink: 0 }}>PDF</span>
@@ -156,4 +157,5 @@ export default function ReportsPage() {
     </div>
   );
 }
+
 
