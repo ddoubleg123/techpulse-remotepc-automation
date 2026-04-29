@@ -1,336 +1,361 @@
-# TechPulse — Full Architecture & Session Handoff Document
+# TechPulse Platform Architecture & Technical Reference
 
-**Last updated:** April 11, 2026
-**Purpose:** Complete architecture reference and handoff document for new chat sessions.
-
----
-
-## 1. What TechPulse Is
-
-TechPulse is an AI-powered automotive diagnostic platform for independent auto repair shops.
-The AI engine is called **Synth** — trained on 6,000+ real diagnostic cases by Mike Munson (45-year master technician).
-Tagline: *"Faster diagnostics. Smarter technicians."*
-
-**Business model:** $375/month SaaS per shop. Currently 11 paying shops, $43k ARR, 80%+ retention.
+**Last updated:** 2026-04-29
+**Status:** Living document — replaces TechPulse_Architecture.docx (April 2026 v1)
 
 ---
 
-## 2. The Three Products
+## 1. Platform overview
 
-| Product | Repo | Live URL | Owner |
-|---------|------|----------|-------|
-| Web App | `ddoubleg123/techpulse-remotepc-automation` | `techpulse-remotepc-automation.onrender.com` | Daniel |
-| Mobile App | `sidd07181134/techpulse-app` (private) | Expo / App Store (in dev) | Sidd |
-| Synth API | `ddoubleg123/techpulse-api` (private) | `techpulse-api.onrender.com` | Daniel / Mike |
+TechPulse is an AI-powered automotive diagnostic platform for independent auto
+repair shops. The AI engine, Synth, is trained on 6,000+ real diagnostic cases
+documented by Mike Munson, a 45-year master technician.
 
-**Note:** There is also Sidd's connector API at `techpulse-app.onrender.com` which handles billing, extract-document, and diagnostic-report endpoints for the mobile app.
+- **Tagline:** Faster diagnostics. Smarter technicians.
+- **Business model:** $375/month SaaS per shop
+- **Current traction:** 11 paying shops, $43K ARR, 80%+ retention
 
 ---
 
-## 3. Infrastructure & Third-Party Services
+## 2. Services
 
-### Render (Hosting)
-All services run on Render. Auto-deploy on every GitHub push.
+TechPulse runs as **three production services + one repository for AI agents**.
 
-| Service Name | Render Service ID | URL | Repo |
+| Service | Repository | Live URL | Owner |
 |---|---|---|---|
-| Web App (Next.js) | `srv-d76kglf5r7bs73c8mh1g` | `techpulse-remotepc-automation.onrender.com` | `ddoubleg123/techpulse-remotepc-automation` |
-| Synth API (Flask) | `srv-d7bskonkijhs73avfilg` | `techpulse-api.onrender.com` | `ddoubleg123/techpulse-api` |
-| Auth API (Node.js) | (separate service) | `techpulse-sync-api.onrender.com` | `ddoubleg123/techpulse-sync-api` |
-| Sidd's Connector | (Sidd's account) | `techpulse-app.onrender.com` | `sidd07181134/techpulse-app` |
+| Web App (Next.js 16) | `ddoubleg123/techpulse-remotepc-automation` (main) | techpulse-remotepc-automation.onrender.com | Daniel |
+| Synth API (Flask/Python) | `ddoubleg123/techpulse-api` (master) | techpulse-api.onrender.com | Daniel ops + Mike code |
+| Connector + Mobile | `sidd07181134/techpulse-app` (private) | techpulse-app.onrender.com | Sidd |
+| AI Agents (definitions) | `atrguide/techpulse-agents` (private) | n/a | Mike + Adriatik |
 
-### GitHub
-- Account: `ddoubleg123`
-- `techpulse-remotepc-automation` — web app (public)
-- `techpulse-api` — Synth Flask API (private)
-- `techpulse-sync-api` — Auth API Node.js (public)
-- `sidd07181134/techpulse-app` — mobile app (private, Daniel has access)
-
-### Supabase
-- URL: `https://fcqejcrxtrqdxybgyueu.supabase.co`
-- Used for: user auth, diagnostic sessions, payment/subscription records
-- Both web app and mobile app share the same Supabase instance
-- `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` are set in Render environment vars for `techpulse-api`
-
-### Redis
-- Internal Render Redis: `redis://red-d66d6m7gi27c738cuiv0:6379`
-- Used by: Synth API for session storage (conversation history per session)
-- Only accessible within Render's internal network
-
-### Anthropic (Claude API)
-- `ANTHROPIC_API_KEY` is set in Render for `techpulse-api`
-- Model used: `claude-sonnet-4-20250514`
-- The web app's chat calls `techpulse-api.onrender.com/api/diagnostic`
-- PDFs are sent as base64 document blocks — Claude reads them natively
-
-### Stripe (Billing — NOT YET WIRED ON WEB)
-- Stripe is fully implemented in Sidd's mobile connector (`techpulse-app.onrender.com`)
-- The mobile app uses 3 endpoints:
-  - `API_ENDPOINTS.BILLING_STATUS` — GET current subscription
-  - `API_ENDPOINTS.BILLING_PLANS` — GET available plans
-  - `API_ENDPOINTS.BILLING_CHECKOUT_SESSION` — POST to create Stripe checkout
-- The Stripe secret key lives server-side on Sidd's connector — web app never touches it directly
-- **The web billing page has NOT been built yet** (see Section 7)
-
-### Google OAuth
-- Handled by `techpulse-sync-api.onrender.com`
-- OAuth callback returns `?token=&email=` to web app
-- Web app catches these params, calls `signIn()`, stores in Zustand (`auth-storage` in localStorage)
+**Auth API (sync-api)** lives in `ddoubleg123/techpulse-sync-api` and runs at
+techpulse-sync-api.onrender.com. **Scheduled for retirement under G4** (5-week
+migration to Supabase Auth). When G4 Phase 4 completes, the service is deleted
+and the repo archived. Do not invest in sync-api beyond critical fixes.
 
 ---
 
-## 4. Web App Architecture
+## 3. Infrastructure
 
-**Stack:** Next.js 16 (App Router, Turbopack), TypeScript, React, deployed on Render
+### 3.1 Render
+All services run on Render with auto-deploy on push to the configured branch.
 
-### Key Files
+| Service | Render service ID | Runtime | Branch |
+|---|---|---|---|
+| Web App | srv-d76kglf5r7bs73c8mh1g | Node.js | main |
+| Synth API | srv-d7bskonkijhs73avfilg | Python 3 | master |
+| Sync API | (in dashboard) | Node.js | main |
+| Connector (Sidd's account) | (Sidd's dashboard) | Node.js | main |
+| Redis | red-d66d6m7gi27c738cuiv0 | Valkey 8 | n/a |
 
-```
-src/
-  app/
-    app/
-      page.tsx              — Dashboard (real ticket history, empty state, no fake stats)
-      chat/page.tsx         — 5-step diagnostic flow
-      billing/page.tsx      — Billing page (STUB — needs Stripe wiring)
-      layout.tsx            — App layout wrapper
-    auth/login/page.tsx     — Login with Google OAuth
-  components/layout/
-    app-layout.tsx          — Root flex layout (height:100vh, minHeight:0 chain for scroll)
-    sidebar.tsx             — Nav sidebar (user card above Sign Out, white active state)
-    header.tsx              — Header (no D avatar, search + bell + theme toggle)
-    index.ts                — Barrel exports (all use default exports)
-  stores/
-    authStore.ts            — Zustand auth store (user, token, signIn, signOut)
-  app/globals.css           — CSS custom properties design system (dark default, light toggle)
-```
+Render free tier spins down services after 15 min idle. Cold start ~30-60s.
+Web app pre-warms Synth with a `/health` ping on page load.
 
-### 5-Step Diagnostic Flow (`/app/chat`)
+### 3.2 Supabase
+- **URL:** `https://fcqejcrxtrqdxybgyueu.supabase.co`
+- **Project:** Techpulse (Pro tier)
+- **Stores:** user authentication, diagnostic conversation records, payment
+  records, Mike's case-study training corpus
+- Both web and mobile share the same Supabase instance
 
-| Step | Screen | What it does |
-|------|--------|-------------|
-| 1 | Vehicle / VIN + Upload | Enter VIN + Look Up, OR upload scanner file. PDFs sent as base64 to Claude natively. Text files parsed locally. |
-| 2 | DTC Codes | Add fault codes, symptoms. Auto-extracted from text uploads. PDFs never leak binary here. |
-| 3 | Diagnose | Chat with Synth. Auto-sends vehicle+codes+symptoms+PDF on load. Clean user bubble (no raw binary shown). |
-| 4 | Report | TechPulse Diagnostic Report — vehicle, fault codes, Synth analysis, recommended actions. |
-| 5 | Confirm | Accurate/Partial/Inaccurate rating + Repaired/Not Yet. Feedback trains Synth. |
+### 3.3 Redis
+- Internal URL: `redis://red-d66d6m7gi27c738cuiv0:6379`
+- Used by Synth API for conversation memory (multi-turn per session_id)
+- Internal Render network only
+
+### 3.4 Anthropic
+- Model: `claude-sonnet-4-20250514`
+- PDFs sent as native base64 document blocks; Claude reads them directly
+
+### 3.5 Stripe
+- Implemented on the connector (techpulse-app.onrender.com)
+- Web billing wired to the same connector endpoints
+- Stripe secret key lives server-side on Sidd's connector only
 
 ---
 
-## 5. Synth API Architecture
+## 4. Web app
 
-**Stack:** Flask (Python), Anthropic SDK, deployed on Render
-**Repo:** `ddoubleg123/techpulse-api` (private, branch: `master`)
+### 4.1 Stack
 
-### Current State
-- `app.py` is a **working** Flask server that calls Claude API directly
-- Version `2.1.0` — has real Claude responses, session memory, native PDF support
-- Loads `agents/prompts/synth-diagnostic-conductor.md` as system prompt
-- Falls back to inline system prompt if agent files not found
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16 (App Router, Turbopack) |
+| Language | TypeScript |
+| State | Zustand (auth-storage in localStorage) |
+| Styling | CSS custom properties + inline styles |
+| Hosting | Render (Node.js) |
 
-### Endpoints
+### 4.2 Key files
+
+| File | Purpose |
+|---|---|
+| `src/app/app/chat/page.tsx` | 5-step diagnostic flow (~66KB; see G6 for split plan) |
+| `src/app/app/billing/page.tsx` | Stripe billing |
+| `src/app/app/tickets/page.tsx` | Tickets page |
+| `src/app/auth/login/page.tsx` | Currently sync-api OAuth — migrating to Supabase Auth in G4 |
+| `src/components/layout/app-layout.tsx` | Root layout (only wraps `/app/**` routes) |
+| `src/stores/authStore.ts` | Zustand auth store |
+
+### 4.3 The 5-step diagnostic flow
+
+| Step | What it does |
+|---|---|
+| 1 | Vehicle / VIN + scanner file upload (PDF as base64 to Synth) |
+| 2 | DTC codes + symptoms (auto-extracted from text uploads) |
+| 3 | Diagnose — chat with Synth, auto-sends vehicle/codes/symptoms/PDF |
+| 4 | Report — TechPulse Diagnostic PDF rendered server-side (WeasyPrint) |
+| 5 | Confirm — Accurate/Partial/Inaccurate + Repaired/Not yet (trains Synth) |
+
+### 4.4 Authentication flow (CURRENT)
+
 ```
-GET  /health                   — Returns {status, version, engine, pdf_support}
-POST /api/diagnostic           — Main diagnostic endpoint
-POST /api/diagnostic/stream    — Alias to /api/diagnostic
+User clicks "Sign In with Google"
+  → techpulse-sync-api.onrender.com/api/auth/google
+  → Google OAuth
+  → Redirects back with ?token=<opaque>&email=<email>
+  → app-layout.tsx → signIn() → stored in Zustand
+  → All Synth calls use NEXT_PUBLIC_SYNTH_API_TOKEN (T1) as bearer
 ```
 
-### Request Format
+### 4.5 Authentication flow (POST-G4 — target state)
+
+```
+User clicks "Sign In with Google"
+  → supabase.auth.signInWithOAuth({ provider: 'google' })
+  → Browser redirects to Supabase project's OAuth callback
+  → Supabase redirects to /auth/callback in web app with ?code=
+  → /auth/callback page calls supabase.auth.exchangeCodeForSession(code)
+  → Supabase returns { session: { access_token (JWT), refresh_token, user } }
+  → Session stored in Zustand
+  → Synth API calls continue using T1 (sync-api retired by Phase 4)
+```
+
+See `G4_Implementation_Plan.md` for migration timeline (5 weeks, 4 phases).
+
+---
+
+## 5. Synth API
+
+### 5.1 Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Flask (Python) |
+| AI engine | Anthropic SDK (Claude Sonnet 4) |
+| Session memory | Redis |
+| Hosting | Render (Python 3) |
+| Branch | `master` (not main) |
+| PDF rendering | **WeasyPrint** (post-2026-04-29; was xhtml2pdf) |
+
+### 5.2 Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Returns `{status, version, engine, pdf_support}` |
+| POST | `/api/diagnostic` | Main diagnostic endpoint |
+| POST | `/api/diagnostic/stream` | Same, returns SSE format |
+
+### 5.3 Request format
+
 ```json
 {
   "session_id": "uuid",
-  "message": "text message",
+  "message": "text from user",
   "vehicle": { "year": "", "make": "", "model": "", "engine": "", "vin": "" },
-  "pdf_base64": "base64string",
+  "pdf_base64": "base64-encoded PDF bytes",
   "pdf_name": "filename.pdf"
 }
 ```
 
-### Environment Variables (set in Render)
+### 5.4 Response format
+
+Server-Sent Events:
+
 ```
-ANTHROPIC_API_KEY     — set ✅
-SUPABASE_URL          — https://fcqejcrxtrqdxybgyueu.supabase.co ✅
-SUPABASE_SERVICE_KEY  — set ✅
-API_TOKEN             — tp_9f4e2a7c1d8b3f6e0a5c9d2f7b4e1a8c ✅
-REDIS_URL             — redis://red-d66d6m7gi27c738cuiv0:6379 ✅
-OPENAI_API_KEY        — NOT SET ⚠️ (needed for synth_search.py semantic embeddings)
+data: {"text": "First chunk of response"}
+data: {"text": " second chunk"}
+data: [DONE]
 ```
 
-### Repo Contents
-```
-agents/prompts/       — 35 .md agent files (system prompts, context)
-scripts/              — 11 Python scripts (mistake_logger, etc.)
-pattern_library/      — 20 .json pattern files
-app.py                — Flask entry point (real Claude API wiring)
-requirements.txt      — flask, flask-cors, gunicorn, anthropic, supabase, redis, openai
-DEPLOY_INSTRUCTIONS.md — Instructions for Mike's Claude Code to deploy real agentic loop
-```
+### 5.5 Authentication (3-tier token system)
 
-### CRITICAL PENDING: Mike's Real Flask API
-The real agentic loop (with TSB cache, case search, pattern engine, confidence scoring) lives on Mike's machine at `F:/Mobil app/techpulse-api/`. It has NOT been pushed to GitHub yet.
-Mike needs to:
-1. Read `DEPLOY_INSTRUCTIONS.md` in the repo
-2. Have Claude Code follow every step
-3. Push the real Flask code — Render auto-deploys
+| Token | Variable | Who uses it | Access level |
+|---|---|---|---|
+| T1 | `API_TOKEN_T1` | Sidd (mobile) + Daniel (web) | Customer — restricted Synth |
+| T2 | `API_TOKEN_T2` | Adriatik (dev testing) | Developer — full capability |
+| T3 | `API_TOKEN_T3` | Mike only | Admin — unrestricted Synth |
+
+### 5.6 PDF rendering — WeasyPrint
+
+Per Mike's Decision 1 on 2026-04-29: **WeasyPrint replaces xhtml2pdf** as the
+canonical web PDF renderer. WeasyPrint honors the locked CSS standards
+(flexbox, gradients, border-radius, page-break-inside) that xhtml2pdf could
+not render.
+
+The agent system prompt at `atrguide/techpulse-agents/Agent coding backup/pdf-agent.md`
+defines the HTML/CSS shape Synth produces. WeasyPrint renders it to PDF.
+
+`atrguide/techpulse-agents/Python Engine/pdf_generator.py` is a **ReportLab**
+renderer that runs on Mike's Windows machine for local agent-generated PDFs.
+**It is not the web platform renderer.** Don't conflate the two.
+
+### 5.7 Schema
+
+`public.diagnostic_reports` is the canonical diagnostic-record table.
+
+- **14 columns:** id, conversation_id, customer_id, vehicle_info, dtc_codes,
+  symptoms, diagnosis, root_cause, resolution, laws_applied, cost_saved,
+  status, created_at, updated_at
+- **RLS enabled, 4 policies:** service_role full / authenticated read/insert/
+  update own (matched on `customer_id = auth.uid()`)
+- **Self-healing:** Synth API's `_ensure_schema()` re-creates the table at
+  startup if it's ever dropped
+
+Renamed from `diagnostic_sessions` on 2026-04-29 as part of G1 schema
+consolidation. The legacy tables `diagnostic_files` and `ai_analysis_jobs`
+were dropped at the same time.
+
+`public.diagnostic_case_studies` (1,367 rows as of 2026-04-29) is Mike's
+training corpus. Untouched by G1.
 
 ---
 
-## 6. Mobile App Architecture (Sidd's)
+## 6. Mobile + Connector
 
-**Stack:** React Native + Expo
-**Repo:** `sidd07181134/techpulse-app` (private)
-**Connector API:** `https://techpulse-app.onrender.com`
+### 6.1 Stack
 
-### Key screens (mirrors web app flow)
-- `CodesInputScreen.tsx` — Step 1: VIN + DTC codes
-- `DiagnosticChatScreen.tsx` — Step 2: Chat with Synth
-- `DiagnosticReportScreen.tsx` — Step 3: Report
-- `DiagnosticFeedbackScreen.tsx` — Step 4: Confirm
-- `BillingScreen.tsx` — Stripe billing (FULLY IMPLEMENTED on mobile)
+| Layer | Technology |
+|---|---|
+| Mobile framework | React Native + Expo |
+| Connector API | Flask (Python) |
+| Connector URL | techpulse-app.onrender.com |
+| Repo | `sidd07181134/techpulse-app` (private) |
 
-### Billing endpoints used by mobile
-```
-GET  /billing/status              — Current subscription (planName, priceDisplay, status, currentPeriodEnd)
-GET  /billing/plans               — Available plans [{id, name, price, priceId}]
-POST /billing/checkout-session    — Create Stripe checkout session → returns URL
-```
-All calls go to `https://techpulse-app.onrender.com` with `getAuthHeaders(token)`.
-Auth header: `Authorization: Bearer <user_token>`
+### 6.2 Connector endpoints
 
-### Shared data
-- Both web and mobile use the same Supabase instance
-- Subscriptions, payment history, and user records are shared
-- The `useSynthSessionStore` Zustand store tracks session state
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/chat` | Synth chat (mobile route) |
+| GET | `/api/billing/status` | Current subscription |
+| GET | `/api/billing/plans` | Available plans |
+| POST | `/api/billing/checkout-session` | Create Stripe checkout URL |
+| GET | `/api/extract-document` | Extract text from document |
+| POST | `/api/profile/update` | Update user profile |
 
----
+### 6.3 G2 — open question
 
-## 7. NEXT TASK: Stripe Billing on Web
-
-**This is what was about to be built when this document was created.**
-
-### What needs to be done
-The web app has a billing page stub at `/app/billing` but it is NOT connected to Stripe.
-The goal is to replicate the mobile `BillingScreen.tsx` exactly on web so both use the same backend.
-
-### Architecture (web billing must match mobile exactly)
-```
-Web billing page
-      ↓ GET /billing/plans
-      ↓ GET /billing/status (with user auth token)
-techpulse-app.onrender.com (Sidd's connector)
-      ↓
-Stripe API (server-side — web never touches Stripe key directly)
-      ↓
-Supabase (subscriptions table — shared with mobile)
-```
-
-### What the web billing page needs to do
-1. **Load** — Fetch current subscription status + available plans
-2. **Show plan** — Display current plan (name, price, renewal date, status)
-3. **Subscribe** — POST to `/billing/checkout-session` with priceId → get Stripe URL → redirect to it
-4. **Stripe redirects back** — Handle `?success=true` or `?canceled=true` return params
-5. **Cancel** — Open Stripe customer portal (if that endpoint exists on Sidd's connector)
-6. **Payment history** — Show past payments from Supabase
-
-### What the new chat needs to find out from Sidd
-The exact endpoint paths are confirmed from mobile source code:
-- `API_ENDPOINTS.BILLING_STATUS`
-- `API_ENDPOINTS.BILLING_PLANS`
-- `API_ENDPOINTS.BILLING_CHECKOUT_SESSION`
-
-**But the actual string values** (e.g. `/billing/status` vs `/api/billing/status`) need to be confirmed.
-The new chat should read lines 62-81 of `techpulse-main/mobile/src/config/api.ts` to get the exact paths.
-
-### Files to create/edit
-- `src/app/app/billing/page.tsx` — Main billing page (replace stub)
-- No new API routes needed — calls go directly to `techpulse-app.onrender.com`
+The connector currently runs a parallel agentic stack (own conductor, TSB live
+search, Python engine, PDF generator). **The Gap Analysis G2 question is
+unresolved** — collapse to thin proxy, formalize the split, or hybrid? Sidd's
+call. Pending Week 2 alignment meeting.
 
 ---
 
-## 8. Auth Flow
+## 7. End-to-end flows
+
+### 7.1 Web app diagnostic flow
 
 ```
-User clicks Sign in with Google
-      ↓
-techpulse-sync-api.onrender.com/api/auth/google
-      ↓ Google OAuth
-Redirects back to web app with ?token=&email=
-      ↓
-app-layout.tsx catches params → signIn(user, token) → stored in Zustand + localStorage
-      ↓
-All API calls use token as Authorization: Bearer header
+Browser
+  → POSTs to techpulse-api.onrender.com/api/diagnostic/stream
+     Authorization: Bearer T1
+     Body: { session_id, message, vehicle, pdf_base64, pdf_name }
+  ← Synth streams SSE: data: {"text": "..."}
+  → Report rendered (WeasyPrint, server-side)
+  → Feedback persisted to public.diagnostic_reports
 ```
 
----
+### 7.2 Mobile app diagnostic flow
 
-## 9. Current Known Issues / Pending
-
-| Issue | Status |
-|-------|--------|
-| Mike's real Flask agentic loop not deployed | ⚠️ Pending Mike action |
-| OPENAI_API_KEY not set in Render (synth_search.py) | ⚠️ Needs key from Mike |
-| Billing page not wired to Stripe | ⚠️ Next task |
-| Diagnostic sessions not persisted to Supabase | ⚠️ TODO comment in useTickets hook |
-| Dashboard shows empty state (no real ticket history yet) | Expected — awaiting Supabase |
-| PDF paste-box flow removed in favor of native base64 | ✅ Fixed |
-| Scrollbar missing in chat | ✅ Fixed (minHeight:0 chain) |
-| Binary PDF leaking into symptoms field | ✅ Fixed |
-| Build errors from header named export | ✅ Fixed |
-
----
-
-## 10. Web App Commit History (April 2026)
-
-Key commits on `ddoubleg123/techpulse-remotepc-automation`:
-- Dashboard: replaced fake stats with real ticket history + empty state
-- Sidebar: user card above Sign Out, white active state (no blue conflict)
-- Header: removed D avatar, kept search + bell + theme toggle
-- Chat: full 5-step diagnostic flow matching mobile
-- Chat: VIN entry + file upload on Step 1
-- Chat: PDF base64 to Claude native document blocks
-- Chat: fixed binary leaking into symptoms
-- Chat: clean user bubble (no raw initMsg displayed)
-- Chat: scrollbar fix (minHeight:0 on flex chain)
-- app-layout: height:100vh overflow:hidden
-- app-layout: fixed named import for Header
-- index.ts: fixed Header barrel export
-
----
-
-## 11. How to Deploy Changes
-
-### Web App or Auth API
-```bash
-# Changes auto-deploy via GitHub webhook to Render
-# Just push to main branch — deploy starts in ~30 seconds, completes in 3-5 min
+```
+Mobile App
+  → POSTs to techpulse-app.onrender.com/api/chat
+     (Sidd's connector — runs its own conductor; see G2)
+  ← SSE response streamed back
 ```
 
-### Synth API (Mike's machine)
-```bash
-cd C:\Users\User\techpulse-api
-git add .
-git commit -m "describe change"
-git push    # branch is master, not main
-# Render auto-deploys in ~2 minutes
-```
+### 7.3 Billing flow (both platforms)
 
-### Verify Synth API is live
 ```
-GET https://techpulse-api.onrender.com/health
-Expected: {"version":"2.1.0", "engine":"active", "pdf_support":true}
+Web/Mobile
+  → GET /api/billing/{status,plans}      (Sidd's connector)
+  → POST /api/billing/checkout-session   → returns Stripe URL
+  → Browser redirects to Stripe
+  → Stripe webhook updates Supabase subscriptions table
 ```
 
 ---
 
-## 12. Contact / Access
+## 8. Locked Rules (current — as of 2026-04-29)
 
-| Person | Role | Access |
-|--------|------|--------|
-| Daniel Gouldman | Co-founder / CRO | GitHub `ddoubleg123`, all Render services |
-| Mike Munson | Founder / CEO | Local machine at `C:/Users/User/techpulse-api/` |
-| Sidd | Mobile developer | GitHub `sidd07181134`, `techpulse-app.onrender.com` |
-| Candice Elsmore | Co-founder / COO-CFO | `candice@techpulse.dev` |
+| # | Rule | Status |
+|---|---|---|
+| 1 | PDF pipeline + requirements.txt require Mike review | Active |
+| 2 | PDF renderer is **WeasyPrint** (was xhtml2pdf — changed 2026-04-29 per Mike's Path 2 ruling) | Active — UPDATED |
+| 3 | Locked sections in app.py: REPORT_FINAL_RE, run_diagnostic_pipeline(), 4 imports from pdf_generator, streaming PDF routing | Active |
+| 4 | Pages under /app/ cannot be wrapped in `<AppLayout>` (already wrapped by app/app/layout.tsx) | Active — verified for tickets/page.tsx 2026-04-29 |
+| 5 | 3-tier token system (T1/T2/T3) | Active |
+| 6 | Web app may use @supabase/supabase-js for **auth flow only** — never for diagnostic data writes (rescoped 2026-04-29 from outright ban per Mike's Decision 2) | Active — UPDATED |
 
 ---
 
-*Document auto-generated from development session — April 11, 2026*
-*Repo: github.com/ddoubleg123/techpulse-remotepc-automation*
+## 9. Environment variables
+
+### 9.1 Web App (techpulse-remotepc-automation on Render)
+
+| Variable | Value / Source |
+|---|---|
+| `NEXT_PUBLIC_SYNTH_API_TOKEN` | T1 token value |
+| `NEXT_PUBLIC_SUPABASE_URL` | (added in G4 Phase 1) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | (added in G4 Phase 1) |
+
+### 9.2 Synth API (techpulse-api on Render)
+
+| Variable | Description |
+|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic Claude API key |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key |
+| `API_TOKEN_T1`, `T2`, `T3` | Tier tokens |
+| `REDIS_URL` | Internal Render Redis URL |
+| `OPENAI_API_KEY` | (Pending — needed for synth_search.py) |
+
+---
+
+## 10. Contacts and access
+
+| Person | Role | GitHub | What they control |
+|---|---|---|---|
+| Michael Munson | Founder & CEO | (ask Mike) | Synth code on local machine, API tokens, agentic loop |
+| Daniel Gouldman | Co-founder & CRO | @ddoubleg123 | Web app, Synth API on Render, Auth API, Supabase |
+| Sidd | Mobile Developer | @sidd07181134 | Mobile app, connector API, Stripe |
+| Adriatik | Engineering, agent definitions, Synth review | @atrguide (review) and @adriatikgashi (build) | atrguide/techpulse-agents repo; Synth code reviewer; Python engine modules |
+| Candice Elsmore | Co-founder & COO/CFO | n/a | Business operations |
+
+**Note on Adriatik's two GitHub accounts (G15):** `@atrguide` is used for
+review/audit/repo-namespacing; `@adriatikgashi` is used for active development
+commits. Both are listed in CODEOWNERS files where his review is required.
+
+---
+
+## 11. Outstanding strategic items (as of 2026-04-29)
+
+| # | Item | Status |
+|---|---|---|
+| G2 | Mobile track decision | Pending Week 2 alignment meeting |
+| G3 | PDF unification — execute Path 2 | Mike approved; ready to plan |
+| G4 | Web auth migration to Supabase Auth | Mike rescoped Rule #6; 5-week plan ready |
+| G5 | Chat history primary in Supabase | Wait for G2 |
+| G6 | Split chat/page.tsx | Wait for G2 |
+| G14 | Supply chain SHA pinning | Sidd-owned |
+
+---
+
+## 12. Decommissioned services (history)
+
+(none yet — sync-api retirement begins post-G4 Phase 1)
+
+---
+
+*This document supersedes TechPulse_Architecture.docx (April 2026 v1). Living document — update whenever architecture changes.*
