@@ -1,0 +1,21 @@
+# TechPulse Web App — CODEOWNERS
+#
+# Owners:
+#   @ddoubleg123      — Daniel (primary)
+#   @sidd07181134     — Sidd (mobile, auto-pinged on shared surfaces)
+#
+# Sidd is included on shared API contract surfaces because mobile
+# consumes the same Synth API endpoints and connector endpoints
+# that the web app touches.
+
+# Default ownership
+*                                             @ddoubleg123
+
+# Shared API contract surfaces — mobile cares too
+src/app/app/chat/page.tsx                     @ddoubleg123 @sidd07181134
+src/app/app/billing/page.tsx                  @ddoubleg123 @sidd07181134
+src/app/app/reports/page.tsx                  @ddoubleg123 @sidd07181134
+src/stores/authStore.ts                       @ddoubleg123 @sidd07181134
+
+# This file owns itself
+.github/CODEOWNERS                            @ddoubleg123
