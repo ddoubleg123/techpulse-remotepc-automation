@@ -1,0 +1,15 @@
+# TechPulse Web App — CODEOWNERS
+# Auto-requests review from listed owners when matching files change.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+
+# Default owner — all files
+* @ddoubleg123
+
+# Auth + billing pages: web owner + mobile owner so cross-platform changes are visible to both
+src/app/auth/**           @ddoubleg123 @sidd07181134
+src/app/app/billing/**    @ddoubleg123 @sidd07181134
+src/stores/authStore.ts   @ddoubleg123 @sidd07181134
+
+# Diagnostic chat flow: same — both sides have parallel implementations
+src/app/app/chat/**       @ddoubleg123 @sidd07181134
+src/app/app/reports/**    @ddoubleg123 @sidd07181134
