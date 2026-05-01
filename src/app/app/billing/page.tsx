@@ -1,269 +1,368 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+/**
+ * Billing page — renders plans from /api/billing/plans, supports per-card
+ * subscribe button, mechanic count selector, "first month free" trial display,
+ * and referral code application.
+ *
+ * Replaces the previous hardcoded-fallback version. Ships as part of:
+ *   feat(billing): per-seat pricing + referral support + free-trial UI
+ *
+ * Backend contract: see SIDD_SPEC_BILLING_REFERRALS.md
+ */
+
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 
-const CONNECTOR = 'https://techpulse-app.onrender.com';
+const CONNECTOR_BASE = 'https://techpulse-app.onrender.com';
 
-const PLANS = [
-  {
-    id: 'automated',
-    name: 'Automated',
-    subtitle: 'Synth only  no human support',
-    price: 199,
-    priceId: 'price_automated',
-    badge: null,
-    features: [
-      'Unlimited scans with Synth (AI diagnostics)',
-      'TechPulse Connector  automatic scan data',
-      'Works with traditional diagnostic systems',
-      'PDF diagnosis for tech and customer',
-      'AI only  no human support',
-    ],
-  },
-  {
-    id: 'automated-human',
-    name: 'Automated + Human Support',
-    subtitle: 'Synth plus expert human backup',
-    price: 350,
-    priceId: 'price_automated_human',
-    badge: 'Most Popular',
-    features: [
-      'Everything in Automated',
-      'Human expert support when you need it',
-      'Guidance on tough cases and edge scenarios',
-      'Best for shops that want a safety net',
-      '$25 per additional user (e.g. 5 users = $450)',
-    ],
-  },
-];
+type PriceFragment = {
+  lookup_key: string;
+  amount_cents: number;
+  currency: string;
+  interval: string;
+};
 
-interface BillingStatus {
-  planName: string;
-  priceDisplay: string;
-  status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'none';
-  currentPeriodEnd: string | null;
-  cancelAtPeriodEnd?: boolean;
+type Plan = {
+  id: 'automated' | 'automated_human';
+  name: string;
+  tagline: string;
+  base: PriceFragment;
+  seat: PriceFragment;
+  trial_days: number;
+  features: string[];
+  most_popular: boolean;
+};
+
+const REFERRAL_STORAGE_KEY = 'techpulse_pending_referral';
+
+function dollars(cents: number): string {
+  return `$${(cents / 100).toFixed(0)}`;
 }
 
-function BillingPageInner() {
-  const { token } = useAuthStore();
-  const searchParams = useSearchParams();
-  const [status, setStatus] = useState<BillingStatus | null>(null);
-  const [selectedPlanId, setSelectedPlanId] = useState<string>('price_automated_human');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-
-  const successParam = searchParams.get('success');
-  const canceledParam = searchParams.get('canceled');
-
-  const fetchBilling = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
-      const [statusRes, plansRes] = await Promise.all([
-        fetch(`${CONNECTOR}/api/billing/status`, { headers }),
-        fetch(`${CONNECTOR}/api/billing/plans`, { headers }),
-      ]);
-      if (statusRes.ok) {
-        const statusData = await statusRes.json();
-        setStatus(statusData);
-      }
-      if (plansRes.ok) {
-        const plansData = await plansRes.json();
-        const plans = Array.isArray(plansData) ? plansData : plansData.plans ?? [];
-        // API plans override  when Stripe is configured, use those priceIds
-      }
-    } catch {
-      // Non-fatal  use defaults
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
-  useEffect(() => { fetchBilling(); }, [fetchBilling]);
-
-  const handleSubscribe = async () => {
-    if (!token) return;
-    setCheckoutLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`${CONNECTOR}/api/billing/checkout-session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ priceId: selectedPlanId }),
-      });
-      if (!res.ok) throw new Error(`Checkout failed (${res.status})`);
-      const data = await res.json();
-      const url = data.url ?? data.checkoutUrl ?? data.sessionUrl;
-      if (url) window.location.href = url;
-      else throw new Error('No checkout URL returned');
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Checkout failed');
-    } finally {
-      setCheckoutLoading(false);
-    }
-  };
-
-  const isActive = status?.status === 'active';
-  const isTrialing = status?.status === 'trialing';
-  const isPastDue = status?.status === 'past_due';
-  const hasSubscription = isActive || isTrialing || isPastDue;
-
-  const navy = '#1B3A6B';
-  const teal = '#2E75B6';
-
-  return (
-    <>
-      <div style={{ maxWidth: 700, width: '100%', margin: '0 auto' }}>
-
-        {successParam === 'true' && (
-          <div style={{ background:'#E8F5E9', border:'1px solid #27AE60', borderRadius:12, padding:'14px 18px', marginBottom:20, display:'flex', alignItems:'center', gap:12 }}>
-            <span style={{ fontSize:20 }}>&#x2705;</span>
-            <p style={{ margin:0, color:'#1A5C38', fontWeight:600 }}>Subscription activated - welcome to TechPulse Pro!</p>
-          </div>
-        )}
-
-        {canceledParam === 'true' && (
-          <div style={{ background:'#F5F5F5', border:'1px solid #CCC', borderRadius:12, padding:'14px 18px', marginBottom:20 }}>
-            <p style={{ margin:0, color:'#555' }}>Checkout canceled. No changes were made.</p>
-          </div>
-        )}
-
-        {isPastDue && (
-          <div style={{ background:'linear-gradient(135deg, #E74C3C, #E67E22)', borderRadius:12, padding:'20px 24px', marginBottom:20, color:'white' }}>
-            <p style={{ margin:0, fontWeight:700, fontSize:16 }}>Payment past due</p>
-            <p style={{ margin:'4px 0 0', opacity:0.9, fontSize:14 }}>Update your payment method to keep access.</p>
-          </div>
-        )}
-
-        {error && (
-          <div style={{ background:'#FDECEA', border:'1px solid #C0392B', borderRadius:12, padding:'14px 18px', marginBottom:20, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            <p style={{ margin:0, color:'#C0392B', fontSize:14 }}>{error}</p>
-            <button onClick={fetchBilling} style={{ background:'none', border:'1px solid #C0392B', color:'#C0392B', borderRadius:8, padding:'4px 12px', cursor:'pointer', fontSize:13 }}>Retry</button>
-          </div>
-        )}
-
-        {/* Current plan card */}
-        <div style={{ background:'white', border:'1px solid #E0E0E0', borderRadius:16, padding:'24px', marginBottom:20 }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-            <h3 style={{ margin:0, fontSize:16, fontWeight:700, color:navy }}>Current Plan</h3>
-            {!loading && (
-              <span style={{
-                padding:'4px 12px', borderRadius:20, fontSize:12, fontWeight:700,
-                background: isActive ? '#E8F5E9' : isTrialing ? '#FFF8E1' : isPastDue ? '#FDECEA' : '#F5F5F5',
-                color: isActive ? '#1A5C38' : isTrialing ? '#856404' : isPastDue ? '#C0392B' : '#555',
-              }}>
-                {isActive ? 'Active' : isTrialing ? 'Free Trial' : isPastDue ? 'Past Due' : status?.status === 'canceled' ? 'Canceled' : 'No Subscription'}
-              </span>
-            )}
-          </div>
-          {loading ? (
-            <div style={{ padding:'24px 0', textAlign:'center', color:'#999' }}>Loading...</div>
-          ) : hasSubscription && status ? (
-            <>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingBottom:16, borderBottom:'1px solid #F0F0F0', marginBottom:16 }}>
-                <div>
-                  <p style={{ margin:0, fontSize:18, fontWeight:700, color:navy }}>{status.planName || 'TechPulse Pro'}</p>
-                  <p style={{ margin:'2px 0 0', color:'#888', fontSize:13 }}>Full platform access</p>
-                </div>
-                <div style={{ textAlign:'right' }}>
-                  <p style={{ margin:0, fontSize:28, fontWeight:800, color:navy }}>{status.priceDisplay || '$375'}</p>
-                  <p style={{ margin:0, color:'#888', fontSize:13 }}>/month</p>
-                </div>
-              </div>
-              {status.currentPeriodEnd && (
-                <p style={{ margin:0, fontSize:13, color:'#888' }}>
-                  {isTrialing ? 'Trial ends' : 'Next billing date'}: <strong style={{ color:navy }}>{new Date(status.currentPeriodEnd).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</strong>
-                </p>
-              )}
-            </>
-          ) : (
-            <div style={{ padding:'16px 0', textAlign:'center' }}>
-              <div style={{ fontSize:36, marginBottom:8 }}>&#x1F4B3;</div>
-              <p style={{ margin:0, color:'#888', fontSize:14 }}>No active subscription</p>
-            </div>
-          )}
-        </div>
-
-        {/* Plans  show when not subscribed */}
-        {!loading && !hasSubscription && (
-          <>
-            <p style={{ margin:'0 0 12px', fontSize:13, color:'#888', textAlign:'center' }}>First month free on both plans. Cancel anytime.</p>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:4 }}>
-              {PLANS.map(plan => {
-                const isSelected = selectedPlanId === plan.priceId;
-                return (
-                  <div key={plan.id} onClick={() => setSelectedPlanId(plan.priceId)}
-                    style={{ border: isSelected ? `2px solid ${teal}` : '2px solid #E0E0E0', borderRadius:16, overflow:'hidden', cursor:'pointer', position:'relative' }}
-                  >
-                    {plan.badge && (<div style={{ position:'absolute', top:12, right:12, background:teal, color:'white', fontSize:10, fontWeight:700, padding:'3px 10px', borderRadius:20 }}>{plan.badge}</div>)}
-                    <div style={{ background: isSelected ? `linear-gradient(135deg, ${navy}, ${teal})` : '#F8F9FA', padding:'20px', color: isSelected ? 'white' : navy }}>
-                      <p style={{ margin:0, fontSize:11, fontWeight:600, letterSpacing:'0.08em', opacity: isSelected ? 0.8 : 0.6, textTransform:'uppercase' }}>{plan.name}</p>
-                      <p style={{ margin:'4px 0 0', fontSize:28, fontWeight:800 }}>${plan.price}<span style={{ fontSize:14, fontWeight:400, opacity:0.8 }}>/mo</span></p>
-                      <p style={{ margin:'4px 0 0', fontSize:12, opacity: isSelected ? 0.8 : 0.6 }}>{plan.subtitle}</p>
-                    </div>
-                    <div style={{ background:'white', padding:'16px 20px' }}>
-                      {plan.features.map(f => (
-                        <div key={f} style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:10 }}>
-                          <span style={{ color:'#27AE60', fontSize:14, flexShrink:0, marginTop:1 }}>&#x2713;</span>
-                          <span style={{ fontSize:13, color:'#333', lineHeight:'1.4' }}>{f}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <button onClick={handleSubscribe} disabled={checkoutLoading}
-              style={{ width:'100%', marginBottom:20, marginTop:16, padding:'14px', borderRadius:12, border:'none',
-                background: checkoutLoading ? '#AAA' : `linear-gradient(135deg, ${navy}, ${teal})`,
-                color:'white', fontWeight:700, fontSize:16, cursor: checkoutLoading ? 'default' : 'pointer' }}
-            >
-              {checkoutLoading ? 'Redirecting...' : `Subscribe to ${PLANS.find(p=>p.priceId===selectedPlanId)?.name} - $${PLANS.find(p=>p.priceId===selectedPlanId)?.price}/mo`}
-            </button>
-            <p style={{ textAlign:'center', fontSize:12, color:'#999', marginBottom:20 }}>Secure payment via Stripe. Cancel anytime.</p>
-          </>
-        )}
-
-        {/* Billing history */}
-        <div style={{ background:'white', border:'1px solid #E0E0E0', borderRadius:16, padding:'24px', marginBottom:20 }}>
-          <h3 style={{ margin:'0 0 16px', fontSize:16, fontWeight:700, color:navy }}>Billing History</h3>
-          <div style={{ textAlign:'center', padding:'24px 0', color:'#BBB' }}>
-            <div style={{ fontSize:32, marginBottom:8 }}>&#x1F4C4;</div>
-            <p style={{ margin:0, fontSize:13 }}>Payment history will appear here once available.</p>
-          </div>
-        </div>
-
-        {/* Cancel */}
-        {hasSubscription && !status?.cancelAtPeriodEnd && (
-          <div style={{ background:'white', border:'1px solid #F5C6CB', borderRadius:16, padding:'20px 24px', marginBottom:20, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            <div>
-              <p style={{ margin:0, fontWeight:600, color:navy, fontSize:14 }}>Cancel Subscription</p>
-              <p style={{ margin:'2px 0 0', fontSize:13, color:'#888' }}>Remains active until end of billing period.</p>
-            </div>
-            <button style={{ background:'none', border:'1px solid #E74C3C', color:'#E74C3C', borderRadius:8, padding:'8px 16px', cursor:'pointer', fontSize:13, fontWeight:600 }}>
-              Cancel Plan
-            </button>
-          </div>
-        )}
-
-      </div>
-    </>
-  );
+function readPendingReferralCode(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(REFERRAL_STORAGE_KEY);
 }
 
 export default function BillingPage() {
+  const { token } = useAuthStore();
+  const [plans, setPlans] = useState<Plan[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [mechanicCounts, setMechanicCounts] = useState<Record<string, number>>({
+    automated: 1,
+    automated_human: 1,
+  });
+  const [submitting, setSubmitting] = useState<string | null>(null);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referralValid, setReferralValid] = useState<{ valid: boolean; referrer_name?: string; reason?: string } | null>(null);
+
+  // Load plans
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch(`${CONNECTOR_BASE}/api/billing/plans`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!cancelled) {
+          if (!data.plans || data.plans.length === 0) {
+            setError("Plans aren't configured on the backend yet. Try again in a few minutes.");
+          } else {
+            setPlans(data.plans);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) setError(`Could not load plans: ${(err as Error).message}`);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  // Read pending referral code from localStorage and validate it
+  useEffect(() => {
+    const code = readPendingReferralCode();
+    if (!code) return;
+    setReferralCode(code);
+    fetch(`${CONNECTOR_BASE}/api/referrals/validate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ code }),
+    })
+      .then((r) => r.json())
+      .then((data) => setReferralValid(data))
+      .catch(() => setReferralValid({ valid: false, reason: 'network_error' }));
+  }, [token]);
+
+  function setMechanics(planId: string, count: number) {
+    setMechanicCounts((prev) => ({ ...prev, [planId]: Math.max(1, Math.min(50, count)) }));
+  }
+
+  function totalForPlan(plan: Plan): number {
+    const mechanics = mechanicCounts[plan.id] ?? 1;
+    const baseCents = plan.base.amount_cents;
+    const seatCents = plan.seat.amount_cents;
+    return baseCents + seatCents * Math.max(0, mechanics - 1);
+  }
+
+  async function subscribe(plan: Plan) {
+    if (submitting) return;
+    setSubmitting(plan.id);
+    try {
+      const body: Record<string, unknown> = {
+        plan: plan.id,
+        mechanics: mechanicCounts[plan.id] ?? 1,
+      };
+      if (referralValid?.valid && referralCode) {
+        body.referral_code = referralCode;
+      }
+      const res = await fetch(`${CONNECTOR_BASE}/api/billing/checkout-session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`Checkout failed (${res.status}): ${errBody.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      if (data.url) {
+        // Clear the pending referral code now that it's been applied
+        if (referralValid?.valid) localStorage.removeItem(REFERRAL_STORAGE_KEY);
+        window.location.href = data.url;
+      } else {
+        throw new Error('Checkout response missing url');
+      }
+    } catch (err) {
+      setError((err as Error).message);
+      setSubmitting(null);
+    }
+  }
+
+  if (error && !plans) {
+    return (
+      <div style={{ padding: 24 }}>
+        <h1>Billing</h1>
+        <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', padding: 16, borderRadius: 8 }}>
+          <strong>Could not load billing.</strong>
+          <p style={{ marginTop: 8 }}>{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!plans) {
+    return (
+      <div style={{ padding: 24 }}>
+        <h1>Billing</h1>
+        <p>Loading plans...</p>
+      </div>
+    );
+  }
+
   return (
-    <Suspense fallback={null}>
-      <BillingPageInner />
-    </Suspense>
+    <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>Choose your plan</h1>
+      <p style={{ color: '#64748b', marginBottom: 24 }}>
+        Every plan includes 1 mechanic. Add more for {dollars(plans[0]?.seat.amount_cents ?? 2500)}/month each.
+        First month free, cancel anytime.
+      </p>
+
+      {referralValid?.valid && (
+        <div
+          style={{
+            background: '#dcfce7',
+            border: '1px solid #86efac',
+            color: '#166534',
+            padding: 12,
+            borderRadius: 8,
+            marginBottom: 16,
+            fontSize: 14,
+          }}
+        >
+          ✓ Referred by <strong>{referralValid.referrer_name}</strong>. Thanks for the introduction!
+        </div>
+      )}
+
+      {error && plans && (
+        <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
+        {plans.map((plan) => {
+          const mechanics = mechanicCounts[plan.id] ?? 1;
+          const totalCents = totalForPlan(plan);
+          const isHighlight = plan.most_popular;
+          const isSubmitting = submitting === plan.id;
+
+          return (
+            <div
+              key={plan.id}
+              style={{
+                background: isHighlight ? '#0f172a' : '#fff',
+                color: isHighlight ? '#fff' : '#0f172a',
+                borderRadius: 12,
+                padding: 24,
+                border: isHighlight ? 'none' : '1px solid #e2e8f0',
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              {plan.most_popular && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 16,
+                    right: 16,
+                    background: '#3b82f6',
+                    color: '#fff',
+                    fontSize: 11,
+                    padding: '4px 10px',
+                    borderRadius: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  Most Popular
+                </span>
+              )}
+              <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.7, marginBottom: 8 }}>
+                {plan.name}
+              </div>
+              <div style={{ fontSize: 36, fontWeight: 700, lineHeight: 1 }}>
+                {dollars(plan.base.amount_cents)}
+                <span style={{ fontSize: 16, fontWeight: 400, opacity: 0.7 }}>/mo</span>
+              </div>
+              <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 16 }}>{plan.tagline}</div>
+              <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 16 }}>
+                First month free, then {dollars(plan.base.amount_cents)}/mo. Cancel anytime.
+              </div>
+
+              <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 20px 0', flex: 1 }}>
+                {plan.features.map((f) => (
+                  <li key={f} style={{ padding: '4px 0', fontSize: 14 }}>
+                    <span style={{ color: '#22c55e', marginRight: 8 }}>✓</span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+
+              <label style={{ display: 'block', fontSize: 13, marginBottom: 4, opacity: 0.85 }}>
+                Number of mechanics
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <button
+                  onClick={() => setMechanics(plan.id, mechanics - 1)}
+                  disabled={mechanics <= 1}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 6,
+                    border: 'none',
+                    background: isHighlight ? '#1e293b' : '#f1f5f9',
+                    color: 'inherit',
+                    cursor: mechanics <= 1 ? 'not-allowed' : 'pointer',
+                    fontSize: 18,
+                    opacity: mechanics <= 1 ? 0.4 : 1,
+                  }}
+                  aria-label="decrease mechanics"
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={mechanics}
+                  onChange={(e) => setMechanics(plan.id, parseInt(e.target.value) || 1)}
+                  style={{
+                    width: 60,
+                    height: 32,
+                    textAlign: 'center',
+                    borderRadius: 6,
+                    border: 'none',
+                    background: isHighlight ? '#1e293b' : '#f1f5f9',
+                    color: 'inherit',
+                    fontSize: 14,
+                  }}
+                />
+                <button
+                  onClick={() => setMechanics(plan.id, mechanics + 1)}
+                  disabled={mechanics >= 50}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 6,
+                    border: 'none',
+                    background: isHighlight ? '#1e293b' : '#f1f5f9',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    fontSize: 18,
+                  }}
+                  aria-label="increase mechanics"
+                >
+                  +
+                </button>
+                <span style={{ fontSize: 13, opacity: 0.7, marginLeft: 4 }}>
+                  ({dollars(plan.seat.amount_cents)}/mo each after the first)
+                </span>
+              </div>
+
+              <div
+                style={{
+                  background: isHighlight ? '#1e293b' : '#f8fafc',
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 16,
+                  fontSize: 14,
+                }}
+              >
+                Total: <strong style={{ fontSize: 18 }}>{dollars(totalCents)}/mo</strong>
+                {mechanics > 1 && (
+                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 2 }}>
+                    {dollars(plan.base.amount_cents)} base + {mechanics - 1} × {dollars(plan.seat.amount_cents)}
+                  </div>
+                )}
+                <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+                  $0 today (free for {plan.trial_days} days)
+                </div>
+              </div>
+
+              <button
+                onClick={() => subscribe(plan)}
+                disabled={isSubmitting}
+                style={{
+                  width: '100%',
+                  padding: 12,
+                  borderRadius: 8,
+                  border: 'none',
+                  background: isHighlight ? '#3b82f6' : '#0f172a',
+                  color: '#fff',
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: isSubmitting ? 'wait' : 'pointer',
+                  opacity: isSubmitting ? 0.6 : 1,
+                }}
+              >
+                {isSubmitting ? 'Loading checkout...' : `Start free trial — ${plan.name}`}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
-
-
-
