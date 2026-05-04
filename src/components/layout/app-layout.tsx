@@ -4,9 +4,14 @@ import { useAuthStore } from '@/stores/authStore';
 import { useEffect } from 'react';
 import Sidebar from './sidebar';
 import Header from './header';
+import { captureReferralCode } from '@/lib/referralCapture';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, signIn } = useAuthStore();
+
+  useEffect(() => {
+    captureReferralCode();
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
