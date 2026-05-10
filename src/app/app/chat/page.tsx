@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { assertAcceptableScannerPdf, getPdfSizeViolationMessage, readPdfAsRawBase64 } from '@/lib/scannerPdf';
 import {
@@ -15,10 +15,12 @@ type Step = 'vin' | 'codes' | 'chat' | 'report' | 'feedback';
 interface Vehicle { year: string; make: string; model: string; engine: string; vin: string; }
 interface DtcCode { code: string; description: string; }
 interface Message { id: string; role: 'user' | 'synth'; content: string; ts: number; }
-interface DiagnosticReport {
-  summary: string; rootCause: string; confidence: number;
-  recommendedActions: string[]; partsNeeded: string[];
-  estimatedTime: string; additionalNotes: string;
+// Synth is the only source of truth for the report. The PDF is the body.
+// No client-side fields except what arrives in the SSE final chunk.
+interface SynthReport {
+  pdf_base64: string;
+  pdf_filename: string;
+  confidence: number;
 }
 
 // Accept any file - detect issues in JS rather than blocking at browser level
@@ -477,7 +479,7 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
 
 function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, sessionId, onReport, onBack }:
   { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; pdfBase64?: string; sessionId: string;
-    onReport: (report: DiagnosticReport, messages: Message[], updatedVehicle?: Vehicle) => void; onBack: () => void }
+    onReport: (report: SynthReport, messages: Message[], updatedVehicle?: Vehicle) => void; onBack: () => void }
 ) {
   const nl = String.fromCharCode(10);
   const hasPdfAttachment = Boolean(pdfBase64 && pdfBase64.length > 0);
@@ -503,7 +505,9 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [diagnosisComplete, setDiagnosisComplete] = useState(false);
+  // reportReady flips to true ONLY when Synth's SSE final chunk says ready_for_report:true.
+  // Synth is the gate, not the user.
+  const [reportReady, setReportReady] = useState(false);
   const [synthConfidence, setSynthConfidence] = useState<number>(0);
   const [pdfBase64Report, setPdfBase64Report] = useState<string>('');
   const [pdfFilenameReport, setPdfFilenameReport] = useState<string>('');
@@ -581,11 +585,19 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       const updatedVehicle = { ...vehicle, vin, make: vehicle.make||decodedMake, model: vehicle.model||decodedModel, year: vehicle.year||decodedYear };
       stopVinGateCamera();
       setShowVinGate(false);
-      onReport(buildReport(), messages, updatedVehicle);
-    } catch(e) {
+      onReport(
+        { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence },
+        messages,
+        updatedVehicle,
+      );
+    } catch (e) {
       // NHTSA API failed -- just accept the VIN and proceed
       stopVinGateCamera(); setShowVinGate(false);
-      onReport(buildReport(), messages, {...vehicle, vin});
+      onReport(
+        { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence },
+        messages,
+        { ...vehicle, vin },
+      );
     }
     setVinValidating(false);
   };
@@ -634,7 +646,10 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         try {
           const p = JSON.parse(payload);
           sseContent += p.token ?? p.text ?? p.response ?? p.message ?? '';
-          if (p.ready_for_report) { onReport(buildReport(), messages); }
+          // Synth signals readiness via SSE sibling fields in the final chunk.
+          // The web app does NOT parse <<REPORT_FINAL:...>> -- that token is stripped server-side.
+          if (p.ready_for_report) { setReportReady(true); }
+          if (typeof p.confidence === 'number') { setSynthConfidence(p.confidence); }
           if (p.pdf_base64) { setPdfBase64Report(p.pdf_base64); }
           if (p.pdf_filename) { setPdfFilenameReport(p.pdf_filename); }
         }
@@ -654,21 +669,6 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     } finally { setLoading(false); setWarmingUp(false); }
   };
   useEffect(() => { if (!autoSent && initMsg) { setAutoSent(true); sendMessage(initMsg, [vehicle.year && vehicle.make ? 'Analyzing: ' + vehicle.year + ' ' + vehicle.make + ' ' + vehicle.model : 'Analyzing scanner data', fileName ? '(' + fileName + ')' : '', codes.filter((c:any)=>c.code).length > 0 ? codes.filter((c:any)=>c.code).length + ' fault code(s) detected' : '', symptoms ? 'Symptoms: ' + symptoms.substring(0,80) : ''].filter(Boolean).join(' -- ')); } }, []);
-  const buildReport = (): DiagnosticReport => ({
-    summary: `Diagnostic for ${vehicle.year||''} ${vehicle.make||''} ${vehicle.model||''}`.trim(),
-    rootCause: messages.filter(m => m.role==='synth').slice(-1)[0]?.content.substring(0,300) || 'See conversation',
-    confidence: messages.filter((m:any)=>m.role==='synth').length > 0 ? 85 : 0,
-    recommendedActions: (() => {
-      const synthText = messages.filter((m:any)=>m.role==='synth').slice(-1)[0]?.content || '';
-      const numbered = synthText.match(/^\d+\.\s+.+/gm) || [];
-      const bulleted = synthText.match(/^[-*]\s+.+/gm) || [];
-      const found = [...numbered, ...bulleted].map((s:string)=>s.replace(/^[\d.\-*\s]+/,'')).filter(Boolean).slice(0,6);
-      return found.length > 0 ? found : ['Review Synth findings above', 'Verify with physical inspection', 'Clear codes after repair'];
-    })(),
-    partsNeeded: codes.map(c => c.code),
-    estimatedTime: '1-3 hours',
-    additionalNotes: symptoms,
-  });
 
   // Warm up Synth API on load (Render free tier spins down after inactivity)
   useEffect(() => {
@@ -693,8 +693,23 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}> Back</button>
-          <button disabled={!diagnosisComplete} onClick={() => { if (vehicle.vin) { onReport(buildReport(), messages); } else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); } }}
-            style={{ padding:'6px 14px', borderRadius:8, background: diagnosisComplete ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)', border:'none', color: messages.length > 1 ? '#fff' : 'var(--text-3)', fontSize:12, fontWeight:700, cursor: messages.length > 1 ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', gap:6 }}>
+          <button
+            disabled={!reportReady || !pdfBase64Report}
+            onClick={() => {
+              if (!reportReady || !pdfBase64Report) return;
+              const synthReport: SynthReport = { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence };
+              if (vehicle.vin) { onReport(synthReport, messages); }
+              else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }
+            }}
+            style={{
+              padding: '6px 14px', borderRadius: 8,
+              background: (reportReady && pdfBase64Report) ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)',
+              border: 'none',
+              color: (reportReady && pdfBase64Report) ? '#fff' : 'var(--text-3)',
+              fontSize: 12, fontWeight: 700,
+              cursor: (reportReady && pdfBase64Report) ? 'pointer' : 'not-allowed',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
             <FileText size={13} /> View Report
           </button>
         </div>
@@ -727,12 +742,39 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         )}
         <div ref={bottomRef} />
       </div>
-      {messages.filter((m:any)=>m.role==='synth').length > 0 && !diagnosisComplete && (
-        <div style={{padding:'0 20px 12px'}}>
-          <button onClick={()=>{ setDiagnosisComplete(true); setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }}
-            style={{width:'100%',padding:'13px',borderRadius:12,border:'none',background:diagnosisComplete?'linear-gradient(135deg,#ef4444,#dc2626)':'linear-gradient(135deg,#B05252,#8B3A3A)',boxShadow:diagnosisComplete?'0 0 20px rgba(239,68,68,0.5)':'0 0 8px rgba(176,82,82,0.25)',transition:'all 0.3s ease',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-            {diagnosisComplete ? 'Synth Is Ready -- Generate Report' : 'Diagnosis Complete -- Generate Report'}
-          </button>
+      {/* Synth-driven status. The user does not decide when the report is ready -- Synth does. */}
+      {messages.filter((m:any) => m.role === 'synth').length > 0 && (
+        <div style={{ padding: '0 20px 12px' }}>
+          {!reportReady ? (
+            <div style={{
+              width: '100%', padding: '11px 14px', borderRadius: 10,
+              background: 'var(--bg-input)', border: '1px solid var(--border-input)',
+              color: 'var(--text-2)', fontSize: 13, fontWeight: 600,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 6px rgba(245,158,11,0.7)' }} />
+              Synth is analyzing -- continue the conversation until Synth is ready.
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                const synthReport: SynthReport = { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence };
+                if (vehicle.vin) { onReport(synthReport, messages); }
+                else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }
+              }}
+              disabled={!pdfBase64Report}
+              style={{
+                width: '100%', padding: '13px', borderRadius: 12, border: 'none',
+                background: pdfBase64Report ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)',
+                boxShadow: pdfBase64Report ? '0 0 20px rgba(16,185,129,0.4)' : 'none',
+                color: pdfBase64Report ? '#fff' : 'var(--text-3)',
+                fontWeight: 700, fontSize: 15,
+                cursor: pdfBase64Report ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}>
+              Synth has finished -- View Report
+            </button>
+          )}
         </div>
       )}
 
@@ -760,13 +802,50 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   );
 }
 
-function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack, pdfBase64, pdfFilename }:
-  { report: DiagnosticReport; vehicle: Vehicle; codes: DtcCode[]; messages: Message[]; onFeedback: () => void; onBack: () => void; pdfBase64?: string; pdfFilename?: string }
+function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
+  { synthReport: SynthReport; vehicle: Vehicle; codes: DtcCode[]; onFeedback: () => void; onBack: () => void }
 ) {
-  const lastSynth = messages.filter(m => m.role==='synth').slice(-1)[0]?.content || '';
+  // The PDF Synth produced IS the report body. Render it inline + offer download.
+  // No client-side text fabrication, no chat-text echoing.
+  const pdfUrl = useMemo(() => {
+    if (!synthReport.pdf_base64) return '';
+    try {
+      const bytes = Uint8Array.from(atob(synthReport.pdf_base64), c => c.charCodeAt(0));
+      return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    } catch {
+      return '';
+    }
+  }, [synthReport.pdf_base64]);
+  useEffect(() => {
+    return () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); };
+  }, [pdfUrl]);
+
+  const downloadPdf = () => {
+    if (!synthReport.pdf_base64) return;
+    const bytes = Uint8Array.from(atob(synthReport.pdf_base64), (c: string) => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = synthReport.pdf_filename || 'TechPulse_Report.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+    // Persist a copy server-side (best effort, fire-and-forget)
+    const token = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
+    fetch('https://techpulse-api.onrender.com/api/save-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        pdf_base64: synthReport.pdf_base64,
+        filename: synthReport.pdf_filename || 'TechPulse_Report.pdf',
+        year: vehicle.year || '', make: vehicle.make || '', model: vehicle.model || '',
+        session_id: typeof window !== 'undefined' ? (localStorage.getItem('synth-session-id') || '') : '',
+      }),
+    }).catch(() => {});
+  };
+
   return (
     <div style={{ flex:1, overflowY:'auto', padding:'28px', display:'flex', flexDirection:'column', alignItems:'center' }}>
-      <div style={{ width:'100%', maxWidth:700 }}>
+      <div style={{ width:'100%', maxWidth:780 }}>
         <div style={{ padding:'20px 24px', borderRadius:16, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:14 }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
@@ -776,7 +855,11 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack, pdfB
                 <div style={{ fontSize:12, color:'var(--text-3)' }}>{new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</div>
               </div>
             </div>
-            <div style={{ padding:'5px 14px', borderRadius:20, background:'rgba(16,185,129,0.12)', border:'1px solid rgba(16,185,129,0.25)', fontSize:12, fontWeight:700, color:'#10b981' }}>{report.confidence}% Confidence</div>
+            {synthReport.confidence > 0 && (
+              <div style={{ padding:'5px 14px', borderRadius:20, background:'rgba(16,185,129,0.12)', border:'1px solid rgba(16,185,129,0.25)', fontSize:12, fontWeight:700, color:'#10b981' }}>
+                {synthReport.confidence}% Confidence
+              </div>
+            )}
           </div>
           <div style={{ padding:'12px 14px', borderRadius:10, background:'var(--bg-feed)', border:'1px solid var(--border-card)' }}>
             <div style={{ fontSize:12, color:'var(--text-3)', marginBottom:4 }}>Vehicle</div>
@@ -785,6 +868,7 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack, pdfB
             </div>
           </div>
         </div>
+
         {codes.length > 0 && (
           <div style={{ padding:'18px 20px', borderRadius:14, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:14 }}>
             <div style={{ fontSize:13, fontWeight:700, color:'var(--text-2)', marginBottom:12, display:'flex', alignItems:'center', gap:6 }}><AlertTriangle size={14} color='#f59e0b' /> FAULT CODES</div>
@@ -798,58 +882,35 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack, pdfB
             </div>
           </div>
         )}
-        <div style={{ padding:'18px 20px', borderRadius:14, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:14 }}>
-          <div style={{ fontSize:13, fontWeight:700, color:'var(--text-2)', marginBottom:12, display:'flex', alignItems:'center', gap:6 }}><Zap size={14} color='var(--accent)' /> SYNTH ANALYSIS</div>
-          <div style={{ fontSize:14, color:'var(--text-1)', lineHeight:1.7, whiteSpace:'pre-wrap' }}>{lastSynth}</div>
-        </div>
-        <div style={{ padding:'18px 20px', borderRadius:14, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:20 }}>
-          <div style={{ fontSize:13, fontWeight:700, color:'var(--text-2)', marginBottom:12, display:'flex', alignItems:'center', gap:6 }}><CheckCircle size={14} color='#10b981' /> RECOMMENDED ACTIONS</div>
-          {report.recommendedActions.map((a,i) => (
-            <div key={i} style={{ display:'flex', gap:10, marginBottom:8 }}>
-              <div style={{ width:20, height:20, borderRadius:'50%', background:'rgba(16,185,129,0.15)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginTop:1 }}><span style={{ fontSize:10, fontWeight:800, color:'#10b981' }}>{i+1}</span></div>
-              <span style={{ fontSize:14, color:'var(--text-1)', lineHeight:1.5 }}>{a}</span>
-            </div>
-          ))}
-        </div>
-        {pdfBase64 && (
+
+        {/* The PDF Synth produced IS the report body. Embed inline. */}
+        {pdfUrl ? (
+          <iframe
+            src={pdfUrl}
+            title='TechPulse Diagnostic Report'
+            style={{ width:'100%', height:'70vh', border:'1px solid var(--border-card)', borderRadius:14, marginBottom:14, background:'#fff' }}
+          />
+        ) : (
+          <div style={{ padding:'24px', borderRadius:14, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:14, textAlign:'center', color:'var(--text-3)', fontSize:13 }}>
+            Report unavailable -- please return to the diagnosis and continue with Synth.
+          </div>
+        )}
+
+        {synthReport.pdf_base64 && (
           <button
-            onClick={()=>{
-              const bytes=Uint8Array.from(atob(pdfBase64),(c:string)=>c.charCodeAt(0));
-              const url=URL.createObjectURL(new Blob([bytes],{type:"application/pdf"}));
-              const a=document.createElement("a");a.href=url;a.download=pdfFilename||"TechPulse_Report.pdf";a.click();
-              URL.revokeObjectURL(url);
-              const token=process.env.NEXT_PUBLIC_SYNTH_API_TOKEN||"";
-              const veh=vehicle as any;
-              fetch("https://techpulse-api.onrender.com/api/save-report",{method:"POST",
-                headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-                body:JSON.stringify({pdf_base64:pdfBase64,filename:pdfFilename||"TechPulse_Report.pdf",
-                  year:veh.year||"",make:veh.make||"",model:veh.model||"",
-                  session_id:localStorage.getItem("synth-session-id")||""})}).catch(()=>{});
-            }}
-            style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"12px 20px",
-              borderRadius:11,border:"none",background:"linear-gradient(135deg,#1B4F8A,#2E75B6)",
-              color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",marginBottom:12,width:"100%"}}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            onClick={downloadPdf}
+            style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'12px 20px',
+              borderRadius:11, border:'none', background:'linear-gradient(135deg,#1B4F8A,#2E75B6)',
+              color:'#fff', fontWeight:700, fontSize:14, cursor:'pointer', marginBottom:12, width:'100%' }}>
+            <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'>
+              <path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' y1='15' x2='12' y2='3'/>
             </svg>
             Download PDF Report
           </button>
         )}
+
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={onBack} style={{ padding:'12px 18px', borderRadius:12, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:14, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}><ChevronLeft size={16} /> Back</button>
-          {pdfBase64 && (
-          <button onClick={()=>{
-            const bytes=Uint8Array.from(atob(pdfBase64),c=>c.charCodeAt(0));
-            const blob=new Blob([bytes],{type:'application/pdf'});
-            const url=URL.createObjectURL(blob);
-            const a=document.createElement('a');a.href=url;a.download=pdfFilename||'TechPulse_Report.pdf';a.click();
-            URL.revokeObjectURL(url);
-          }} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px 20px',borderRadius:11,border:'none',background:'linear-gradient(135deg,#1B4F8A,#2E75B6)',color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer',marginBottom:12,width:'100%'}}>
-            <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' y1='15' x2='12' y2='3'/></svg>
-            Download PDF Report
-          </button>
-          )}
           <button onClick={onFeedback} style={{ flex:1, padding:'13px', borderRadius:12, background:'linear-gradient(135deg,#00c3ff,#0055ff)', border:'none', color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>Confirm & Rate <ChevronRight size={18} /></button>
         </div>
       </div>
@@ -920,7 +981,7 @@ export default function ChatPage() {
   const [uploadedPdfBase64, setUploadedPdfBase64] = useState<string>('');
   const [codes, setCodes] = useState<DtcCode[]>([]);
   const [symptoms, setSymptoms] = useState('');
-  const [report, setReport] = useState<DiagnosticReport|null>(null);
+  const [synthReport, setSynthReport] = useState<SynthReport|null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [sessionId] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -936,7 +997,7 @@ export default function ChatPage() {
   const restart = () => {
     setStep('vin'); setVehicle({ year:'', make:'', model:'', engine:'', vin:'' });
     setUploadedReport(undefined); setFileName(undefined); setUploadedPdfBase64('');
-    setCodes([]); setSymptoms(''); setReport(null); setChatMessages([]);
+    setCodes([]); setSymptoms(''); setSynthReport(null); setChatMessages([]);
     localStorage.removeItem('synth-session-id');
   };
   return (
@@ -944,8 +1005,8 @@ export default function ChatPage() {
       <StepBar step={step} />
       {step==='vin'      && <VinStep onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); setStep('codes'); }} />}
       {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} onNext={(c,s) => { setCodes(c); setSymptoms(s); setStep('chat'); }} onBack={() => setStep('vin')} />}
-      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} onReport={(r,msgs) => { setReport(r); setChatMessages(msgs); setStep('report'); }} onBack={() => setStep('codes')} />}
-      {step==='report'   && report && <ReportStep report={report} vehicle={vehicle} codes={codes} messages={chatMessages} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
+      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); setStep('report'); }} onBack={() => setStep('codes')} />}
+      {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep onRestart={restart} />}
     </div>
   );
