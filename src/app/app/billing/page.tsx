@@ -201,7 +201,7 @@ export default function BillingPage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
         {plans.map((plan) => {
           const mechanics = mechanicCounts[plan.id] ?? 1;
           const totalCents = totalForPlan(plan);
