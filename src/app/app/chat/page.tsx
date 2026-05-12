@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { assertAcceptableScannerPdf, getPdfSizeViolationMessage, readPdfAsRawBase64 } from '@/lib/scannerPdf';
+import { isValidPdfBase64 } from '@/lib/upload-classifier';
 import {
   Send, Zap, Plus, X, ChevronRight, ChevronLeft,
   CheckCircle, AlertTriangle, FileText, ThumbsUp, ThumbsDown,
@@ -623,7 +624,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       const res = await fetch(SYNTH_API + '/api/diagnostic/stream', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + API_TOKEN },
-        body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...(attachBase64 ? { pdf_base64: attachBase64, pdf_name: attachName } : pdfToSend ? { pdf_base64: pdfToSend, pdf_name: pdfNameToSend } : {}) }),
+        body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...((attachBase64 && isValidPdfBase64(attachBase64)) ? { pdf_base64: attachBase64, pdf_name: attachName } : (pdfToSend && isValidPdfBase64(pdfToSend)) ? { pdf_base64: pdfToSend, pdf_name: pdfNameToSend } : {}) }),
         signal: controller.signal,
       });
         clearTimeout(abortTimer);
