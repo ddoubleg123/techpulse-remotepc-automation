@@ -14,6 +14,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Supabase OAuth callback (hash fragment) — for Google sign-in
+    if (typeof window !== 'undefined' && window.location.hash.startsWith('#access_token=')) {
+      try {
+        const h = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = h.get('access_token');
+        if (accessToken) {
+          const parts = accessToken.split('.');
+          if (parts.length === 3) {
+            let payloadB64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            while (payloadB64.length % 4) payloadB64 += '=';
+            const payload = JSON.parse(atob(payloadB64));
+            const email = payload.email || '';
+            const id = payload.sub || '1';
+            signIn({ id, email, name: email.split('@')[0], hasPaymentMethodOnFile: false }, accessToken);
+            window.history.replaceState({}, '', window.location.pathname);
+            return;
+          }
+        }
+      } catch (e) {
+        console.error('Supabase callback parse failed', e);
+      }
+    }
+    // Legacy sync-api callback (query string) — email OTP still uses this
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     const email = params.get('email');
