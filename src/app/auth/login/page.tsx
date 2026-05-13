@@ -33,7 +33,7 @@ export default function LoginPage() {
   }, [router, signIn]);
 
   // Route through auth API - never call Google directly
-  const handleGoogle = () => { window.location.href = AUTH_API + '/api/auth/google'; };
+  const handleGoogle = () => { window.location.href = 'https://fcqejcrxtrqdxybgyueu.supabase.co/auth/v1/authorize?provider=google&redirect_to=' + encodeURIComponent(window.location.origin + '/app/chat'); };
 
   const handleSendOtp = async () => {
     if (!email) { setError('Please enter your email'); return; }
