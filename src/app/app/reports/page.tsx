@@ -38,7 +38,7 @@ export default function ReportsPage() {
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(`Couldn't load reports (HTTP ${res.status}). Please try again.`);
       const data = await res.json();
       setReports(Array.isArray(data.reports) ? data.reports : []);
     } catch (e: unknown) {
