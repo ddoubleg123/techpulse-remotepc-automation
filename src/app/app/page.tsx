@@ -49,7 +49,15 @@ export default function DashboardPage() {
     fetch('https://techpulse-sync-api.onrender.com/api/profile/me', {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (cancelled) return null;
+        if (r.status === 401) {
+          useAuthStore.getState().signOut();
+          window.location.href = '/auth/login';
+          return null;
+        }
+        return r.ok ? r.json() : null;
+      })
       .then((profile) => {
         if (cancelled || !profile) return;
         useAuthStore.setState((state: any) => ({
