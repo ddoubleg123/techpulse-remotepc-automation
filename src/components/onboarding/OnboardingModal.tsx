@@ -88,6 +88,11 @@ export default function OnboardingModal() {
       },
       body: JSON.stringify(body),
     });
+    if (res.status === 401) {
+      useAuthStore.getState().signOut();
+      window.location.href = '/auth/login';
+      throw new Error('Session expired — redirecting to sign in.');
+    }
     const data = await res.json().catch(() => ({} as any));
     if (!res.ok) {
       throw new Error(data?.error || `Request failed (${res.status})`);
