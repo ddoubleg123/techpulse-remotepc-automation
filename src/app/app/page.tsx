@@ -1,11 +1,14 @@
 // v2
 'use client';
 
+
 import { useAuthStore } from '@/stores/authStore';
+import OnboardingModal from '@/components/onboarding/OnboardingModal';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Zap, ArrowRight, Clock, AlertTriangle, CheckCircle, Plus, FileText } from 'lucide-react';
+
 
 // Real ticket history — empty for now, will populate from Supabase once connected
 const useTickets = () => {
@@ -14,6 +17,7 @@ const useTickets = () => {
   }[]>([]);
   const [loading, setLoading] = useState(true);
 
+
   useEffect(() => {
     // TODO: replace with real Supabase fetch once diagnostic sessions are persisted
     // const { data } = await supabase.from('diagnostic_sessions').select('*').order('created_at', { ascending: false });
@@ -21,22 +25,28 @@ const useTickets = () => {
     setLoading(false);
   }, []);
 
+
   return { tickets, loading };
 };
+
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
   const router = useRouter();
   const { tickets, loading } = useTickets();
 
+
   useEffect(() => { if (!user) router.push('/auth/login'); }, [user, router]);
   if (!user) return null;
+
 
   const hour = new Date().getHours();
   const firstName = user.name?.split(' ')[0] || user.email?.split('@')[0] || 'there';
 
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-page)', padding: '28px 28px 40px' }}>
+
 
       {/* ── HERO ── */}
       <div style={{
@@ -72,6 +82,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
+
       {/* ── TICKET HISTORY ── */}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -80,6 +91,7 @@ export default function DashboardPage() {
             <Link href="/app/reports" style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}>View all →</Link>
           )}
         </div>
+
 
         {loading ? (
           /* Loading skeleton */
@@ -153,6 +165,7 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+    {user?.onboarding_completed === false && <OnboardingModal />}
     </div>
   );
 }
