@@ -1,12 +1,22 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+
 interface User {
   id: string;
   email: string;
   name: string;
   hasPaymentMethodOnFile: boolean;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  address?: string;
+  businessName?: string;
+  businessAddress?: string;
+  photoUrl?: string;
+  onboarding_completed?: boolean;
 }
+
 
 interface Device {
   id: string;
@@ -14,6 +24,7 @@ interface Device {
   status: "online" | "offline";
   lastSeen: string;
 }
+
 
 interface AuthState {
   user: User | null;
@@ -23,6 +34,7 @@ interface AuthState {
   signOut: () => void;
   updateDevices: (devices: Device[]) => void;
 }
+
 
 export const useAuthStore = create<AuthState>()(
   persist(
