@@ -840,6 +840,7 @@ function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
         filename: synthReport.pdf_filename || 'TechPulse_Report.pdf',
         year: vehicle.year || '', make: vehicle.make || '', model: vehicle.model || '',
         session_id: typeof window !== 'undefined' ? (localStorage.getItem('synth-session-id') || '') : '',
+        email: user?.email || '',
       }),
     }).catch(() => {});
   };
