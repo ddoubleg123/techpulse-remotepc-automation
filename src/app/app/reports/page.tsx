@@ -16,7 +16,7 @@ interface Report {
 }
 
 export default function ReportsPage() {
-  const { token: _jwt } = useAuthStore();
+  const { token: _jwt, user } = useAuthStore();
   const token = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,9 +32,11 @@ export default function ReportsPage() {
     setLoading(true);
     setError(null);
     try {
-      const url = q
-        ? `${SYNTH_API}/api/reports?search=${encodeURIComponent(q)}`
-        : `${SYNTH_API}/api/reports`;
+      const params = new URLSearchParams();
+      if (q) params.set('search', q);
+      if (user?.email) params.set('email', user.email);
+      const qs = params.toString();
+      const url = qs ? `${SYNTH_API}/api/reports?${qs}` : `${SYNTH_API}/api/reports`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
