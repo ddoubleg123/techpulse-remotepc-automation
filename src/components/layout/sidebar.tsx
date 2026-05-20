@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, MessageSquare, RefreshCw, FileText, Bell, Settings, Gift, LogOut } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, RefreshCw, FileText, Bell, Settings, Gift, LogOut, Activity } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 
 const navItems = [
@@ -10,6 +10,7 @@ const navItems = [
   { label: 'Diagnostic Chat', href: '/app/chat',          icon: MessageSquare },
   { label: 'Sync Data',       href: '/app/sync',          icon: RefreshCw },
   { label: 'Reports',         href: '/app/reports',       icon: FileText },
+  { label: 'Scope Patterns',  href: '/app/scope-patterns', icon: Activity },
   { label: 'Notifications',   href: '/app/notifications', icon: Bell },
   { label: 'Referrals', href: '/app/referrals', icon: Gift },
   { label: 'Settings',        href: '/app/settings',      icon: Settings },
