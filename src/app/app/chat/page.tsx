@@ -1072,7 +1072,7 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
 export default function ChatPage() {
   const { user } = useAuthStore();
   const [step, setStep] = useState<Step>('vin');
-  const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', vin:'' });
+  const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
   const [uploadedReport, setUploadedReport] = useState<string|undefined>();
   const [fileName, setFileName] = useState<string|undefined>();
   const [uploadedPdfBase64, setUploadedPdfBase64] = useState<string>('');
@@ -1142,7 +1142,7 @@ export default function ChatPage() {
   }, [synthReport]);
   if (!user) return null;
   const restart = () => {
-    setStep('vin'); setVehicle({ year:'', make:'', model:'', engine:'', vin:'' });
+    setStep('vin'); setVehicle({ year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
     setUploadedReport(undefined); setFileName(undefined); setUploadedPdfBase64('');
     setCodes([]); setSymptoms(''); setSynthReport(null); setChatMessages([]);
     localStorage.removeItem('synth-session-id');
