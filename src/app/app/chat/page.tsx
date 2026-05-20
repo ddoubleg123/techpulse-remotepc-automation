@@ -14,7 +14,7 @@ const SYNTH_API = 'https://techpulse-api.onrender.com';
 const API_TOKEN = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
 
 type Step = 'vin' | 'codes' | 'chat' | 'report' | 'feedback';
-interface Vehicle { year: string; make: string; model: string; engine: string; vin: string; }
+interface Vehicle { year: string; make: string; model: string; engine: string; mileage: string; vin: string; }
 interface DtcCode { code: string; description: string; }
 interface Message { id: string; role: 'user' | 'synth'; content: string; ts: number; }
 // Synth is the only source of truth for the report. The PDF is the body.
@@ -24,6 +24,100 @@ interface SynthReport {
   pdf_filename: string;
   confidence: number;
 }
+
+
+// === Cloud pipeline (Mike's Vercel endpoints) ===
+// Behind the NEXT_PUBLIC_SYNC_TO_CLOUD_PIPELINE flag. When enabled, generated
+// reports dual-write to Mike's diagnostic-reports bucket (HTML) and case data
+// to customer_cases via /api/save-case. Flag defaults off.
+const MIKE_API = 'https://techpulse-agents.vercel.app';
+const CLOUD_PIPELINE_ENABLED =
+  (process.env.NEXT_PUBLIC_SYNC_TO_CLOUD_PIPELINE || '').toLowerCase() === 'true';
+
+function escapeHtmlForReport(s: string): string {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildDiagnosticHtmlReport(params: {
+  unid: string;
+  vehicle: Vehicle;
+  codes: string[];
+  complaint: string;
+  diagnosis: string;
+  messages: Message[];
+  shopName: string;
+}): string {
+  const { unid, vehicle, codes, complaint, diagnosis, messages, shopName } = params;
+  const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model]
+    .filter(Boolean).join(' ') || 'Unknown Vehicle';
+  const now = new Date().toLocaleString();
+  const lines: string[] = [];
+  lines.push('<!DOCTYPE html>');
+  lines.push('<html><head><meta charset="UTF-8">');
+  lines.push('<title>' + escapeHtmlForReport(unid) + ' - ' + escapeHtmlForReport(vehicleLabel) + ' - Diagnostic Report</title>');
+  lines.push('<style>');
+  lines.push('body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;color:#222;margin:0;padding:32px;background:#fff;}');
+  lines.push('h1{margin:0 0 6px;font-size:24px;color:#0a1a3a;}');
+  lines.push('h2{margin:24px 0 12px;font-size:16px;color:#0a1a3a;border-bottom:1px solid #ddd;padding-bottom:6px;}');
+  lines.push('.meta{color:#666;font-size:13px;margin-bottom:24px;} .meta div{margin:2px 0;}');
+  lines.push('table{border-collapse:collapse;width:100%;margin:8px 0;} td{padding:4px 8px;vertical-align:top;font-size:14px;} td.label{color:#666;width:140px;}');
+  lines.push('ul{margin:4px 0;padding-left:24px;}');
+  lines.push('.conversation{background:#f7f7f9;border-radius:8px;padding:16px;}');
+  lines.push('.diagnosis{background:#fff8e1;border-left:3px solid #f0b400;padding:12px 16px;border-radius:4px;white-space:pre-wrap;}');
+  lines.push('.footer{margin-top:32px;padding-top:12px;border-top:1px solid #ddd;color:#888;font-size:12px;}');
+  lines.push('.msg{margin:12px 0;} .msg-tech strong{color:#0066cc;} .msg-synth strong{color:#0a7d3b;}');
+  lines.push('</style></head><body>');
+  lines.push('<h1>TechPulse Diagnostic Report</h1>');
+  lines.push('<div class="meta">');
+  lines.push('<div><strong>Shop:</strong> ' + escapeHtmlForReport(shopName || 'TechPulse') + '</div>');
+  lines.push('<div><strong>UNID:</strong> ' + escapeHtmlForReport(unid) + '</div>');
+  lines.push('<div><strong>Generated:</strong> ' + escapeHtmlForReport(now) + '</div>');
+  lines.push('</div>');
+  lines.push('<h2>Vehicle</h2><table>');
+  lines.push('<tr><td class="label">Year / Make / Model</td><td>' + escapeHtmlForReport(vehicleLabel) + '</td></tr>');
+  lines.push('<tr><td class="label">Engine</td><td>' + escapeHtmlForReport(vehicle.engine || '-') + '</td></tr>');
+  lines.push('<tr><td class="label">Mileage</td><td>' + escapeHtmlForReport(vehicle.mileage || '-') + '</td></tr>');
+  lines.push('<tr><td class="label">VIN</td><td>' + escapeHtmlForReport(vehicle.vin || '-') + '</td></tr>');
+  lines.push('</table>');
+  lines.push('<h2>Customer Complaint</h2>');
+  if (complaint) {
+    lines.push('<p>' + escapeHtmlForReport(complaint) + '</p>');
+  } else {
+    lines.push('<p style="color:#666;">Not provided.</p>');
+  }
+  lines.push('<h2>DTC Codes</h2>');
+  if (codes && codes.length) {
+    lines.push('<ul>' + codes.map(c => '<li>' + escapeHtmlForReport(c) + '</li>').join('') + '</ul>');
+  } else {
+    lines.push('<p style="color:#666;">No DTC codes recorded.</p>');
+  }
+  lines.push('<h2>Diagnostic Findings</h2>');
+  if (diagnosis) {
+    lines.push('<div class="diagnosis">' + escapeHtmlForReport(diagnosis) + '</div>');
+  } else {
+    lines.push('<p style="color:#666;">No diagnosis available.</p>');
+  }
+  lines.push('<h2>Conversation Log</h2><div class="conversation">');
+  if (messages && messages.length) {
+    for (const m of messages) {
+      const role = m.role === 'user' ? 'TECH' : 'SYNTH';
+      const cls = m.role === 'user' ? 'msg msg-tech' : 'msg msg-synth';
+      lines.push('<div class="' + cls + '"><strong>' + role + ':</strong><div style="white-space:pre-wrap;margin-top:4px;">' + escapeHtmlForReport(m.content || '') + '</div></div>');
+    }
+  } else {
+    lines.push('<span style="color:#666;">No messages.</span>');
+  }
+  lines.push('</div>');
+  lines.push('<div class="footer">Generated by TechPulse - ' + escapeHtmlForReport(unid) + '</div>');
+  lines.push('</body></html>');
+  return lines.join('\n');
+}
+
 
 // Accept any file - detect issues in JS rather than blocking at browser level
 function cleanFileContent(raw: string): string {
@@ -89,7 +183,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
   const [pdfHandoffError, setPdfHandoffError] = useState('');
   const [isPreparingPdf, setIsPreparingPdf] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
-  const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', vin:'' });
+  const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
   const [showManual, setShowManual] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -844,6 +938,63 @@ function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
         email: useAuthStore.getState().user?.email || '',
       }),
     }).catch(() => {});
+
+    // === Cloud pipeline dual-write (Mike's Vercel endpoints) ===
+    // Behind NEXT_PUBLIC_SYNC_TO_CLOUD_PIPELINE flag. Fire-and-forget; never blocks the user.
+    if (CLOUD_PIPELINE_ENABLED) {
+      try {
+        const _u = useAuthStore.getState().user as { email?: string; shop_name?: string } | null;
+        const _shopName = (_u && _u.shop_name) ? _u.shop_name : '';
+        const _unid = sessionId;
+        const _vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'Unknown Vehicle';
+        const _codesArr: string[] = (codes || []).map((c: DtcCode) => (c && c.code) || '').filter(Boolean);
+        const _conversationText = (chatMessages || [])
+          .map((m: Message) => (m.role === 'user' ? 'TECH' : 'SYNTH') + ': ' + (m.content || ''))
+          .join('\n\n');
+        const _diagnosisText = ((synthReport as unknown as { text?: string }).text)
+          || ((synthReport as unknown as { summary?: string }).summary)
+          || _conversationText.slice(-2000);
+        const _reportFilename = _unid + ' - ' + _vehicleLabel + ' - Diagnostic Report.html';
+        const _htmlContent = buildDiagnosticHtmlReport({
+          unid: _unid,
+          vehicle,
+          codes: _codesArr,
+          complaint: symptoms || '',
+          diagnosis: _diagnosisText,
+          messages: chatMessages || [],
+          shopName: _shopName,
+        });
+        // 1) Save HTML report to Mike's diagnostic-reports bucket
+        fetch(MIKE_API + '/api/save-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            unid: _unid,
+            shop_name: _shopName || undefined,
+            filename: _reportFilename,
+            html_content: _htmlContent,
+          }),
+        }).catch(() => {});
+        // 2) Save case data to customer_cases via /api/save-case
+        fetch(MIKE_API + '/api/save-case', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            unid: _unid,
+            conversation_text: _conversationText,
+            year: vehicle.year || '',
+            make: vehicle.make || '',
+            model: vehicle.model || '',
+            dtc_codes: _codesArr,
+            complaint: symptoms || '',
+            diagnosis: _diagnosisText,
+            fix: '',
+            conclusion: '',
+            source: 'web',
+          }),
+        }).catch(() => {});
+      } catch { /* never let cloud-write errors break PDF download */ }
+    }
   };
 
   return (
