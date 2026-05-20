@@ -349,11 +349,11 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
             <div style={{ marginTop:16, paddingTop:16, borderTop:'1px solid var(--border-card)' }}>
               <div style={{ fontSize:11, fontWeight:700, color:'var(--text-3)', marginBottom:10, letterSpacing:'0.06em' }}>VEHICLE DETAILS</div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                {(['year','make','model','engine'] as const).map(f => (
+                {(['year','make','model','engine','mileage'] as const).map(f => (
                   <div key={f}>
                     <label style={{ display:'block', fontSize:11, fontWeight:600, color:'var(--text-3)', marginBottom:5, textTransform:'uppercase' }}>{f}</label>
                     <input value={vehicle[f]} onChange={e => setVehicle(p => ({...p, [f]: e.target.value}))}
-                      placeholder={f==='year'?'2015':f==='make'?'Ford':f==='model'?'F-150':'3.5L EcoBoost'}
+                      placeholder={f==='year'?'2015':f==='make'?'Ford':f==='model'?'F-150':f==='engine'?'3.5L EcoBoost':'87500'}
                       style={{ ...inp, fontSize:13 }} />
                   </div>
                 ))}
