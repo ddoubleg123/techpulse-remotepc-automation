@@ -938,63 +938,6 @@ function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
         email: useAuthStore.getState().user?.email || '',
       }),
     }).catch(() => {});
-
-    // === Cloud pipeline dual-write (Mike's Vercel endpoints) ===
-    // Behind NEXT_PUBLIC_SYNC_TO_CLOUD_PIPELINE flag. Fire-and-forget; never blocks the user.
-    if (CLOUD_PIPELINE_ENABLED) {
-      try {
-        const _u = useAuthStore.getState().user as { email?: string; shop_name?: string } | null;
-        const _shopName = (_u && _u.shop_name) ? _u.shop_name : '';
-        const _unid = sessionId;
-        const _vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'Unknown Vehicle';
-        const _codesArr: string[] = (codes || []).map((c: DtcCode) => (c && c.code) || '').filter(Boolean);
-        const _conversationText = (chatMessages || [])
-          .map((m: Message) => (m.role === 'user' ? 'TECH' : 'SYNTH') + ': ' + (m.content || ''))
-          .join('\n\n');
-        const _diagnosisText = ((synthReport as unknown as { text?: string }).text)
-          || ((synthReport as unknown as { summary?: string }).summary)
-          || _conversationText.slice(-2000);
-        const _reportFilename = _unid + ' - ' + _vehicleLabel + ' - Diagnostic Report.html';
-        const _htmlContent = buildDiagnosticHtmlReport({
-          unid: _unid,
-          vehicle,
-          codes: _codesArr,
-          complaint: symptoms || '',
-          diagnosis: _diagnosisText,
-          messages: chatMessages || [],
-          shopName: _shopName,
-        });
-        // 1) Save HTML report to Mike's diagnostic-reports bucket
-        fetch(MIKE_API + '/api/save-report', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            unid: _unid,
-            shop_name: _shopName || undefined,
-            filename: _reportFilename,
-            html_content: _htmlContent,
-          }),
-        }).catch(() => {});
-        // 2) Save case data to customer_cases via /api/save-case
-        fetch(MIKE_API + '/api/save-case', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            unid: _unid,
-            conversation_text: _conversationText,
-            year: vehicle.year || '',
-            make: vehicle.make || '',
-            model: vehicle.model || '',
-            dtc_codes: _codesArr,
-            complaint: symptoms || '',
-            diagnosis: _diagnosisText,
-            fix: '',
-            conclusion: '',
-            source: 'web',
-          }),
-        }).catch(() => {});
-      } catch { /* never let cloud-write errors break PDF download */ }
-    }
   };
 
   return (
@@ -1138,6 +1081,65 @@ export default function ChatPage() {
   const [synthReport, setSynthReport] = useState<SynthReport|null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [sessionId] = useState(() => getOrCreateSessionUnid());
+
+  // === Cloud pipeline dual-write (Mike's Vercel endpoints) ===
+  // When synthReport becomes available, fire HTML + case writes to Mike's pipeline.
+  // Behind the NEXT_PUBLIC_SYNC_TO_CLOUD_PIPELINE flag. Fire-and-forget; never blocks UI.
+  useEffect(() => {
+    if (!CLOUD_PIPELINE_ENABLED) return;
+    if (!synthReport) return;
+    try {
+      const _u = user as { email?: string; businessName?: string } | null;
+      const _shopName = (_u && _u.businessName) ? _u.businessName : '';
+      const _unid = sessionId;
+      const _vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'Unknown Vehicle';
+      const _codesArr: string[] = (codes || []).map((c: DtcCode) => (c && c.code) || '').filter(Boolean);
+      const _conversationText = (chatMessages || [])
+        .map((m: Message) => (m.role === 'user' ? 'TECH' : 'SYNTH') + ': ' + (m.content || ''))
+        .join('\n\n');
+      const _diagnosisText = _conversationText.slice(-3000);
+      const _reportFilename = _unid + ' - ' + _vehicleLabel + ' - Diagnostic Report.html';
+      const _htmlContent = buildDiagnosticHtmlReport({
+        unid: _unid,
+        vehicle,
+        codes: _codesArr,
+        complaint: symptoms || '',
+        diagnosis: _diagnosisText,
+        messages: chatMessages || [],
+        shopName: _shopName,
+      });
+      // 1) Save HTML report to Mike's diagnostic-reports bucket
+      fetch(MIKE_API + '/api/save-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unid: _unid,
+          shop_name: _shopName || undefined,
+          filename: _reportFilename,
+          html_content: _htmlContent,
+        }),
+      }).catch(() => {});
+      // 2) Save case data to customer_cases via /api/save-case
+      fetch(MIKE_API + '/api/save-case', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unid: _unid,
+          conversation_text: _conversationText,
+          year: vehicle.year || '',
+          make: vehicle.make || '',
+          model: vehicle.model || '',
+          dtc_codes: _codesArr,
+          complaint: symptoms || '',
+          diagnosis: _diagnosisText,
+          fix: '',
+          conclusion: '',
+          source: 'web',
+        }),
+      }).catch(() => {});
+    } catch { /* never let cloud-write errors break the report flow */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [synthReport]);
   if (!user) return null;
   const restart = () => {
     setStep('vin'); setVehicle({ year:'', make:'', model:'', engine:'', vin:'' });
