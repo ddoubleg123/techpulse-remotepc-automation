@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { assertAcceptableScannerPdf, getPdfSizeViolationMessage, readPdfAsRawBase64 } from '@/lib/scannerPdf';
+import { getOrCreateSessionUnid } from '@/lib/unid';
 import { isValidPdfBase64 } from '@/lib/upload-classifier';
 import {
   Send, Zap, Plus, X, ChevronRight, ChevronLeft,
@@ -985,16 +986,7 @@ export default function ChatPage() {
   const [symptoms, setSymptoms] = useState('');
   const [synthReport, setSynthReport] = useState<SynthReport|null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
-  const [sessionId] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const s = localStorage.getItem('synth-session-id');
-      if (s) return s;
-      const id = crypto.randomUUID();
-      localStorage.setItem('synth-session-id', id);
-      return id;
-    }
-    return 'session-1';
-  });
+  const [sessionId] = useState(() => getOrCreateSessionUnid());
   if (!user) return null;
   const restart = () => {
     setStep('vin'); setVehicle({ year:'', make:'', model:'', engine:'', vin:'' });
