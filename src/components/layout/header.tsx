@@ -13,6 +13,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/app/chat':          'Diagnostic Chat',
   '/app/sync':          'Sync Data',
   '/app/reports':       'Reports',
+  '/app/scope-patterns':'Scope Patterns',
   '/app/notifications': 'Notifications',
 };
 
