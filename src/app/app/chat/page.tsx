@@ -16,6 +16,25 @@ const API_TOKEN = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
 type Step = 'vin' | 'codes' | 'chat' | 'report' | 'feedback';
 interface Vehicle { year: string; make: string; model: string; engine: string; mileage: string; vin: string; }
 interface DtcCode { code: string; description: string; }
+
+// === Demo mode ===
+// When daniel@techpulse.dev logs in, the diagnostic flow auto-populates the
+// 2014 BMW X3 Valvetronic case from the pitch deck (page 4). Real flow, real
+// Synth — only the inputs are preset. Also pre-warms the Synth API immediately
+// on login so the chat step has no Render cold-start delay.
+const DEMO_USER_EMAIL = 'daniel@techpulse.dev';
+const DEMO_VEHICLE: Vehicle = {
+  year: '2014',
+  make: 'BMW',
+  model: 'X3 (F25) xDrive35i',
+  engine: '3.0L N55B30A Turbocharged I6',
+  mileage: '',
+  vin: '5UXWX9C57E0D49888',
+};
+const DEMO_CODES: DtcCode[] = [
+  { code: 'P134F-01', description: 'Valvetronic Eccentric Shaft Position Deviation' },
+];
+const DEMO_SYMPTOMS = 'No throttle response, pedal to floor, vehicle will not exceed 10 MPH. Struggled to climb hill. Valvetronic relearn attempted - failed.';
 interface Message { id: string; role: 'user' | 'synth'; content: string; ts: number; }
 // Synth is the only source of truth for the report. The PDF is the body.
 // No client-side fields except what arrives in the SSE final chunk.
@@ -168,8 +187,8 @@ function StepBar({ step }: { step: Step }) {
   );
 }
 
-function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: string, fileName?: string, pdfBase64?: string) => void }) {
-  const [vin, setVin] = useState('');
+function VinStep({ onNext, initialVehicle }: { onNext: (vehicle: Vehicle, uploadedReport?: string, fileName?: string, pdfBase64?: string) => void; initialVehicle?: Vehicle }) {
+  const [vin, setVin] = useState(initialVehicle?.vin || '');
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [scanningVin, setScanningVin] = useState(false);
@@ -183,8 +202,8 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
   const [pdfHandoffError, setPdfHandoffError] = useState('');
   const [isPreparingPdf, setIsPreparingPdf] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
-  const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
-  const [showManual, setShowManual] = useState(false);
+  const [vehicle, setVehicle] = useState<Vehicle>(initialVehicle || { year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
+  const [showManual, setShowManual] = useState(!!initialVehicle);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (file: File) => {
@@ -466,11 +485,11 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
   );
 }
 
-function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
-  { vehicle: Vehicle; uploadedReport?: string; fileName?: string; onNext: (codes: DtcCode[], symptoms: string) => void; onBack: () => void }
+function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack, initialCodes, initialSymptoms }:
+  { vehicle: Vehicle; uploadedReport?: string; fileName?: string; onNext: (codes: DtcCode[], symptoms: string) => void; onBack: () => void; initialCodes?: DtcCode[]; initialSymptoms?: string }
 ) {
-  const [codes, setCodes] = useState<DtcCode[]>([{ code:'', description:'' }]);
-  const [symptoms, setSymptoms] = useState('');
+  const [codes, setCodes] = useState<DtcCode[]>(initialCodes && initialCodes.length > 0 ? initialCodes : [{ code:'', description:'' }]);
+  const [symptoms, setSymptoms] = useState(initialSymptoms || '');
   useEffect(() => {
     if (uploadedReport) {
       // OBD-II style: P/B/C/U + 4 hex chars (covers P0171 and manufacturer hex like P134F); not extracted from PDF placeholder text
@@ -1071,6 +1090,15 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
 
 export default function ChatPage() {
   const { user } = useAuthStore();
+  const isDemoUser = ((user as { email?: string } | null)?.email || '').toLowerCase() === DEMO_USER_EMAIL;
+  // Pre-warm Synth API immediately on demo-user login so the chat step doesn't
+  // pay the ~30-60s Render cold-start. Fires once per ChatPage mount.
+  useEffect(() => {
+    if (isDemoUser) {
+      fetch(`${SYNTH_API}/health`, { method: 'GET' }).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemoUser]);
   const [step, setStep] = useState<Step>('vin');
   const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
   const [uploadedReport, setUploadedReport] = useState<string|undefined>();
@@ -1163,8 +1191,8 @@ export default function ChatPage() {
   return (
     <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-page)' }}>
       <StepBar step={step} />
-      {step==='vin'      && <VinStep onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); setStep('codes'); }} />}
-      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} onNext={(c,s) => { setCodes(c); setSymptoms(s); setStep('chat'); }} onBack={() => setStep('vin')} />}
+      {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); setStep('codes'); }} />}
+      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); setStep('chat'); }} onBack={() => setStep('vin')} />}
       {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep onRestart={restart} />}
