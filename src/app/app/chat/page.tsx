@@ -26,13 +26,13 @@ interface SynthReport {
 }
 
 
-// === Cloud pipeline (Mike's Vercel endpoints) ===
-// Behind the NEXT_PUBLIC_SYNC_TO_CLOUD_PIPELINE flag. When enabled, generated
-// reports dual-write to Mike's diagnostic-reports bucket (HTML) and case data
-// to customer_cases via /api/save-case. Flag defaults off.
-const MIKE_API = 'https://techpulse-agents.vercel.app';
-const CLOUD_PIPELINE_ENABLED =
-  (process.env.NEXT_PUBLIC_SYNC_TO_CLOUD_PIPELINE || '').toLowerCase() === 'true';
+// === Diagnostic persistence (direct to shared Supabase) ===
+// On report completion, dual-write the HTML report to the diagnostic-reports
+// storage bucket and the case record to diagnostic_case_studies.
+// Fire-and-forget; never blocks UI. Uses the public anon key — RLS on the
+// target table/bucket controls write permission.
+const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 function escapeHtmlForReport(s: string): string {
   return String(s == null ? '' : s)
@@ -1082,12 +1082,12 @@ export default function ChatPage() {
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [sessionId] = useState(() => getOrCreateSessionUnid());
 
-  // === Cloud pipeline dual-write (Mike's Vercel endpoints) ===
-  // When synthReport becomes available, fire HTML + case writes to Mike's pipeline.
-  // Behind the NEXT_PUBLIC_SYNC_TO_CLOUD_PIPELINE flag. Fire-and-forget; never blocks UI.
+  // === Persist on report completion (direct to shared Supabase) ===
+  // When synthReport becomes available, fire HTML upload + case insert directly
+  // against the shared Supabase. Fire-and-forget; never blocks UI.
   useEffect(() => {
-    if (!CLOUD_PIPELINE_ENABLED) return;
     if (!synthReport) return;
+    if (!SUPABASE_ANON_KEY) return;
     try {
       const _u = user as { email?: string; businessName?: string } | null;
       const _shopName = (_u && _u.businessName) ? _u.businessName : '';
@@ -1108,24 +1108,36 @@ export default function ChatPage() {
         messages: chatMessages || [],
         shopName: _shopName,
       });
-      // 1) Save HTML report to Mike's diagnostic-reports bucket
-      fetch(MIKE_API + '/api/save-report', {
+      // Sanitize shop_name for use in storage path (no slashes, no leading/trailing whitespace).
+      const _shopFolder = (_shopName || 'unknown')
+        .replace(/[\\\/]+/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim() || 'unknown';
+      const _objectPath = encodeURIComponent(_shopFolder) + '/' + encodeURIComponent(_unid) + '/' + encodeURIComponent(_reportFilename);
+
+      // 1) Upload HTML report to the diagnostic-reports storage bucket.
+      fetch(SUPABASE_URL + '/storage/v1/object/diagnostic-reports/' + _objectPath, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          unid: _unid,
-          shop_name: _shopName || undefined,
-          filename: _reportFilename,
-          html_content: _htmlContent,
-        }),
+        headers: {
+          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'text/html',
+          'x-upsert': 'true',
+        },
+        body: _htmlContent,
       }).catch(() => {});
-      // 2) Save case data to customer_cases via /api/save-case
-      fetch(MIKE_API + '/api/save-case', {
+
+      // 2) Insert case row into diagnostic_case_studies.
+      fetch(SUPABASE_URL + '/rest/v1/diagnostic_case_studies', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
         body: JSON.stringify({
           unid: _unid,
-          conversation_text: _conversationText,
           year: vehicle.year || '',
           make: vehicle.make || '',
           model: vehicle.model || '',
@@ -1135,9 +1147,10 @@ export default function ChatPage() {
           fix: '',
           conclusion: '',
           source: 'web',
+          shop_name: _shopName || '',
         }),
       }).catch(() => {});
-    } catch { /* never let cloud-write errors break the report flow */ }
+    } catch { /* never let persistence errors break the report flow */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [synthReport]);
   if (!user) return null;
