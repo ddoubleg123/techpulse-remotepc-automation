@@ -4,21 +4,33 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores/authStore';
 
-const SYNTH_API = 'https://techpulse-api.onrender.com';
+const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 interface Report {
-  id: string;
+  id: string;            // session_id (unid)
   filename: string;
   vehicle_make: string;
   vehicle_year: string;
   vehicle_model: string;
+  vin?: string;
   created_at: string;
-  file_type?: string;
 }
 
+// Row shape from diagnostic_case_studies
+type CaseRow = {
+  unid: string;
+  year?: string | null;
+  make?: string | null;
+  model?: string | null;
+  vin?: string | null;
+  shop_name?: string | null;
+  created_at: string;
+};
+
 export default function ReportsPage() {
-  const { token: _jwt, user } = useAuthStore();
-  const token = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
+  const { user } = useAuthStore();
+  const shopName = ((user as unknown) as { businessName?: string } | null)?.businessName || '';
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,27 +41,52 @@ export default function ReportsPage() {
   const teal = '#2E75B6';
 
   const fetchReports = useCallback(async (q = '') => {
-    if (!token) return;
+    if (!SUPABASE_ANON_KEY) {
+      setError('Supabase not configured');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (q) params.set('search', q);
-      if (user?.email) params.set('email', user.email);
-      const qs = params.toString();
-      const url = qs ? `${SYNTH_API}/api/reports?${qs}` : `${SYNTH_API}/api/reports`;
+      params.set('select', 'unid,year,make,model,vin,shop_name,created_at');
+      params.set('order', 'created_at.desc');
+      params.set('limit', '200');
+      if (shopName) {
+        params.set('shop_name', `eq.${shopName}`);
+      }
+      if (q && q.trim()) {
+        const term = q.trim();
+        const orClause = `(year.ilike.*${term}*,make.ilike.*${term}*,model.ilike.*${term}*,vin.ilike.*${term}*)`;
+        // PostgREST: ilike wildcards use * here (URLSearchParams handles % encoding)
+        params.set('or', orClause);
+      }
+      const url = `${SUPABASE_URL}/rest/v1/diagnostic_case_studies?${params.toString()}`;
       const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
       });
-      if (!res.ok) throw new Error(`Couldn't load reports (HTTP ${res.status}). Please try again.`);
-      const data = await res.json();
-      setReports(Array.isArray(data.reports) ? data.reports : []);
+      if (!res.ok) throw new Error(`Couldn't load reports (HTTP ${res.status}).`);
+      const rows: CaseRow[] = await res.json();
+      const mapped: Report[] = (Array.isArray(rows) ? rows : []).map(r => ({
+        id: r.unid,
+        filename: '',
+        vehicle_make: r.make || '',
+        vehicle_year: r.year || '',
+        vehicle_model: r.model || '',
+        vin: r.vin || '',
+        created_at: r.created_at,
+      }));
+      setReports(mapped);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load reports');
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [shopName]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
@@ -76,15 +113,15 @@ export default function ReportsPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: navy }}>Reports</h1>
-          <p style={{ margin: '2px 0 0', fontSize: 13, color: '#888' }}>Diagnostic history  all platforms</p>
+          <p style={{ margin: '2px 0 0', fontSize: 13, color: '#888' }}>Diagnostic history</p>
         </div>
         {/* Search */}
         <form onSubmit={handleSearch} style={{ display: 'flex', gap: 8 }}>
           <input
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
-            placeholder="Search make, model, DTC..."
-            style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #E0E0E0', fontSize: 13, width: 220, outline: 'none', color: navy }}
+            placeholder="Search VIN, make, model, year..."
+            style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #E0E0E0', fontSize: 13, width: 240, outline: 'none', color: navy }}
           />
           <button type="submit" style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${navy}, ${teal})`, color: 'white', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
             Search
@@ -127,7 +164,6 @@ export default function ReportsPage() {
           </div>
         ) : reports.length === 0 ? (
           <div style={{ padding: 56, textAlign: 'center', color: '#888' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}></div>
             <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: navy }}>
               {search ? `No reports matching "${search}"` : 'No diagnostic reports yet'}
             </p>
@@ -149,18 +185,15 @@ export default function ReportsPage() {
               onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.background = '#FAFAFA'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'; }}
             >
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FFF0EE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>
-                
-              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: navy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {r.filename || 'Diagnostic Report'}
+                  {vehicleLabel(r)}
                 </p>
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: '#888' }}>
-                  {vehicleLabel(r)} &nbsp;&nbsp; {formatDate(r.created_at)}
+                  {r.vin ? `VIN ${r.vin} · ` : ''}{formatDate(r.created_at)}
                 </p>
               </div>
-              <span style={{ fontSize: 11, color: '#AAA', flexShrink: 0 }}>PDF</span>
+              <span style={{ fontSize: 11, color: '#AAA', flexShrink: 0 }}>VIEW</span>
             </Link>
           ))
         )}
@@ -168,5 +201,3 @@ export default function ReportsPage() {
     </div>
   );
 }
-
-
