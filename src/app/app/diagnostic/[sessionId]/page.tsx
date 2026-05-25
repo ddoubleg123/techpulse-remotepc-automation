@@ -16,8 +16,31 @@ type ReportDetail = {
   email?: string | null;
 };
 
+type ChatMessage = {
+  id?: string;
+  role: "user" | "synth";
+  content: string;
+  ts?: number;
+};
+
+type CaseRow = {
+  unid: string;
+  year?: string | null;
+  make?: string | null;
+  model?: string | null;
+  vin?: string | null;
+  dtc_codes?: string[] | null;
+  complaint?: string | null;
+  diagnosis?: string | null;
+  shop_name?: string | null;
+  messages?: ChatMessage[] | null;
+  created_at?: string;
+};
+
 const SYNTH_API = "https://techpulse-api.onrender.com";
 const SYNTH_TOKEN = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || "";
+const SUPABASE_URL = "https://fcqejcrxtrqdxybgyueu.supabase.co";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
 function formatDate(iso?: string): string {
   if (!iso) return "—";
@@ -39,9 +62,11 @@ export default function DiagnosticReportPage() {
   const sessionId = (params?.sessionId as string) || "";
   const { user } = useAuthStore();
   const [report, setReport] = useState<ReportDetail | null>(null);
+  const [caseRow, setCaseRow] = useState<CaseRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Fetch metadata + PDF from Synth API (existing path)
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -88,6 +113,32 @@ export default function DiagnosticReportPage() {
     return () => { cancelled = true; };
   }, [sessionId, user?.email]);
 
+  // Fetch case row (conversation transcript, VIN) directly from Supabase
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCase() {
+      if (!sessionId || !SUPABASE_ANON_KEY) return;
+      try {
+        const url = `${SUPABASE_URL}/rest/v1/diagnostic_case_studies?unid=eq.${encodeURIComponent(sessionId)}&select=*`;
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            apikey: SUPABASE_ANON_KEY,
+          },
+        });
+        if (!res.ok) return;
+        const rows = await res.json();
+        if (!cancelled && Array.isArray(rows) && rows.length > 0) {
+          setCaseRow(rows[0]);
+        }
+      } catch {
+        // soft-fail; the report can still display from Synth API
+      }
+    }
+    loadCase();
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
   function handleDownloadPdf() {
     if (!report || !report.content_base64) return;
     try {
@@ -120,7 +171,7 @@ export default function DiagnosticReportPage() {
     );
   }
 
-  if (!report) {
+  if (!report && !caseRow) {
     return (
       <div className="text-center py-12">
         <h1 className="text-2xl font-bold text-white">Report Not Found</h1>
@@ -129,16 +180,22 @@ export default function DiagnosticReportPage() {
     );
   }
 
+  const vehicleMake = report?.vehicle_make || caseRow?.make || "—";
+  const vehicleModel = report?.vehicle_model || caseRow?.model || "—";
+  const vehicleYear = report?.vehicle_year || caseRow?.year || "—";
+  const vehicleVin = caseRow?.vin || "—";
+  const messages: ChatMessage[] = Array.isArray(caseRow?.messages) ? caseRow!.messages! : [];
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-white">Diagnostic Report</h1>
           <p className="text-slate-400 mt-1 text-sm">
-            Session: <span className="font-mono">{report.session_id || "—"}</span>
+            Session: <span className="font-mono">{report?.session_id || caseRow?.unid || "—"}</span>
           </p>
         </div>
-        {report.content_base64 && (
+        {report?.content_base64 && (
           <button
             onClick={handleDownloadPdf}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg shrink-0"
@@ -153,16 +210,20 @@ export default function DiagnosticReportPage() {
           <h2 className="text-xl font-semibold text-white mb-4">Vehicle Information</h2>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
+              <span className="text-slate-400">Year:</span>
+              <span className="text-white">{vehicleYear}</span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-slate-400">Make:</span>
-              <span className="text-white">{report.vehicle_make || "—"}</span>
+              <span className="text-white">{vehicleMake}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Model:</span>
-              <span className="text-white">{report.vehicle_model || "—"}</span>
+              <span className="text-white">{vehicleModel}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Year:</span>
-              <span className="text-white">{report.vehicle_year || "—"}</span>
+            <div className="flex justify-between gap-3">
+              <span className="text-slate-400 shrink-0">VIN:</span>
+              <span className="text-white font-mono text-xs truncate">{vehicleVin}</span>
             </div>
           </div>
         </div>
@@ -172,26 +233,49 @@ export default function DiagnosticReportPage() {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between gap-3">
               <span className="text-slate-400 shrink-0">Filename:</span>
-              <span className="text-white font-mono truncate">{report.filename || "—"}</span>
+              <span className="text-white font-mono truncate">{report?.filename || "—"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Created:</span>
-              <span className="text-white">{formatDate(report.created_at)}</span>
+              <span className="text-white">{formatDate(report?.created_at || caseRow?.created_at)}</span>
             </div>
             <div className="flex justify-between gap-3">
               <span className="text-slate-400 shrink-0">Session ID:</span>
-              <span className="text-white font-mono text-xs truncate">{report.session_id || "—"}</span>
+              <span className="text-white font-mono text-xs truncate">{report?.session_id || caseRow?.unid || "—"}</span>
             </div>
           </div>
         </div>
       </div>
 
+      {messages.length > 0 && (
+        <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
+          <h2 className="text-xl font-semibold text-white mb-4">Conversation</h2>
+          <div className="space-y-3">
+            {messages.map((m, i) => (
+              <div key={m.id || i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+                <div
+                  className={`max-w-[80%] px-4 py-2 rounded-2xl text-sm whitespace-pre-wrap ${
+                    m.role === "user"
+                      ? "bg-blue-600 text-white rounded-tr-sm"
+                      : "bg-slate-700 text-slate-100 rounded-tl-sm"
+                  }`}
+                >
+                  {m.content}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
         <h2 className="text-xl font-semibold text-white mb-2">Diagnostic Detail</h2>
         <p className="text-slate-400 text-sm">
-          {report.content_base64
-            ? `The full diagnostic report PDF is available — click "Download PDF" above to save it. (${vehicleSummary(report)})`
-            : "The full diagnostic content is not yet available in this view."}
+          {report?.content_base64
+            ? `Full diagnostic report PDF is available — click "Download PDF" above to save it. (${vehicleSummary(report)})`
+            : messages.length > 0
+              ? "Conversation transcript is shown above. PDF report is not available for this session."
+              : "The full diagnostic content is not yet available in this view."}
         </p>
       </div>
     </div>
