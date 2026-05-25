@@ -1219,7 +1219,6 @@ export default function ChatPage() {
           year: vehicle.year || '',
           make: vehicle.make || '',
           model: vehicle.model || '',
-          vin: vehicle.vin || '',
           dtc_codes: _codesArr,
           complaint: symptoms || '',
           diagnosis: _diagnosisText,
@@ -1227,6 +1226,7 @@ export default function ChatPage() {
           conclusion: '',
           source: 'web',
           shop_name: _shopName || '',
+          messages: chatMessages || [],
         }),
       }).catch(() => {});
     } catch { /* never let persistence errors break the report flow */ }
