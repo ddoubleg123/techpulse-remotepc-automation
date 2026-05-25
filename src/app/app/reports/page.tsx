@@ -53,6 +53,7 @@ export default function ReportsPage() {
       params.set('select', 'unid,year,make,model,vin,shop_name,created_at');
       params.set('order', 'created_at.desc');
       params.set('limit', '200');
+      params.set('source', 'eq.web');     // Only show user-generated web sessions, not training corpus
       if (shopName) {
         params.set('shop_name', `eq.${shopName}`);
       }
