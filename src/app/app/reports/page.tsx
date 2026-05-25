@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useAuthStore } from '@/stores/authStore';
 
 const SYNTH_API = 'https://techpulse-api.onrender.com';
@@ -136,10 +137,18 @@ export default function ReportsPage() {
           </div>
         ) : (
           reports.map((r, i) => (
-            <div key={r.id} style={{
-              display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px',
-              borderBottom: i < reports.length - 1 ? '1px solid #F0F0F0' : 'none',
-            }}>
+            <Link
+              key={r.id}
+              href={`/app/diagnostic/${r.id}`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px',
+                borderBottom: i < reports.length - 1 ? '1px solid #F0F0F0' : 'none',
+                textDecoration: 'none', color: 'inherit', cursor: 'pointer',
+                transition: 'background 0.15s ease',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.background = '#FAFAFA'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'; }}
+            >
               <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FFF0EE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>
                 
               </div>
@@ -152,7 +161,7 @@ export default function ReportsPage() {
                 </p>
               </div>
               <span style={{ fontSize: 11, color: '#AAA', flexShrink: 0 }}>PDF</span>
-            </div>
+            </Link>
           ))
         )}
       </div>
