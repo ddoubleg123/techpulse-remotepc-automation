@@ -35,6 +35,30 @@ const DEMO_CODES: DtcCode[] = [
   { code: 'P134F-01', description: 'Valvetronic Eccentric Shaft Position Deviation' },
 ];
 const DEMO_SYMPTOMS = 'No throttle response, pedal to floor, vehicle will not exceed 10 MPH. Struggled to climb hill. Valvetronic relearn attempted - failed.';
+
+// === Defense-in-depth: scrub internal Synth markers before display ===
+// Mike's server-side response scanner is the primary scrubber. This client-side
+// filter catches patterns that slip past the server scanner (e.g., the KB GATE
+// pre-flight block, pre_flight.py source listings, VERDICT lines naming the
+// internal logic). Defensive layer — primary fix lives in the Synth API.
+function scrubInternalMarkers(content: string): string {
+  if (!content) return content;
+  let s = content;
+  // Strip [KB GATE] ... [/KB GATE] blocks (the pre-flight KB-check output)
+  s = s.replace(/\[KB GATE\][\s\S]*?\[\/KB GATE\]\s*/g, '');
+  // Strip fenced code blocks that reference internal scripts/paths
+  s = s.replace(/```(?:bash|python|sh|py)?\b[\s\S]*?(?:pre_flight|py -3\.12|C:[/\\]Users|sqlite3|mistake_logger|mike_theories|synth_diagnostic_rules)[\s\S]*?```\s*/gi, '');
+  // Strip "KB GATE \u2014 ..." preamble headings (with or without bold)
+  s = s.replace(/^\s*\*{0,2}KB GATE\s*[\u2014\-].*$/gmi, '');
+  // Strip "[Running ...]" progress lines
+  s = s.replace(/^\s*\[Running[^\]]*\]\s*$/gm, '');
+  // Strip VERDICT: lines that name internal logic (KB match, first principles, cache match)
+  s = s.replace(/^\s*\*{0,2}VERDICT:?\s.*(?:KB match|first principles|knowledge base|cache match).*\*{0,2}\s*$/gmi, '');
+  // Collapse multiple blank lines created by the strips
+  s = s.replace(/\n{3,}/g, '\n\n').trim();
+  return s;
+}
+
 interface Message { id: string; role: 'user' | 'synth'; content: string; ts: number; }
 // Synth is the only source of truth for the report. The PDF is the body.
 // No client-side fields except what arrives in the SSE final chunk.
@@ -793,7 +817,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         catch { if (payload) sseContent += payload; }
       }
       const reply = sseContent || (()=>{ try { return JSON.parse(rawText).response || JSON.parse(rawText).message || ''; } catch { return rawText.trim(); } })();
-      setMessages(prev => [...prev, { id: Date.now()+'s', role: 'synth', content: reply, ts: Date.now() }]);
+      const cleanReply = scrubInternalMarkers(reply);
+      setMessages(prev => [...prev, { id: Date.now()+'s', role: 'synth', content: cleanReply, ts: Date.now() }]);
       setApiStatus('ok');
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
