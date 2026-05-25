@@ -823,7 +823,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
         setWarmingUp(false);
-        setMessages((prev: any[]) => [...prev, { role: 'assistant', content: 'Request timed out - please try again in a moment.' }]);
+        setMessages(prev => [...prev, { id: Date.now()+'t', role: 'synth', content: 'Request timed out - please try again in a moment.', ts: Date.now() }]);
       } else {
       setApiStatus('error');
       setMessages(prev => [...prev, { id: Date.now()+'e', role:'synth', content:'Unable to connect to Synth. Please check your connection and try again.', ts:Date.now() }]);
