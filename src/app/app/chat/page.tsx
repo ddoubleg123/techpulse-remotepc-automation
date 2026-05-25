@@ -1216,17 +1216,25 @@ export default function ChatPage() {
         },
         body: JSON.stringify({
           unid: _unid,
-          year: vehicle.year || '',
+          source: 'web',
+          synth_guided: false,             // Gate: unverified web write — invisible to Synth
+          diagnosis_outcome: 'pending_review',  // Override default 'confirmed_correct' — these are NOT verified
+          messages: chatMessages || [],
+          title: _vehicleLabel + (_codesArr.length ? ' — ' + _codesArr.join(', ') : ''),  // NOT NULL
+          year: vehicle.year ? (parseInt(vehicle.year, 10) || null) : null,  // schema is integer
           make: vehicle.make || '',
           model: vehicle.model || '',
+          engine: vehicle.engine || '',
+          vin: vehicle.vin || '',
           dtc_codes: _codesArr,
           complaint: symptoms || '',
+          symptoms: symptoms || '',        // Mike's q_cases checks both columns
           diagnosis: _diagnosisText,
           fix: '',
           conclusion: '',
-          source: 'web',
           shop_name: _shopName || '',
-          messages: chatMessages || [],
+          full_content: null,              // Gate: built on promotion only
+          embedding: null,                 // Gate: generated on promotion only
         }),
       }).catch(() => {});
     } catch { /* never let persistence errors break the report flow */ }
