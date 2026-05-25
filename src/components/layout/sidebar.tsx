@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, MessageSquare, RefreshCw, FileText, Bell, Settings, Gift, LogOut, Activity, BookOpen } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, RefreshCw, FileText, Bell, Settings, Gift, LogOut, Activity, BookOpen, Library } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { label: 'Sync Data',       href: '/app/sync',          icon: RefreshCw },
   { label: 'Reports',         href: '/app/reports',       icon: FileText },
   { label: 'Knowledge Base',  href: '/app/knowledge',     icon: BookOpen },
+  { label: 'Case Studies',    href: '/app/cases',         icon: Library },
   { label: 'Scope Patterns',  href: '/app/scope-patterns', icon: Activity },
   { label: 'Notifications',   href: '/app/notifications', icon: Bell },
   { label: 'Referrals', href: '/app/referrals', icon: Gift },
