@@ -30,7 +30,7 @@ type CaseRow = {
 
 export default function ReportsPage() {
   const { user } = useAuthStore();
-  const shopName = ((user as unknown) as { businessName?: string } | null)?.businessName || '';
+  const shopName = user?.businessName || '';
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
