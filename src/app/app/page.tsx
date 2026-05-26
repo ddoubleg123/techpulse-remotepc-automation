@@ -1,44 +1,80 @@
-// v2
+// v3 — wired to Supabase
 'use client';
-
-
-
 
 import { useAuthStore } from '@/stores/authStore';
 import OnboardingModal from '@/components/onboarding/OnboardingModal';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Zap, ArrowRight, Clock, AlertTriangle, CheckCircle, Plus, FileText } from 'lucide-react';
+import { Zap, ArrowRight, Clock, AlertTriangle, CheckCircle, Plus, FileText, TrendingUp, Activity, Wrench } from 'lucide-react';
 
+const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
+// Each diagnostic session saves ~2.5 hrs vs manual workflow (TechPulse pitch deck)
+const HOURS_SAVED_PER_SESSION = 2.5;
 
-
-// Real ticket history — empty for now, will populate from Supabase once connected
-const useTickets = () => {
-  const [tickets, setTickets] = useState<{
-    id: string; vehicle: string; codes: string[]; status: 'open' | 'resolved'; date: string; summary: string;
-  }[]>([]);
-  const [loading, setLoading] = useState(true);
-
-
-
-
-  useEffect(() => {
-    // TODO: replace with real Supabase fetch once diagnostic sessions are persisted
-    // const { data } = await supabase.from('diagnostic_sessions').select('*').order('created_at', { ascending: false });
-    // setTickets(data || []);
-    setLoading(false);
-  }, []);
-
-
-
-
-  return { tickets, loading };
+type Session = {
+  unid: string;
+  year: number | null;
+  make: string | null;
+  model: string | null;
+  engine: string | null;
+  dtc_codes: string[] | null;
+  symptoms: string | null;
+  diagnosis_outcome: string | null;
+  shop_name: string | null;
+  created_at: string;
 };
 
+function useSessions(shopName: string | null) {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    if (!SUPABASE_ANON_KEY) { setLoading(false); return; }
+    let cancelled = false;
+    const params = new URLSearchParams();
+    params.set('select', 'unid,year,make,model,engine,dtc_codes,symptoms,diagnosis_outcome,shop_name,created_at');
+    params.set('source', 'eq.web');
+    params.set('order', 'created_at.desc');
+    params.set('limit', '50');
+    if (shopName) params.set('shop_name', `eq.${shopName}`);
+    fetch(`${SUPABASE_URL}/rest/v1/diagnostic_case_studies?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY },
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then(rows => { if (!cancelled) setSessions(Array.isArray(rows) ? rows : []); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [shopName]);
 
+  return { sessions, loading };
+}
+
+function formatRelative(iso: string): string {
+  const d = new Date(iso);
+  const ms = Date.now() - d.getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  if (days < 30) return `${days}d ago`;
+  return d.toLocaleDateString();
+}
+
+function vehicleLabel(s: Session): string {
+  return [s.year, s.make, s.model, s.engine].filter(Boolean).join(' ') || 'Unknown vehicle';
+}
+
+function isResolved(s: Session): boolean {
+  // Web writes default to 'pending_review' — anything else (confirmed_correct, confirmed_incorrect, etc) is closed
+  const o = s.diagnosis_outcome;
+  return !!o && o !== 'pending_review' && o !== 'pending' && o !== 'in_progress';
+}
 
 export default function DashboardPage() {
   const { user, token } = useAuthStore();
@@ -65,33 +101,34 @@ export default function DashboardPage() {
         }));
       })
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [token]);
+
   const router = useRouter();
-  const { tickets, loading } = useTickets();
-
-
-
+  const shopName = (user as any)?.businessName || null;
+  const { sessions, loading } = useSessions(shopName);
 
   useEffect(() => { if (!user) router.push('/auth/login'); }, [user, router]);
+
+  const stats = useMemo(() => {
+    const total = sessions.length;
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const thisWeek = sessions.filter(s => new Date(s.created_at).getTime() > oneWeekAgo).length;
+    const hoursSaved = Math.round(total * HOURS_SAVED_PER_SESSION);
+    const uniqueVehicles = new Set(
+      sessions.map(s => [s.year, s.make, s.model].filter(Boolean).join(' ')).filter(Boolean)
+    ).size;
+    return { total, thisWeek, hoursSaved, uniqueVehicles };
+  }, [sessions]);
+
   if (!user) return null;
-
-
-
 
   const hour = new Date().getHours();
   const firstName = user.name?.split(' ')[0] || user.email?.split('@')[0] || 'there';
-
-
-
+  const recent = sessions.slice(0, 8);
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-page)', padding: '28px 28px 40px' }}>
-
-
-
 
       {/* ── HERO ── */}
       <div style={{
@@ -127,30 +164,32 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* ── SHOP STATS ── */}
+      {!loading && stats.total > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+          <StatCard icon={<Activity size={16} />} label="Total sessions" value={String(stats.total)} accent="#00c3ff" />
+          <StatCard icon={<TrendingUp size={16} />} label="This week" value={String(stats.thisWeek)} accent="#34d399" />
+          <StatCard icon={<Clock size={16} />} label="Hours saved" value={`${stats.hoursSaved}h`} accent="#f59e0b" hint="~2.5h per diagnostic" />
+          <StatCard icon={<Wrench size={16} />} label="Vehicles" value={String(stats.uniqueVehicles)} accent="#8b5cf6" />
+        </div>
+      )}
 
-
-
-      {/* ── TICKET HISTORY ── */}
+      {/* ── DIAGNOSTIC HISTORY ── */}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Diagnostic History</h3>
-          {tickets.length > 0 && (
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Recent Diagnostics</h3>
+          {sessions.length > 0 && (
             <Link href="/app/reports" style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}>View all →</Link>
           )}
         </div>
 
-
-
-
         {loading ? (
-          /* Loading skeleton */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {[1, 2, 3].map(i => (
               <div key={i} style={{ height: 72, borderRadius: 14, background: 'var(--bg-card)', border: '1px solid var(--border-card)', opacity: 0.5 }} />
             ))}
           </div>
-        ) : tickets.length === 0 ? (
-          /* Empty state */
+        ) : recent.length === 0 ? (
           <div style={{
             padding: '52px 24px', borderRadius: 18, textAlign: 'center',
             background: 'var(--bg-card)', border: '2px dashed var(--border-card)',
@@ -172,49 +211,71 @@ export default function DashboardPage() {
             </Link>
           </div>
         ) : (
-          /* Ticket list */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {tickets.map(ticket => (
-              <Link key={ticket.id} href={`/app/reports/${ticket.id}`} style={{
-                display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px',
-                borderRadius: 14, background: 'var(--bg-card)', border: '1px solid var(--border-card)',
-                textDecoration: 'none', transition: 'all 0.15s',
-              }}>
-                <div style={{
-                  width: 38, height: 38, borderRadius: 10, flexShrink: 0,
-                  background: ticket.status === 'resolved' ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+            {recent.map(s => {
+              const resolved = isResolved(s);
+              return (
+                <Link key={s.unid} href={`/app/diagnostic/${s.unid}`} style={{
+                  display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px',
+                  borderRadius: 14, background: 'var(--bg-card)', border: '1px solid var(--border-card)',
+                  textDecoration: 'none', transition: 'all 0.15s',
                 }}>
-                  {ticket.status === 'resolved'
-                    ? <CheckCircle size={18} color="#10b981" />
-                    : <AlertTriangle size={18} color="#f59e0b" />
-                  }
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', marginBottom: 3 }}>{ticket.vehicle}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {ticket.codes.map(c => (
-                      <span key={c} style={{ padding: '1px 7px', borderRadius: 5, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>{c}</span>
-                    ))}
-                    <span style={{ fontSize: 12, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ticket.summary}</span>
+                  <div style={{
+                    width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+                    background: resolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {resolved
+                      ? <CheckCircle size={18} color="#10b981" />
+                      : <AlertTriangle size={18} color="#f59e0b" />
+                    }
                   </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-                  <span style={{ padding: '2px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: ticket.status === 'resolved' ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)', color: ticket.status === 'resolved' ? '#10b981' : '#f59e0b' }}>
-                    {ticket.status === 'resolved' ? 'Resolved' : 'Open'}
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Clock size={11} color="var(--text-3)" />
-                    <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{ticket.date}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', marginBottom: 3 }}>{vehicleLabel(s)}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {(s.dtc_codes || []).slice(0, 3).map(c => (
+                        <span key={c} style={{ padding: '1px 7px', borderRadius: 5, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>{c}</span>
+                      ))}
+                      {s.symptoms && (
+                        <span style={{ fontSize: 12, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                          {s.symptoms.length > 60 ? s.symptoms.slice(0, 60) + '…' : s.symptoms}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <ArrowRight size={15} color="var(--text-3)" />
-              </Link>
-            ))}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                    <span style={{ padding: '2px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: resolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)', color: resolved ? '#10b981' : '#f59e0b' }}>
+                      {resolved ? 'Resolved' : 'Open'}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Clock size={11} color="var(--text-3)" />
+                      <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{formatRelative(s.created_at)}</span>
+                    </div>
+                  </div>
+                  <ArrowRight size={15} color="var(--text-3)" />
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>
     {user && !user.onboarding_completed && <OnboardingModal />}
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, accent, hint }: { icon: React.ReactNode; label: string; value: string; accent: string; hint?: string }) {
+  return (
+    <div style={{
+      padding: '16px 18px', borderRadius: 14,
+      background: 'var(--bg-card)', border: '1px solid var(--border-card)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <div style={{ color: accent, display: 'flex' }}>{icon}</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+      </div>
+      <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1.1 }}>{value}</div>
+      {hint && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>{hint}</div>}
     </div>
   );
 }
