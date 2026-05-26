@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
@@ -29,8 +30,18 @@ type CaseRow = {
 };
 
 export default function ReportsPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading…</div>}>
+      <ReportsPageInner />
+    </Suspense>
+  );
+}
+
+function ReportsPageInner() {
   const { user } = useAuthStore();
   const shopName = user?.businessName || '';
+  const searchParams = useSearchParams();
+  const vinFilter = searchParams.get('vin') || '';
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +67,9 @@ export default function ReportsPage() {
       params.set('source', 'eq.web');     // Only show user-generated web sessions, not training corpus
       if (shopName) {
         params.set('shop_name', `eq.${shopName}`);
+      }
+      if (vinFilter) {
+        params.set('vin', `eq.${vinFilter}`);
       }
       if (q && q.trim()) {
         const term = q.trim();
@@ -87,7 +101,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [shopName]);
+  }, [shopName, vinFilter]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
@@ -109,6 +123,22 @@ export default function ReportsPage() {
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto' }}>
+
+      {/* VIN filter banner */}
+      {vinFilter && (
+        <div style={{
+          background: '#F0F6FB', border: '1px solid #D0E2F2', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap',
+        }}>
+          <div style={{ fontSize: 13, color: navy }}>
+            Filtering by VIN: <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{vinFilter}</span>
+          </div>
+          <Link href="/app/reports" style={{ fontSize: 12, fontWeight: 600, color: teal, textDecoration: 'none' }}>
+            Clear filter ×
+          </Link>
+        </div>
+      )}
 
       {/* Header row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
