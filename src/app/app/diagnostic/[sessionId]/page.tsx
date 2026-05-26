@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useAuthStore } from "@/stores/authStore";
 
 type ReportDetail = {
@@ -225,6 +226,16 @@ export default function DiagnosticReportPage() {
               <span className="text-slate-400 shrink-0">VIN:</span>
               <span className="text-white font-mono text-xs truncate">{vehicleVin}</span>
             </div>
+            {caseRow?.vin && (
+              <div className="pt-2">
+                <Link
+                  href={`/app/reports?vin=${encodeURIComponent(caseRow.vin)}`}
+                  className="text-xs text-blue-400 hover:text-blue-300"
+                >
+                  View all sessions on this VIN →
+                </Link>
+              </div>
+            )}
           </div>
         </div>
 
