@@ -6,6 +6,7 @@
 //   - Builds full_content from vehicle/complaint/messages/diagnosis/fix
 //   - Generates a 1536-dim embedding via OpenAI text-embedding-3-small
 //   - Stamps confirmed_date
+//   - Writes a cheat-sheet row to synth_instructions (best-effort)
 //
 // What this DOES NOT do:
 //   - Set synth_guided=true. That's reserved for Mike's CONFIRM CORRECT
@@ -21,6 +22,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 
 type CaseRow = {
+  id?: string;
   unid: string;
   source: string | null;
   year: number | string | null;
@@ -34,6 +36,14 @@ type CaseRow = {
   diagnosis: string | null;
   fix: string | null;
   messages: Array<{ role: string; content: string }> | null;
+  // Extras consumed by writeCheatSheet:
+  title?: string | null;
+  key_pid_pattern?: string | null;
+  diagnostic_findings?: string | null;
+  pattern_signature?: string | null;
+  repair_type?: string | null;
+  shop_name?: string | null;
+  confirmed_date?: string | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -175,11 +185,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // 8. Write cheat sheet to synth_instructions (best-effort — promotion already
+  //    succeeded, so cheat-sheet failure must not poison the response).
+  const cheatSheet = await writeCheatSheet(
+    { ...caseRow, confirmed_date: new Date().toISOString().slice(0, 10) },
+    OPENAI_API_KEY,
+    SUPABASE_SERVICE_ROLE_KEY
+  );
+
   return NextResponse.json({
     ok: true,
     unid,
     fullContentLength: fullContent.length,
     embeddingDims: embedding.length,
+    cheatSheet,
     note: 'Shop confirmed. Awaiting Mike\'s CONFIRM CORRECT to set synth_guided=true.',
   });
 }
@@ -202,4 +221,137 @@ function buildFullContent(c: CaseRow, technicianNotes?: string): string {
   if (c.fix) parts.push(`Fix: ${c.fix}`);
   if (technicianNotes) parts.push(`Technician notes: ${technicianNotes}`);
   return parts.join('\n\n');
+}
+
+// Translation of Mike's cheat_sheet_writer.py into the Next.js API runtime.
+// Builds a 7-line cheat sheet, embeds it, upserts to synth_instructions.
+// Failures here MUST NOT abort the promotion — caller already PATCHed the case.
+type CheatSheetResult =
+  | { section: string; action: 'inserted' | 'updated' }
+  | { error: string };
+
+const NOT_MAP: Record<string, string> = {
+  sensor: 'Do not replace sensor before verifying wiring/power/ground',
+  wiring: 'Do not replace components before verifying circuit integrity',
+  mechanical: 'Do not overlook wear patterns and secondary damage',
+  vacuum_leak: 'O2 sensors, injectors — lean trim is symptom not cause',
+  fuel_system: 'O2 sensors, MAF — verify fuel delivery before parts',
+  timing: 'Do not replace cam/crank sensors before verifying timing mechanically',
+};
+
+async function writeCheatSheet(
+  c: CaseRow,
+  openaiKey: string,
+  supaKey: string
+): Promise<CheatSheetResult> {
+  try {
+    const make = (c.make || 'UNKNOWN').toUpperCase().replace(/ /g, '_');
+    const dtcs = c.dtc_codes || [];
+    const primaryDtc =
+      dtcs.length > 0
+        ? dtcs[0].replace(/ /g, '').toUpperCase() + (dtcs.length > 1 ? '_MULTI' : '')
+        : 'SYMPTOM';
+    const engineMatch = (c.title || '').match(/(\d+\.\d+[LT]?\w*)/i);
+    const engine = engineMatch
+      ? engineMatch[1].toUpperCase()
+      : (c.repair_type || 'GENERAL').toUpperCase();
+    const sectionName = `CHEAT_${make}_${engine}_${primaryDtc}`;
+
+    const vehicleLine = `${c.year || ''} ${c.make || ''} ${c.model || ''} ${engine}`.trim();
+    const pidRaw = (c.key_pid_pattern || c.diagnostic_findings || 'See case study').slice(0, 120);
+    const patternRaw = c.pattern_signature || '';
+    const patternParts = patternRaw.includes(' | ') ? patternRaw.split(' | ') : [patternRaw];
+    const patternLine =
+      (patternParts[patternParts.length - 1] || '').slice(0, 120) ||
+      'See diagnostic_case_studies for full pattern';
+    const notLine = NOT_MAP[c.repair_type || ''] || 'See case study for exclusion list';
+    const fixLine = c.fix || (c.title?.split(' - ').pop()) || 'See case study';
+    const refLine = `${c.shop_name || 'Unknown Shop'} ${(c.confirmed_date || '').slice(0, 10)}`.trim();
+
+    const content = [
+      `Vehicle: ${vehicleLine}`,
+      `DTCs: ${dtcs.join(', ') || 'NONE'}`,
+      `PIDs: ${pidRaw}`,
+      `Pattern: ${patternLine}`,
+      `Fix: ${fixLine}`,
+      `Not: ${notLine}`,
+      `Ref: ${refLine}`,
+    ].join('\n');
+
+    // Embedding (same model as the parent case for vector compatibility)
+    const embRes = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${openaiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'text-embedding-3-small',
+        input: content.slice(0, 8000),
+      }),
+    });
+    if (!embRes.ok) return { error: `Cheat sheet embedding HTTP ${embRes.status}` };
+    const embData = await embRes.json();
+    const embedding = embData?.data?.[0]?.embedding;
+    if (!Array.isArray(embedding) || embedding.length === 0) {
+      return { error: 'No cheat sheet embedding returned' };
+    }
+
+    // The case ref to record on the cheat sheet row. Prefer the UUID id; fall
+    // back to unid only if id was not selected.
+    const caseRef = c.id || c.unid;
+
+    // Upsert by section. First check if an existing row uses this section name.
+    const checkUrl = `${SUPABASE_URL}/rest/v1/synth_instructions?section=eq.${encodeURIComponent(sectionName)}&select=id,case_study_refs`;
+    const checkRes = await fetch(checkUrl, {
+      headers: { Authorization: `Bearer ${supaKey}`, apikey: supaKey },
+    });
+    const existing: Array<{ id: string; case_study_refs?: string[] }> = checkRes.ok
+      ? await checkRes.json()
+      : [];
+
+    if (Array.isArray(existing) && existing.length > 0) {
+      const refs = Array.from(
+        new Set([...(existing[0].case_study_refs || []), caseRef].filter(Boolean))
+      );
+      const updRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/synth_instructions?id=eq.${existing[0].id}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${supaKey}`,
+            apikey: supaKey,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({ content, embedding, case_study_refs: refs }),
+        }
+      );
+      if (!updRes.ok) return { error: `Update synth_instructions HTTP ${updRes.status}` };
+      return { section: sectionName, action: 'updated' };
+    } else {
+      const insRes = await fetch(`${SUPABASE_URL}/rest/v1/synth_instructions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${supaKey}`,
+          apikey: supaKey,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          section: sectionName,
+          title: `Vehicle Cheat Sheet — ${sectionName.replace('CHEAT_', '').replace(/_/g, ' ')}`,
+          content,
+          instruction_type: 'cheat_sheet',
+          active: true,
+          embedding,
+          case_study_refs: caseRef ? [caseRef] : [],
+        }),
+      });
+      if (!insRes.ok) return { error: `Insert synth_instructions HTTP ${insRes.status}` };
+      return { section: sectionName, action: 'inserted' };
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'unknown' };
+  }
 }
