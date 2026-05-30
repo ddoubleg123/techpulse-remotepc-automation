@@ -234,6 +234,7 @@ const NOT_MAP: Record<string, string> = {
   sensor: 'Do not replace sensor before verifying wiring/power/ground',
   wiring: 'Do not replace components before verifying circuit integrity',
   mechanical: 'Do not overlook wear patterns and secondary damage',
+  software: 'Do not replace hardware before verifying software/calibration',
   vacuum_leak: 'O2 sensors, injectors — lean trim is symptom not cause',
   fuel_system: 'O2 sensors, MAF — verify fuel delivery before parts',
   timing: 'Do not replace cam/crank sensors before verifying timing mechanically',
