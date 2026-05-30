@@ -3,6 +3,7 @@
 
 import { useAuthStore } from '@/stores/authStore';
 import OnboardingModal from '@/components/onboarding/OnboardingModal';
+import { isDemoUser } from '@/lib/demoUsers';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
@@ -259,7 +260,7 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
-    {user && !user.onboarding_completed && <OnboardingModal />}
+    {user && !user.onboarding_completed && !isDemoUser(user) && <OnboardingModal />}
     </div>
   );
 }
