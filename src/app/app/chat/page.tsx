@@ -1,6 +1,7 @@
 'use client';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { isDemoUser } from '@/lib/demoUsers';
 import { assertAcceptableScannerPdf, getPdfSizeViolationMessage, readPdfAsRawBase64 } from '@/lib/scannerPdf';
 import { getOrCreateSessionUnid } from '@/lib/unid';
 import { isValidPdfBase64 } from '@/lib/upload-classifier';
@@ -1216,7 +1217,7 @@ export default function ChatPage() {
         },
         body: JSON.stringify({
           unid: _unid,
-          source: 'web',
+          source: isDemoUser(user) ? 'demo' : 'web',
           synth_guided: false,             // Gate: unverified web write — invisible to Synth
           diagnosis_outcome: 'pending_review',  // Override default 'confirmed_correct' — these are NOT verified
           messages: chatMessages || [],
