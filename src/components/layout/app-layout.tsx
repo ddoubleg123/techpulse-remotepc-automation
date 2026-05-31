@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useEffect } from 'react';
 import Sidebar from './sidebar';
 import Header from './header';
+import DemoBanner from '@/components/DemoBanner';
 import { captureReferralCode } from '@/lib/referralCapture';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
@@ -153,6 +154,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div style={{ display:'flex', height:'100vh', overflow:'hidden', background:'var(--bg-page)' }}>
       <Sidebar />
       <div style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0, minHeight:0, overflow:'hidden' }}>
+        <DemoBanner />
         <Header />
         <main style={{ flex:1, display:'flex', flexDirection:'column', minHeight:0, overflowY:'auto' }}>
           {children}
