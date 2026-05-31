@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { isDemoUser } from '@/lib/demoUsers';
 
 const CONNECTOR_BASE = 'https://techpulse-app.onrender.com';
 
@@ -79,6 +80,28 @@ export default function BillingPage() {
       }
     }
     load();
+    if (isDemoUser(user)) {
+      return (
+        <div style={{ padding: 32, maxWidth: 640, margin: '0 auto' }}>
+          <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 20 }}>Billing</h1>
+          <div style={{ background: '#f0fdf4', border: '1px solid #16a34a', padding: 24, borderRadius: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 600, color: '#14532d' }}>Pro Plan</div>
+                <div style={{ marginTop: 6, color: '#15803d', fontSize: 14 }}>Active &middot; Renews January 1, 2099</div>
+              </div>
+              <div style={{ background: '#16a34a', color: 'white', padding: '6px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600 }}>ACTIVE</div>
+            </div>
+            <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #bbf7d0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div><div style={{ fontSize: 12, color: '#666' }}>Monthly</div><div style={{ fontSize: 18, fontWeight: 600 }}>$375.00</div></div>
+              <div><div style={{ fontSize: 12, color: '#666' }}>Next charge</div><div style={{ fontSize: 18, fontWeight: 600 }}>Jan 1, 2099</div></div>
+            </div>
+          </div>
+          <p style={{ marginTop: 20, color: '#666', fontSize: 13, fontStyle: 'italic' }}>Demo account &mdash; billing data is illustrative only.</p>
+        </div>
+      );
+    }
+    
     return () => {
       cancelled = true;
     };
