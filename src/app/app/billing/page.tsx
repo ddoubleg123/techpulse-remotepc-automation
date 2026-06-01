@@ -1,271 +1,392 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { AppLayout } from '@/components/layout';
-import { Card, CardContent, CardHeader, Button, Badge } from '@/components/ui';
-import { CreditCard, Calendar, CheckCircle, AlertTriangle, FileText, RefreshCw } from 'lucide-react';
+/**
+ * Billing page — renders plans from /api/billing/plans, supports per-card
+ * subscribe button, mechanic count selector, "first month free" trial display,
+ * and referral code application.
+ *
+ * Replaces the previous hardcoded-fallback version. Ships as part of:
+ *   feat(billing): per-seat pricing + referral support + free-trial UI
+ *
+ * Backend contract: see SIDD_SPEC_BILLING_REFERRALS.md
+ */
+
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { isDemoUser } from '@/lib/demoUsers';
 
-const CONNECTOR = 'https://techpulse-app.onrender.com';
+const CONNECTOR_BASE = 'https://techpulse-app.onrender.com';
 
-interface BillingStatus {
-  planName: string;
-  priceDisplay: string;
-  status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'none';
-  currentPeriodEnd: string | null;
-  cancelAtPeriodEnd?: boolean;
-}
+type PriceFragment = {
+  lookup_key: string;
+  amount_cents: number;
+  currency: string;
+  interval: string;
+};
 
-interface Plan {
-  id: string;
+type Plan = {
+  id: 'automated' | 'automated_human';
   name: string;
-  price: number;
-  priceId: string;
-  description?: string;
+  tagline: string;
+  base: PriceFragment;
+  seat: PriceFragment;
+  trial_days: number;
+  features: string[];
+  most_popular: boolean;
+};
+
+const REFERRAL_STORAGE_KEY = 'techpulse_pending_referral';
+
+function dollars(cents: number): string {
+  return `$${(cents / 100).toFixed(0)}`;
 }
 
-function BillingPageInner() {
-  const { token } = useAuthStore();
-  const searchParams = useSearchParams();
-
-  const [status, setStatus] = useState<BillingStatus | null>(null);
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
-
-  const successParam = searchParams.get('success');
-  const canceledParam = searchParams.get('canceled');
-
-  const fetchBilling = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
-      const [statusRes, plansRes] = await Promise.all([
-        fetch(`${CONNECTOR}/api/billing/status`, { headers }),
-        fetch(`${CONNECTOR}/api/billing/plans`, { headers }),
-      ]);
-      if (!statusRes.ok) throw new Error(`Status fetch failed (${statusRes.status})`);
-      if (!plansRes.ok) throw new Error(`Plans fetch failed (${plansRes.status})`);
-      const [statusData, plansData] = await Promise.all([statusRes.json(), plansRes.json()]);
-      setStatus(statusData);
-      setPlans(Array.isArray(plansData) ? plansData : plansData.plans ?? []);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load billing info');
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
-  useEffect(() => { fetchBilling(); }, [fetchBilling]);
-
-  const handleSubscribe = async (priceId: string) => {
-    if (!token) return;
-    setCheckoutLoading(priceId);
-    try {
-      const res = await fetch(`${CONNECTOR}/api/billing/checkout-session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ priceId }),
-      });
-      if (!res.ok) throw new Error(`Checkout failed (${res.status})`);
-      const data = await res.json();
-      const url = data.url ?? data.checkoutUrl ?? data.sessionUrl;
-      if (url) window.location.href = url;
-      else throw new Error('No checkout URL returned');
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Checkout failed');
-    } finally {
-      setCheckoutLoading(null);
-    }
-  };
-
-  const isActive = status?.status === 'active';
-  const isTrialing = status?.status === 'trialing';
-  const isPastDue = status?.status === 'past_due';
-  const hasSubscription = isActive || isTrialing || isPastDue;
-
-  return (
-    <AppLayout>
-      <div className="max-w-4xl space-y-6">
-
-        {successParam === 'true' && (
-          <Card className="bg-green-50 border-green-200">
-            <CardContent className="p-4 flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-              <p className="text-green-800 font-medium">Subscription activated Ã¢ÂÂ welcome to TechPulse Pro!</p>
-            </CardContent>
-          </Card>
-        )}
-        {canceledParam === 'true' && (
-          <Card className="bg-gray-50 border-gray-200">
-            <CardContent className="p-4 flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-gray-400" />
-              <p className="text-gray-600">Checkout canceled. No changes were made.</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {isPastDue && (
-          <Card className="bg-gradient-to-r from-red-500 to-orange-500 text-white border-0">
-            <CardContent className="p-6 flex items-center gap-4">
-              <AlertTriangle className="w-8 h-8 flex-shrink-0" />
-              <div>
-                <h3 className="text-lg font-bold">Payment past due</h3>
-                <p className="text-red-100">Update your payment method to keep access.</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {error && (
-          <Card className="border-red-200">
-            <CardContent className="p-4 flex items-center justify-between">
-              <p className="text-red-700 text-sm">{error}</p>
-              <Button variant="outline" size="sm" onClick={fetchBilling}>
-                <RefreshCw className="w-4 h-4 mr-2" /> Retry
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Current Plan</h3>
-            {!loading && status && (
-              <Badge variant={isActive ? 'success' : isTrialing ? 'warning' : isPastDue ? 'error' : 'default'}>
-                {isActive ? 'Active' : isTrialing ? 'Free Trial' : isPastDue ? 'Past Due' : status.status === 'canceled' ? 'Canceled' : 'No Subscription'}
-              </Badge>
-            )}
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="py-8 text-center text-gray-400 animate-pulse">LoadingÃ¢ÂÂ¦</div>
-            ) : hasSubscription && status ? (
-              <>
-                <div className="flex items-center justify-between py-4 border-b border-gray-100">
-                  <div>
-                    <h4 className="text-xl font-bold text-gray-900">{status.planName || 'TechPulse Pro'}</h4>
-                    <p className="text-gray-500">Full access to all TechPulse features</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-3xl font-bold text-gray-900">{status.priceDisplay || '$375'}</p>
-                    <p className="text-gray-500">/month</p>
-                  </div>
-                </div>
-                <div className="py-4 space-y-3">
-                  {[
-                    'Unlimited Synth AI chat sessions',
-                    'Priority ticket support',
-                    'Unlimited PDF report storage',
-                    'Community access',
-                    'Mobile app access (iOS & Android)',
-                  ].map(f => (
-                    <div key={f} className="flex items-center gap-2 text-gray-600">
-                      <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />{f}
-                    </div>
-                  ))}
-                </div>
-                {status.currentPeriodEnd && (
-                  <div className="flex items-center gap-4 pt-4 border-t border-gray-100">
-                    <Calendar className="w-5 h-5 text-gray-400" />
-                    <div>
-                      <p className="text-sm text-gray-500">{isTrialing ? 'Trial ends' : 'Next billing date'}</p>
-                      <p className="font-medium text-gray-900">
-                        {new Date(status.currentPeriodEnd).toLocaleDateString('en-US', {
-                          year: 'numeric', month: 'long', day: 'numeric',
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="py-6 text-center">
-                <CreditCard className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No active subscription Ã¢ÂÂ choose a plan below.</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {!loading && plans.length > 0 && !hasSubscription && (
-          <Card>
-            <CardHeader>
-              <h3 className="text-lg font-semibold text-gray-900">Choose a Plan</h3>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {plans.map(plan => (
-                <div key={plan.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:border-blue-300 transition-colors">
-                  <div>
-                    <h4 className="font-semibold text-gray-900">{plan.name}</h4>
-                    {plan.description && <p className="text-sm text-gray-500">{plan.description}</p>}
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-2xl font-bold text-gray-900">
-                      ${plan.price}<span className="text-base font-normal text-gray-500">/mo</span>
-                    </span>
-                    <Button
-                      onClick={() => handleSubscribe(plan.priceId)}
-                      disabled={checkoutLoading === plan.priceId}
-                    >
-                      {checkoutLoading === plan.priceId ? 'RedirectingÃ¢ÂÂ¦' : 'Subscribe'}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
-
-        <Card>
-          <CardHeader>
-            <h3 className="text-lg font-semibold text-gray-900">Billing History</h3>
-          </CardHeader>
-          <CardContent>
-            <div className="text-center py-8 text-gray-400">
-              <FileText className="w-10 h-10 mx-auto mb-3 opacity-40" />
-              <p className="text-sm">Payment history will appear here once available.</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {hasSubscription && !status?.cancelAtPeriodEnd && (
-          <Card className="border-red-200">
-            <CardContent className="p-6 flex items-center justify-between">
-              <div>
-                <h4 className="font-medium text-gray-900">Cancel Subscription</h4>
-                <p className="text-sm text-gray-500">Remains active until end of the billing period.</p>
-              </div>
-              <Button variant="outline" className="text-red-600 border-red-300 hover:bg-red-50">
-                Cancel Plan
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {hasSubscription && status?.cancelAtPeriodEnd && (
-          <Card className="border-orange-200 bg-orange-50">
-            <CardContent className="p-6">
-              <p className="text-orange-800 font-medium">
-                Subscription set to cancel at end of billing period.
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-      </div>
-    </AppLayout>
-  );
+function readPendingReferralCode(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(REFERRAL_STORAGE_KEY);
 }
 
 export default function BillingPage() {
+  const { token, user } = useAuthStore();
+  const [plans, setPlans] = useState<Plan[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [mechanicCounts, setMechanicCounts] = useState<Record<string, number>>({
+    automated: 1,
+    automated_human: 1,
+  });
+  const [submitting, setSubmitting] = useState<string | null>(null);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referralValid, setReferralValid] = useState<{ valid: boolean; referrer_name?: string; reason?: string } | null>(null);
+
+  // Load plans
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch(`${CONNECTOR_BASE}/api/billing/plans`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!cancelled) {
+          if (!data.plans || data.plans.length === 0) {
+            setError("Plans aren't configured on the backend yet. Try again in a few minutes.");
+          } else {
+            setPlans(data.plans);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) setError(`Could not load plans: ${(err as Error).message}`);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  // Read pending referral code from localStorage and validate it
+  useEffect(() => {
+    const code = readPendingReferralCode();
+    if (!code) return;
+    setReferralCode(code);
+    fetch(`${CONNECTOR_BASE}/api/referrals/validate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ code }),
+    })
+      .then((r) => r.json())
+      .then((data) => setReferralValid(data))
+      .catch(() => setReferralValid({ valid: false, reason: 'network_error' }));
+  }, [token]);
+
+  function setMechanics(planId: string, count: number) {
+    setMechanicCounts((prev) => ({ ...prev, [planId]: Math.max(1, Math.min(50, count)) }));
+  }
+
+  function totalForPlan(plan: Plan): number {
+    const mechanics = mechanicCounts[plan.id] ?? 1;
+    const baseCents = plan.base.amount_cents;
+    const seatCents = plan.seat.amount_cents;
+    return baseCents + seatCents * Math.max(0, mechanics - 1);
+  }
+
+  async function subscribe(plan: Plan) {
+    if (submitting) return;
+    setSubmitting(plan.id);
+    try {
+      const body: Record<string, unknown> = {
+        plan: plan.id,
+        mechanics: mechanicCounts[plan.id] ?? 1,
+      };
+      if (referralValid?.valid && referralCode) {
+        body.referral_code = referralCode;
+      }
+      const res = await fetch(`${CONNECTOR_BASE}/api/billing/checkout-session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`Checkout failed (${res.status}): ${errBody.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      if (data.url) {
+        // Clear the pending referral code now that it's been applied
+        if (referralValid?.valid) localStorage.removeItem(REFERRAL_STORAGE_KEY);
+        window.location.href = data.url;
+      } else {
+        throw new Error('Checkout response missing url');
+      }
+    } catch (err) {
+      setError((err as Error).message);
+      setSubmitting(null);
+    }
+  }
+
+  // Demo accounts see a static "active subscription" view instead of the plan picker.
+  if (isDemoUser(user)) {
+    return (
+      <div style={{ padding: 32, maxWidth: 640, margin: '0 auto' }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 20 }}>Billing</h1>
+        <div style={{ background: '#f0fdf4', border: '1px solid #16a34a', padding: 24, borderRadius: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 600, color: '#14532d' }}>Pro Plan</div>
+              <div style={{ marginTop: 6, color: '#15803d', fontSize: 14 }}>Active &middot; Renews January 1, 2099</div>
+            </div>
+            <div style={{ background: '#16a34a', color: 'white', padding: '6px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600 }}>ACTIVE</div>
+          </div>
+          <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #bbf7d0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div><div style={{ fontSize: 12, color: '#666' }}>Monthly</div><div style={{ fontSize: 18, fontWeight: 600 }}>$375.00</div></div>
+            <div><div style={{ fontSize: 12, color: '#666' }}>Next charge</div><div style={{ fontSize: 18, fontWeight: 600 }}>Jan 1, 2099</div></div>
+          </div>
+        </div>
+        <p style={{ marginTop: 20, color: '#666', fontSize: 13, fontStyle: 'italic' }}>Demo account &mdash; billing data is illustrative only.</p>
+      </div>
+    );
+  }
+
+  if (error && !plans) {
+    return (
+      <div style={{ padding: 24 }}>
+        <h1>Billing</h1>
+        <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', padding: 16, borderRadius: 8 }}>
+          <strong>Could not load billing.</strong>
+          <p style={{ marginTop: 8 }}>{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!plans) {
+    return (
+      <div style={{ padding: 24 }}>
+        <h1>Billing</h1>
+        <p>Loading plans...</p>
+      </div>
+    );
+  }
+
   return (
-    <Suspense fallback={null}>
-      <BillingPageInner />
-    </Suspense>
+    <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>Choose your plan</h1>
+      <p style={{ color: '#64748b', marginBottom: 24 }}>
+        Every plan includes 1 mechanic. Add more for {dollars(plans[0]?.seat.amount_cents ?? 2500)}/month each.
+        First month free, cancel anytime.
+      </p>
+
+      {referralValid?.valid && (
+        <div
+          style={{
+            background: '#dcfce7',
+            border: '1px solid #86efac',
+            color: '#166534',
+            padding: 12,
+            borderRadius: 8,
+            marginBottom: 16,
+            fontSize: 14,
+          }}
+        >
+          ✓ Referred by <strong>{referralValid.referrer_name}</strong>. Thanks for the introduction!
+        </div>
+      )}
+
+      {error && plans && (
+        <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+        {plans.map((plan) => {
+          const mechanics = mechanicCounts[plan.id] ?? 1;
+          const totalCents = totalForPlan(plan);
+          const isHighlight = plan.most_popular;
+          const isSubmitting = submitting === plan.id;
+
+          return (
+            <div
+              key={plan.id}
+              style={{
+                background: isHighlight ? '#0f172a' : '#fff',
+                color: isHighlight ? '#fff' : '#0f172a',
+                borderRadius: 12,
+                padding: 24,
+                border: isHighlight ? 'none' : '1px solid #e2e8f0',
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              {plan.most_popular && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 16,
+                    right: 16,
+                    background: '#3b82f6',
+                    color: '#fff',
+                    fontSize: 11,
+                    padding: '4px 10px',
+                    borderRadius: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  Most Popular
+                </span>
+              )}
+              <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.7, marginBottom: 8 }}>
+                {plan.name}
+              </div>
+              <div style={{ fontSize: 36, fontWeight: 700, lineHeight: 1 }}>
+                {dollars(plan.base.amount_cents)}
+                <span style={{ fontSize: 16, fontWeight: 400, opacity: 0.7 }}>/mo</span>
+              </div>
+              <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 16 }}>{plan.tagline}</div>
+              <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 16 }}>
+                First month free, then {dollars(plan.base.amount_cents)}/mo. Cancel anytime.
+              </div>
+
+              <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 20px 0', flex: 1 }}>
+                {plan.features.map((f) => (
+                  <li key={f} style={{ padding: '4px 0', fontSize: 14 }}>
+                    <span style={{ color: '#22c55e', marginRight: 8 }}>✓</span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+
+              <label style={{ display: 'block', fontSize: 13, marginBottom: 4, opacity: 0.85 }}>
+                Number of mechanics
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <button
+                  onClick={() => setMechanics(plan.id, mechanics - 1)}
+                  disabled={mechanics <= 1}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 6,
+                    border: 'none',
+                    background: isHighlight ? '#1e293b' : '#f1f5f9',
+                    color: 'inherit',
+                    cursor: mechanics <= 1 ? 'not-allowed' : 'pointer',
+                    fontSize: 18,
+                    opacity: mechanics <= 1 ? 0.4 : 1,
+                  }}
+                  aria-label="decrease mechanics"
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={mechanics}
+                  onChange={(e) => setMechanics(plan.id, parseInt(e.target.value) || 1)}
+                  style={{
+                    width: 60,
+                    height: 32,
+                    textAlign: 'center',
+                    borderRadius: 6,
+                    border: 'none',
+                    background: isHighlight ? '#1e293b' : '#f1f5f9',
+                    color: 'inherit',
+                    fontSize: 14,
+                  }}
+                />
+                <button
+                  onClick={() => setMechanics(plan.id, mechanics + 1)}
+                  disabled={mechanics >= 50}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 6,
+                    border: 'none',
+                    background: isHighlight ? '#1e293b' : '#f1f5f9',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    fontSize: 18,
+                  }}
+                  aria-label="increase mechanics"
+                >
+                  +
+                </button>
+                <span style={{ fontSize: 13, opacity: 0.7, marginLeft: 4 }}>
+                  ({dollars(plan.seat.amount_cents)}/mo each after the first)
+                </span>
+              </div>
+
+              <div
+                style={{
+                  background: isHighlight ? '#1e293b' : '#f8fafc',
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 16,
+                  fontSize: 14,
+                }}
+              >
+                Total: <strong style={{ fontSize: 18 }}>{dollars(totalCents)}/mo</strong>
+                {mechanics > 1 && (
+                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 2 }}>
+                    {dollars(plan.base.amount_cents)} base + {mechanics - 1} × {dollars(plan.seat.amount_cents)}
+                  </div>
+                )}
+                <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+                  $0 today (free for {plan.trial_days} days)
+                </div>
+              </div>
+
+              <button
+                onClick={() => subscribe(plan)}
+                disabled={isSubmitting}
+                style={{
+                  width: '100%',
+                  padding: 12,
+                  borderRadius: 8,
+                  border: 'none',
+                  background: isHighlight ? '#3b82f6' : '#0f172a',
+                  color: '#fff',
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: isSubmitting ? 'wait' : 'pointer',
+                  opacity: isSubmitting ? 0.6 : 1,
+                }}
+              >
+                {isSubmitting ? 'Loading checkout...' : `Start free trial — ${plan.name}`}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
