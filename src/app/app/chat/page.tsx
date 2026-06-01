@@ -5,6 +5,8 @@ import { isDemoUser } from '@/lib/demoUsers';
 import { assertAcceptableScannerPdf, getPdfSizeViolationMessage, readPdfAsRawBase64 } from '@/lib/scannerPdf';
 import { getOrCreateSessionUnid } from '@/lib/unid';
 import { isValidPdfBase64 } from '@/lib/upload-classifier';
+import { ConfirmFixModal } from '@/components/billing/ConfirmFixModal';
+import { UnconfirmFixModal } from '@/components/billing/UnconfirmFixModal';
 import {
   Send, Zap, Plus, X, ChevronRight, ChevronLeft,
   CheckCircle, AlertTriangle, FileText, ThumbsUp, ThumbsDown,
@@ -1085,10 +1087,45 @@ function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
   );
 }
 
-function FeedbackStep({ onRestart }: { onRestart: () => void }) {
+function FeedbackStep({ onRestart, unid, vehicle, codes, complaint, diagnosis, messages, token }: {
+  onRestart: () => void;
+  unid: string;
+  vehicle: Vehicle;
+  codes: DtcCode[];
+  complaint: string;
+  diagnosis: string;
+  messages: Message[];
+  token: string;
+}) {
   const [rating, setRating] = useState<'accurate'|'partial'|'inaccurate'|null>(null);
   const [repaired, setRepaired] = useState<boolean|null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [unconfirmOpen, setUnconfirmOpen] = useState(false);
+
+  // Map fault codes to string[] for the API payloads
+  const dtcStrings = codes.map(c => c.code).filter(Boolean);
+
+  // Modals expect ChatMessage[] (role: 'user' | 'assistant' | 'system').
+  // This page's Message uses 'synth' for the AI; map it to 'assistant'.
+  const chatMessagesForModal = messages.map(m => ({
+    role: (m.role === 'synth' ? 'assistant' : 'user') as 'user' | 'assistant' | 'system',
+    content: m.content,
+  }));
+
+  // Accurate/Partial -> Confirm modal; Inaccurate -> Unconfirm modal.
+  const handleSubmit = () => {
+    if (rating === 'inaccurate') { setUnconfirmOpen(true); return; }
+    if (rating === 'accurate' || rating === 'partial') { setConfirmOpen(true); return; }
+    // No rating (only reachable when repaired === false): just close out.
+    setSubmitted(true);
+  };
+
+  const handleModalSuccess = () => {
+    setConfirmOpen(false);
+    setUnconfirmOpen(false);
+    setSubmitted(true);
+  };
   if (submitted) return (
     <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:32 }}>
       <div style={{ width:72, height:72, borderRadius:'50%', background:'rgba(16,185,129,0.15)', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:20 }}><CheckCircle size={36} color='#10b981' /></div>
@@ -1130,10 +1167,38 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
             ))}
           </div>
         </div>
-        <button onClick={() => setSubmitted(true)} disabled={repaired===null||(repaired===true&&!rating)}
+        <button onClick={handleSubmit} disabled={repaired===null||(repaired===true&&!rating)}
           style={{ width:'100%', padding:'14px', borderRadius:12, background: repaired!==null&&(repaired===false||rating)?'linear-gradient(135deg,#00c3ff,#0055ff)':'var(--bg-input)', color: rating&&repaired!==null?'#fff':'var(--text-3)', fontSize:15, fontWeight:700, border:'none', cursor: rating&&repaired!==null?'pointer':'not-allowed' }}>
           Submit Feedback
         </button>
+
+        <ConfirmFixModal
+          open={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          onSuccess={handleModalSuccess}
+          unid={unid}
+          year={vehicle.year ? parseInt(vehicle.year, 10) : 0}
+          make={vehicle.make}
+          model={vehicle.model}
+          dtc_codes={dtcStrings}
+          complaint={complaint}
+          diagnosis={diagnosis}
+          messages={chatMessagesForModal}
+          token={token}
+        />
+        <UnconfirmFixModal
+          open={unconfirmOpen}
+          onClose={() => setUnconfirmOpen(false)}
+          onSuccess={handleModalSuccess}
+          unid={unid}
+          year={vehicle.year ? parseInt(vehicle.year, 10) : 0}
+          make={vehicle.make}
+          model={vehicle.model}
+          dtc_codes={dtcStrings}
+          complaint={complaint}
+          messages={chatMessagesForModal}
+          token={token}
+        />
       </div>
     </div>
   );
@@ -1255,7 +1320,16 @@ export default function ChatPage() {
       {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); setStep('chat'); }} onBack={() => setStep('vin')} />}
       {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
-      {step==='feedback' && <FeedbackStep onRestart={restart} />}
+      {step==='feedback' && <FeedbackStep
+        onRestart={restart}
+        unid={sessionId}
+        vehicle={vehicle}
+        codes={codes}
+        complaint={symptoms}
+        diagnosis={(chatMessages.filter(m => m.role === 'synth').pop()?.content) || ''}
+        messages={chatMessages}
+        token={API_TOKEN}
+      />}
     </div>
   );
 }
