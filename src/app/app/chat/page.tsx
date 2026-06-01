@@ -1217,7 +1217,7 @@ export default function ChatPage() {
         },
         body: JSON.stringify({
           unid: _unid,
-          source: isDemoUser(user) ? 'demo' : 'web',
+          source: isDemoUser ? 'demo' : 'web',
           synth_guided: false,             // Gate: unverified web write — invisible to Synth
           diagnosis_outcome: 'pending_review',  // Override default 'confirmed_correct' — these are NOT verified
           messages: chatMessages || [],
