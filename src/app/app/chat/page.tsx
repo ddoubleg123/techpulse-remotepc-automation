@@ -1,8 +1,10 @@
 'use client';
-
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { isDemoUser } from '@/lib/demoUsers';
 import { assertAcceptableScannerPdf, getPdfSizeViolationMessage, readPdfAsRawBase64 } from '@/lib/scannerPdf';
+import { getOrCreateSessionUnid } from '@/lib/unid';
+import { isValidPdfBase64 } from '@/lib/upload-classifier';
 import {
   Send, Zap, Plus, X, ChevronRight, ChevronLeft,
   CheckCircle, AlertTriangle, FileText, ThumbsUp, ThumbsDown,
@@ -13,14 +15,153 @@ const SYNTH_API = 'https://techpulse-api.onrender.com';
 const API_TOKEN = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
 
 type Step = 'vin' | 'codes' | 'chat' | 'report' | 'feedback';
-interface Vehicle { year: string; make: string; model: string; engine: string; vin: string; }
+interface Vehicle { year: string; make: string; model: string; engine: string; mileage: string; vin: string; }
 interface DtcCode { code: string; description: string; }
-interface Message { id: string; role: 'user' | 'synth'; content: string; ts: number; }
-interface DiagnosticReport {
-  summary: string; rootCause: string; confidence: number;
-  recommendedActions: string[]; partsNeeded: string[];
-  estimatedTime: string; additionalNotes: string;
+
+// === Demo mode ===
+// When daniel@techpulse.dev logs in, the diagnostic flow auto-populates the
+// 2014 BMW X3 Valvetronic case from the pitch deck (page 4). Real flow, real
+// Synth — only the inputs are preset. Also pre-warms the Synth API immediately
+// on login so the chat step has no Render cold-start delay.
+const DEMO_USER_EMAIL = 'daniel@techpulse.dev';
+const DEMO_VEHICLE: Vehicle = {
+  year: '2014',
+  make: 'BMW',
+  model: 'X3 (F25) xDrive35i',
+  engine: '3.0L N55B30A Turbocharged I6',
+  mileage: '',
+  vin: '5UXWX9C57E0D49888',
+};
+const DEMO_CODES: DtcCode[] = [
+  { code: 'P134F-01', description: 'Valvetronic Eccentric Shaft Position Deviation' },
+];
+const DEMO_SYMPTOMS = 'No throttle response, pedal to floor, vehicle will not exceed 10 MPH. Struggled to climb hill. Valvetronic relearn attempted - failed.';
+
+// === Defense-in-depth: scrub internal Synth markers before display ===
+// Mike's server-side response scanner is the primary scrubber. This client-side
+// filter catches patterns that slip past the server scanner (e.g., the KB GATE
+// pre-flight block, pre_flight.py source listings, VERDICT lines naming the
+// internal logic). Defensive layer — primary fix lives in the Synth API.
+function scrubInternalMarkers(content: string): string {
+  if (!content) return content;
+  let s = content;
+  // Strip [KB GATE] ... [/KB GATE] blocks (the pre-flight KB-check output)
+  s = s.replace(/\[KB GATE\][\s\S]*?\[\/KB GATE\]\s*/g, '');
+  // Strip fenced code blocks that reference internal scripts/paths
+  s = s.replace(/```(?:bash|python|sh|py)?\b[\s\S]*?(?:pre_flight|py -3\.12|C:[/\\]Users|sqlite3|mistake_logger|mike_theories|synth_diagnostic_rules)[\s\S]*?```\s*/gi, '');
+  // Strip "KB GATE \u2014 ..." preamble headings (with or without bold)
+  s = s.replace(/^\s*\*{0,2}KB GATE\s*[\u2014\-].*$/gmi, '');
+  // Strip "[Running ...]" progress lines
+  s = s.replace(/^\s*\[Running[^\]]*\]\s*$/gm, '');
+  // Strip VERDICT: lines that name internal logic (KB match, first principles, cache match)
+  s = s.replace(/^\s*\*{0,2}VERDICT:?\s.*(?:KB match|first principles|knowledge base|cache match).*\*{0,2}\s*$/gmi, '');
+  // Collapse multiple blank lines created by the strips
+  s = s.replace(/\n{3,}/g, '\n\n').trim();
+  return s;
 }
+
+interface Message { id: string; role: 'user' | 'synth'; content: string; ts: number; }
+// Synth is the only source of truth for the report. The PDF is the body.
+// No client-side fields except what arrives in the SSE final chunk.
+interface SynthReport {
+  pdf_base64: string;
+  pdf_filename: string;
+  confidence: number;
+}
+
+
+// === Diagnostic persistence (direct to shared Supabase) ===
+// On report completion, dual-write the HTML report to the diagnostic-reports
+// storage bucket and the case record to diagnostic_case_studies.
+// Fire-and-forget; never blocks UI. Uses the public anon key — RLS on the
+// target table/bucket controls write permission.
+const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+function escapeHtmlForReport(s: string): string {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildDiagnosticHtmlReport(params: {
+  unid: string;
+  vehicle: Vehicle;
+  codes: string[];
+  complaint: string;
+  diagnosis: string;
+  messages: Message[];
+  shopName: string;
+}): string {
+  const { unid, vehicle, codes, complaint, diagnosis, messages, shopName } = params;
+  const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model]
+    .filter(Boolean).join(' ') || 'Unknown Vehicle';
+  const now = new Date().toLocaleString();
+  const lines: string[] = [];
+  lines.push('<!DOCTYPE html>');
+  lines.push('<html><head><meta charset="UTF-8">');
+  lines.push('<title>' + escapeHtmlForReport(unid) + ' - ' + escapeHtmlForReport(vehicleLabel) + ' - Diagnostic Report</title>');
+  lines.push('<style>');
+  lines.push('body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;color:#222;margin:0;padding:32px;background:#fff;}');
+  lines.push('h1{margin:0 0 6px;font-size:24px;color:#0a1a3a;}');
+  lines.push('h2{margin:24px 0 12px;font-size:16px;color:#0a1a3a;border-bottom:1px solid #ddd;padding-bottom:6px;}');
+  lines.push('.meta{color:#666;font-size:13px;margin-bottom:24px;} .meta div{margin:2px 0;}');
+  lines.push('table{border-collapse:collapse;width:100%;margin:8px 0;} td{padding:4px 8px;vertical-align:top;font-size:14px;} td.label{color:#666;width:140px;}');
+  lines.push('ul{margin:4px 0;padding-left:24px;}');
+  lines.push('.conversation{background:#f7f7f9;border-radius:8px;padding:16px;}');
+  lines.push('.diagnosis{background:#fff8e1;border-left:3px solid #f0b400;padding:12px 16px;border-radius:4px;white-space:pre-wrap;}');
+  lines.push('.footer{margin-top:32px;padding-top:12px;border-top:1px solid #ddd;color:#888;font-size:12px;}');
+  lines.push('.msg{margin:12px 0;} .msg-tech strong{color:#0066cc;} .msg-synth strong{color:#0a7d3b;}');
+  lines.push('</style></head><body>');
+  lines.push('<h1>TechPulse Diagnostic Report</h1>');
+  lines.push('<div class="meta">');
+  lines.push('<div><strong>Shop:</strong> ' + escapeHtmlForReport(shopName || 'TechPulse') + '</div>');
+  lines.push('<div><strong>UNID:</strong> ' + escapeHtmlForReport(unid) + '</div>');
+  lines.push('<div><strong>Generated:</strong> ' + escapeHtmlForReport(now) + '</div>');
+  lines.push('</div>');
+  lines.push('<h2>Vehicle</h2><table>');
+  lines.push('<tr><td class="label">Year / Make / Model</td><td>' + escapeHtmlForReport(vehicleLabel) + '</td></tr>');
+  lines.push('<tr><td class="label">Engine</td><td>' + escapeHtmlForReport(vehicle.engine || '-') + '</td></tr>');
+  lines.push('<tr><td class="label">Mileage</td><td>' + escapeHtmlForReport(vehicle.mileage || '-') + '</td></tr>');
+  lines.push('<tr><td class="label">VIN</td><td>' + escapeHtmlForReport(vehicle.vin || '-') + '</td></tr>');
+  lines.push('</table>');
+  lines.push('<h2>Customer Complaint</h2>');
+  if (complaint) {
+    lines.push('<p>' + escapeHtmlForReport(complaint) + '</p>');
+  } else {
+    lines.push('<p style="color:#666;">Not provided.</p>');
+  }
+  lines.push('<h2>DTC Codes</h2>');
+  if (codes && codes.length) {
+    lines.push('<ul>' + codes.map(c => '<li>' + escapeHtmlForReport(c) + '</li>').join('') + '</ul>');
+  } else {
+    lines.push('<p style="color:#666;">No DTC codes recorded.</p>');
+  }
+  lines.push('<h2>Diagnostic Findings</h2>');
+  if (diagnosis) {
+    lines.push('<div class="diagnosis">' + escapeHtmlForReport(diagnosis) + '</div>');
+  } else {
+    lines.push('<p style="color:#666;">No diagnosis available.</p>');
+  }
+  lines.push('<h2>Conversation Log</h2><div class="conversation">');
+  if (messages && messages.length) {
+    for (const m of messages) {
+      const role = m.role === 'user' ? 'TECH' : 'SYNTH';
+      const cls = m.role === 'user' ? 'msg msg-tech' : 'msg msg-synth';
+      lines.push('<div class="' + cls + '"><strong>' + role + ':</strong><div style="white-space:pre-wrap;margin-top:4px;">' + escapeHtmlForReport(m.content || '') + '</div></div>');
+    }
+  } else {
+    lines.push('<span style="color:#666;">No messages.</span>');
+  }
+  lines.push('</div>');
+  lines.push('<div class="footer">Generated by TechPulse - ' + escapeHtmlForReport(unid) + '</div>');
+  lines.push('</body></html>');
+  return lines.join('\n');
+}
+
 
 // Accept any file - detect issues in JS rather than blocking at browser level
 function cleanFileContent(raw: string): string {
@@ -71,8 +212,14 @@ function StepBar({ step }: { step: Step }) {
   );
 }
 
-function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: string, fileName?: string, pdfBase64?: string) => void }) {
-  const [vin, setVin] = useState('');
+function VinStep({ onNext, initialVehicle }: { onNext: (vehicle: Vehicle, uploadedReport?: string, fileName?: string, pdfBase64?: string) => void; initialVehicle?: Vehicle }) {
+  const [vin, setVin] = useState(initialVehicle?.vin || '');
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [scanningVin, setScanningVin] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream|null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedContent, setUploadedContent] = useState('');
@@ -80,14 +227,14 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
   const [pdfHandoffError, setPdfHandoffError] = useState('');
   const [isPreparingPdf, setIsPreparingPdf] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
-  const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', vin:'' });
-  const [showManual, setShowManual] = useState(false);
+  const [vehicle, setVehicle] = useState<Vehicle>(initialVehicle || { year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
+  const [showManual, setShowManual] = useState(!!initialVehicle);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (file: File) => {
     setFileError('');
     setPdfHandoffError('');
-    // PDF: size gate at upload only — base64 is read on "Continue" (avoids FileReader race)
+    // PDF: size gate at upload only ------ base64 is read on "Continue" (avoids FileReader race)
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
       const sizeMsg = getPdfSizeViolationMessage(file);
       if (sizeMsg) {
@@ -115,6 +262,16 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
       }
       const cleaned = cleanFileContent(raw);
       setUploadedContent(cleaned);
+      // Extract vehicle info from .pids XML attributes
+      const pidsMatch = cleaned.match(/pids-collection[^>]+year=["']([^"']+)["'][^>]+make=["']([^"']+)["'][^>]+model=["']([^"']+)["']/i)
+        || cleaned.match(/pids-collection[^>]+make=["']([^"']+)["'][^>]+model=["']([^"']+)["']/i);
+      if (pidsMatch) {
+        const yr = pidsMatch[1]||"", mk = pidsMatch[2]||"", mdl = (pidsMatch[3]||pidsMatch[2]||"").replace(/\s*\([^)]*\)/,"").trim();
+        setVehicle(v => ({ ...v, year: yr||v.year, make: mk||v.make, model: mdl||v.model }));
+      }
+      // Extract VIN from uploaded file (17-char alphanumeric)
+      const fileVinMatch = cleaned.match(/\b([A-HJ-NPR-Z0-9]{17})\b/);
+      if (fileVinMatch) { setVin(fileVinMatch[1]); setVehicle(v => ({ ...v, vin: fileVinMatch[1] })); }
       // Auto-detect VIN
       const vinMatch = raw.match(/\b[A-HJ-NPR-Z0-9]{17}\b/);
       if (vinMatch) setVin(vinMatch[0]);
@@ -127,6 +284,49 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
   }, []);
+
+  const stopCamera = () => {
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t=>t.stop()); streamRef.current=null; }
+    setShowCamera(false); setCameraError('');
+  };
+  const startCamera = async () => {
+    setCameraError(''); setShowCamera(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width:{ideal:1280}, height:{ideal:720} } });
+      streamRef.current = stream;
+      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+    } catch(e) { setCameraError('Camera access denied. Please allow camera permissions.'); setShowCamera(false); }
+  };
+  const captureAndScanVin = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    setScanningVin(true);
+    const ctx2 = canvasRef.current.getContext('2d')!;
+    canvasRef.current.width = videoRef.current.videoWidth;
+    canvasRef.current.height = videoRef.current.videoHeight;
+    ctx2.drawImage(videoRef.current, 0, 0);
+    const base64 = canvasRef.current.toDataURL('image/jpeg', 0.9).split(',')[1];
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:100,
+          messages:[{ role:'user', content:[
+            { type:'image', source:{ type:'base64', media_type:'image/jpeg', data:base64 }},
+            { type:'text', text:'Extract the 17-character VIN (Vehicle Identification Number) from this image. Reply with ONLY the 17-character VIN, nothing else. If you cannot find a valid 17-character VIN, reply with NONE.' }
+          ]}]
+        })
+      });
+      const json = await res.json();
+      const text = (json.content?.[0]?.text||'').trim().toUpperCase();
+      const vinMatch = text.match(/\b[A-HJ-NPR-Z0-9]{17}\b/);
+      if (vinMatch) {
+        setVin(vinMatch[0]);
+        setVehicle((v:any)=>({...v, vin:vinMatch[0]}));
+        stopCamera();
+        setTimeout(handleVinLookup, 100);
+      } else { setCameraError('No VIN found in image. Try again with better lighting.'); }
+    } catch(e) { setCameraError('Scan failed. Try typing the VIN manually.'); }
+    setScanningVin(false);
+  };
 
   const handleVinLookup = async () => {
     if (vin.length < 10) return;
@@ -165,17 +365,39 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
                 display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
               <Search size={14} /> {lookingUp ? 'Looking up' : 'Look Up'}
             </button>
+          <button onClick={showCamera ? stopCamera : startCamera}
+            title='Scan VIN with camera'
+            style={{ padding:'11px 14px', borderRadius:10, border:'1px solid var(--border-card)', cursor:'pointer',
+              background: showCamera ? '#ef4444' : 'var(--bg-input)', color: showCamera ? '#fff' : 'var(--text-2)',
+              fontSize:18, display:'flex', alignItems:'center', flexShrink:0 }}>
+            {showCamera ? '&#x2715;' : '&#x1F4F7;'}
+          </button>
           </div>
+          {cameraError && <p style={{ color:'#ef4444', fontSize:12, marginTop:4 }}>{cameraError}</p>}
+          {showCamera && (
+            <div style={{ marginTop:12, borderRadius:12, overflow:'hidden', border:'1px solid var(--border-card)', position:'relative' }}>
+              <video ref={videoRef} autoPlay playsInline muted style={{ width:'100%', display:'block', borderRadius:12 }} />
+              <canvas ref={canvasRef} style={{ display:'none' }} />
+              <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'12px', background:'linear-gradient(transparent,rgba(0,0,0,0.7))', display:'flex', alignItems:'center', gap:8 }}>
+                <button onClick={captureAndScanVin} disabled={scanningVin}
+                  style={{ padding:'10px 18px', borderRadius:10, border:'none', cursor: scanningVin?'not-allowed':'pointer',
+                    background:'linear-gradient(135deg,#00c3ff,#0055ff)', color:'#fff', fontWeight:700, fontSize:14, flexShrink:0 }}>
+                  {scanningVin ? 'Scanning...' : 'Scan VIN'}
+                </button>
+                <p style={{ color:'rgba(255,255,255,0.75)', fontSize:11, margin:0 }}>Point at VIN sticker (door jamb or windshield)</p>
+              </div>
+            </div>
+          )}
           {vin.length > 0 && vin.length < 17 && <div style={{ fontSize:11, color:'var(--text-3)', marginTop:6 }}>{17 - vin.length} characters remaining</div>}
           {(showManual || vin.length === 17) && (
             <div style={{ marginTop:16, paddingTop:16, borderTop:'1px solid var(--border-card)' }}>
               <div style={{ fontSize:11, fontWeight:700, color:'var(--text-3)', marginBottom:10, letterSpacing:'0.06em' }}>VEHICLE DETAILS</div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                {(['year','make','model','engine'] as const).map(f => (
+                {(['year','make','model','engine','mileage'] as const).map(f => (
                   <div key={f}>
                     <label style={{ display:'block', fontSize:11, fontWeight:600, color:'var(--text-3)', marginBottom:5, textTransform:'uppercase' }}>{f}</label>
                     <input value={vehicle[f]} onChange={e => setVehicle(p => ({...p, [f]: e.target.value}))}
-                      placeholder={f==='year'?'2015':f==='make'?'Ford':f==='model'?'F-150':'3.5L EcoBoost'}
+                      placeholder={f==='year'?'2015':f==='make'?'Ford':f==='model'?'F-150':f==='engine'?'3.5L EcoBoost':'87500'}
                       style={{ ...inp, fontSize:13 }} />
                   </div>
                 ))}
@@ -249,7 +471,7 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
         <div style={{ padding:'10px 14px', borderRadius:10, background:'var(--bg-feed)', border:'1px solid var(--border-card)', display:'flex', gap:8, alignItems:'flex-start', marginBottom:20 }}>
           <Info size={14} color='var(--text-3)' style={{ flexShrink:0, marginTop:1 }} />
           <span style={{ fontSize:12, color:'var(--text-3)', lineHeight:1.5 }}>
-            <strong style={{ color:'var(--text-2)' }}>Scanner tip:</strong> You can upload a PDF directly; wait for &quot;Preparing PDF…&quot; to finish before codes if the file is large. .txt or .csv exports work too (AUTEL, Launch, Snap-on Save/Export).
+            <strong style={{ color:'var(--text-2)' }}>Scanner tip:</strong> You can upload a PDF directly; wait for &quot;Preparing PDF------&quot; to finish before codes if the file is large. .txt or .csv exports work too (AUTEL, Launch, Snap-on Save/Export).
           </span>
         </div>
 
@@ -281,18 +503,18 @@ function VinStep({ onNext }: { onNext: (vehicle: Vehicle, uploadedReport?: strin
             background: canProceed && !isPreparingPdf ? 'linear-gradient(135deg,#00c3ff,#0055ff)' : 'var(--bg-input)',
             color: canProceed && !isPreparingPdf ? '#fff' : 'var(--text-3)', fontSize:15, fontWeight:700, border:'none',
             cursor: canProceed && !isPreparingPdf ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-          {isPreparingPdf ? 'Preparing PDF…' : (<><span>Continue to Codes</span> <ChevronRight size={18} /></>)}
+          {isPreparingPdf ? 'Preparing PDF------' : (<><span>Continue to Codes</span> <ChevronRight size={18} /></>)}
         </button>
       </div>
     </div>
   );
 }
 
-function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
-  { vehicle: Vehicle; uploadedReport?: string; fileName?: string; onNext: (codes: DtcCode[], symptoms: string) => void; onBack: () => void }
+function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack, initialCodes, initialSymptoms }:
+  { vehicle: Vehicle; uploadedReport?: string; fileName?: string; onNext: (codes: DtcCode[], symptoms: string) => void; onBack: () => void; initialCodes?: DtcCode[]; initialSymptoms?: string }
 ) {
-  const [codes, setCodes] = useState<DtcCode[]>([{ code:'', description:'' }]);
-  const [symptoms, setSymptoms] = useState('');
+  const [codes, setCodes] = useState<DtcCode[]>(initialCodes && initialCodes.length > 0 ? initialCodes : [{ code:'', description:'' }]);
+  const [symptoms, setSymptoms] = useState(initialSymptoms || '');
   useEffect(() => {
     if (uploadedReport) {
       // OBD-II style: P/B/C/U + 4 hex chars (covers P0171 and manufacturer hex like P134F); not extracted from PDF placeholder text
@@ -302,16 +524,6 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         const extracted = matches.map(m => m[1].toUpperCase()).filter(c => { if (seen.has(c)) return false; seen.add(c); return true; }).map(c => ({ code:c, description:'' }));
         setCodes(extracted.length > 0 ? extracted : [{ code:'', description:'' }]);
       }
-      const nl = String.fromCharCode(10);
-      const lines = uploadedReport
-        .split(nl)
-        .filter((l: string) => {
-          const t = l.trim();
-          if (t.startsWith('[PDF:')) return false;
-          return t.length > 15 && t.length < 150;
-        })
-        .slice(0, 4);
-      if (lines.length > 0) setSymptoms(lines.join(nl));
     }
   }, [uploadedReport]);
   const addCode = () => setCodes(p => [...p, { code:'', description:'' }]);
@@ -328,7 +540,9 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         <div style={{ padding:'12px 16px', borderRadius:12, background:'var(--bg-feed)', border:'1px solid var(--border-card)', marginBottom:24, display:'flex', alignItems:'center', gap:10 }}>
           <Car size={15} color='var(--accent)' />
           <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)' }}>
-            {vehicle.year && vehicle.make ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? '  ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : 'Vehicle'}
+            {vehicle.year && vehicle.make
+              ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? '  ' + vehicle.engine : ''}`
+              : vehicle.vin ? `VIN: ${vehicle.vin}` : 'Vehicle not specified'}
           </span>
           {uploadedReport && <span style={{ marginLeft:'auto', padding:'2px 8px', borderRadius:6, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.2)', fontSize:11, fontWeight:700, color:'#10b981' }}>{fileName || 'Report loaded'}</span>}
         </div>
@@ -336,11 +550,23 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
           <h2 style={{ fontSize:22, fontWeight:800, color:'var(--text-1)', margin:'0 0 6px' }}>DTC Codes</h2>
           <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>
             {uploadedReport && validCodes.length > 0
-              ? 'Codes extracted from your report — review and edit as needed.'
+              ? 'Codes extracted from your report ------ review and edit as needed.'
               : hasUploadedReport
-                ? 'Add codes or symptoms if you want — or start diagnosis using your uploaded report alone.'
+
+                ? 'Add codes or symptoms if you want ------ or start diagnosis using your uploaded report alone.'
                 : 'Enter fault codes from your scanner, or describe the symptoms.'}
           </p>
+
+          {uploadedReport && (
+            <div style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:10, padding:'10px 14px', marginBottom:8, marginTop:8, display:'flex', alignItems:'center', gap:10 }}>
+              <span style={{ fontSize:20, color:'#10b981' }}>&#10003;</span>
+              <div>
+                <div style={{ fontSize:13, fontWeight:700, color:'#10b981' }}>Scanner report uploaded &#8212; {fileName || 'file'}</div>
+                <div style={{ fontSize:12, color:'var(--text-2)', marginTop:2 }}>Synth will read the full report automatically. Add P-codes or extra notes below if needed, or just click Start Diagnosis.</div>
+              </div>
+            </div>
+          )}
+
         </div>
         <div style={{ marginBottom:16 }}>
           {codes.map((c, i) => (
@@ -374,7 +600,7 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
         <div style={{ marginBottom:24 }}>
           <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-2)', marginBottom:6 }}>Symptoms / Additional Context (optional if you uploaded a report)</label>
           <textarea value={symptoms} onChange={e => setSymptoms(e.target.value)} rows={4}
-            placeholder='Optional — Synth can use your uploaded report alone. Add details here if you want.'
+            placeholder='Optional: add extra context for Synth (symptoms, recent repairs, etc.)'
             style={{ ...inp, width:'100%', resize:'none', lineHeight:1.5 }} />
         </div>
         <div style={{ display:'flex', gap:10 }}>
@@ -393,7 +619,7 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack }:
 
 function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, sessionId, onReport, onBack }:
   { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; pdfBase64?: string; sessionId: string;
-    onReport: (report: DiagnosticReport, messages: Message[]) => void; onBack: () => void }
+    onReport: (report: SynthReport, messages: Message[], updatedVehicle?: Vehicle) => void; onBack: () => void }
 ) {
   const nl = String.fromCharCode(10);
   const hasPdfAttachment = Boolean(pdfBase64 && pdfBase64.length > 0);
@@ -419,19 +645,138 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  // === Pipeline status cycle ===
+  // While loading, surface what Synth is actually doing per /health pipeline
+  // (tsb+cases+patterns+baseline+confidence). Turns the buffered-response wait
+  // (~5-15s) into the moat story instead of dead air.
+  const PIPELINE_STAGES = [
+    'Cross-referencing TSB database\u2026',
+    'Searching 6,000+ diagnostic case studies\u2026',
+    'Matching scope patterns from 378-pattern library\u2026',
+    'Comparing against vehicle baseline\u2026',
+    'Building confidence score\u2026',
+  ];
+  const PIPELINE_STAGE_MS = 2800;
+  const [pipelineStage, setPipelineStage] = useState(0);
+  useEffect(() => {
+    if (!loading) { setPipelineStage(0); return; }
+    setPipelineStage(0);
+    const id = setInterval(() => {
+      setPipelineStage(p => (p + 1) % PIPELINE_STAGES.length);
+    }, PIPELINE_STAGE_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+  // reportReady flips to true ONLY when Synth's SSE final chunk says ready_for_report:true.
+  // Synth is the gate, not the user.
+  const [reportReady, setReportReady] = useState(false);
+  const [synthConfidence, setSynthConfidence] = useState<number>(0);
+  const [pdfBase64Report, setPdfBase64Report] = useState<string>('');
+  const [pdfFilenameReport, setPdfFilenameReport] = useState<string>('');
+  const [chatAttachment, setChatAttachment] = useState<{name:string;base64:string}|null>(null);
+  const [showVinGate, setShowVinGate] = useState(false);
+  const [vinGateInput, setVinGateInput] = useState('');
+  const [vinValidating, setVinValidating] = useState(false);
+  const [vinGateError, setVinGateError] = useState('');
+  const [vinGateCamera, setVinGateCamera] = useState(false);
+  const [vinGateScanningVin, setVinGateScanningVin] = useState(false);
+  const vinGateVideoRef = useRef<HTMLVideoElement>(null);
+  const vinGateCanvasRef = useRef<HTMLCanvasElement>(null);
+  const vinGateStreamRef = useRef<MediaStream|null>(null);
   const [warmingUp, setWarmingUp] = useState(false);
   const [autoSent, setAutoSent] = useState(false);
   const [apiStatus, setApiStatus] = useState<'ok'|'placeholder'|'error'>('ok');
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages]);
-  const sendMessage = async (text: string) => {
+  const stopVinGateCamera = () => {
+    if (vinGateStreamRef.current) { vinGateStreamRef.current.getTracks().forEach((t:any)=>t.stop()); vinGateStreamRef.current=null; }
+    setVinGateCamera(false);
+  };
+  const startVinGateCamera = async () => {
+    setVinGateError(''); setVinGateCamera(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} } });
+      vinGateStreamRef.current = stream;
+      if (vinGateVideoRef.current) { vinGateVideoRef.current.srcObject=stream; vinGateVideoRef.current.play(); }
+    } catch(e) { setVinGateError('Camera access denied. Type the VIN manually below.'); setVinGateCamera(false); }
+  };
+  const captureVinGate = async () => {
+    if (!vinGateVideoRef.current || !vinGateCanvasRef.current) return;
+    setVinGateScanningVin(true);
+    const ctx2 = vinGateCanvasRef.current.getContext('2d')!;
+    vinGateCanvasRef.current.width = vinGateVideoRef.current.videoWidth;
+    vinGateCanvasRef.current.height = vinGateVideoRef.current.videoHeight;
+    ctx2.drawImage(vinGateVideoRef.current, 0, 0);
+    const b64 = vinGateCanvasRef.current.toDataURL('image/jpeg',0.9).split(',')[1];
+    try {
+      const res = await fetch('https://techpulse-api.onrender.com/api/ocr-vin', {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+API_TOKEN},
+        body:JSON.stringify({image_base64:b64})
+      });
+      const json = await res.json();
+      const extracted = (json.vin||'').trim().toUpperCase();
+      const vm = extracted.match(/[A-HJ-NPR-Z0-9]{17}/);
+      if (vm) { setVinGateInput(vm[0]); stopVinGateCamera(); }
+      else { setVinGateError('No VIN found in image. Try again or type it manually.'); }
+    } catch(e) { setVinGateError('Scan failed. Type the VIN manually.'); }
+    setVinGateScanningVin(false);
+  };
+  const validateAndViewReport = async () => {
+    const vin = vinGateInput.trim().toUpperCase();
+    if (vin.length !== 17 || !/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
+      setVinGateError('Please enter a valid 17-character VIN.');
+      return;
+    }
+    setVinValidating(true); setVinGateError('');
+    try {
+      const res = await fetch('https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/'+vin+'?format=json');
+      const json = await res.json();
+      const get = (label:string) => (json.Results||[]).find((r:any)=>r.Variable===label)?.Value?.toUpperCase()||'';
+      const decodedMake = get('Make');
+      const decodedModel = get('Model');
+      const decodedYear = get('Model Year');
+      const scanMake = (vehicle.make||'').toUpperCase();
+      const scanModel = (vehicle.model||'').toUpperCase();
+      const scanYear = (vehicle.year||'').toUpperCase();
+      // If we have scanner data, verify it matches
+      if (scanMake && decodedMake && !decodedMake.includes(scanMake) && !scanMake.includes(decodedMake)) {
+        setVinGateError('VIN '+vin+' decodes to a '+decodedYear+' '+decodedMake+' '+decodedModel+' -- this does not match your scanner data ('+vehicle.year+' '+vehicle.make+' '+vehicle.model+'). Please check your VIN and try again.');
+        setVinValidating(false); return;
+      }
+      // Passed -- update vehicle vin and proceed to report
+      const updatedVehicle = { ...vehicle, vin, make: vehicle.make||decodedMake, model: vehicle.model||decodedModel, year: vehicle.year||decodedYear };
+      stopVinGateCamera();
+      setShowVinGate(false);
+      onReport(
+        { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence },
+        messages,
+        updatedVehicle,
+      );
+    } catch (e) {
+      // NHTSA API failed -- just accept the VIN and proceed
+      stopVinGateCamera(); setShowVinGate(false);
+      onReport(
+        { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence },
+        messages,
+        { ...vehicle, vin },
+      );
+    }
+    setVinValidating(false);
+  };
+
+
+
+  const sendMessage = async (text: string, displayText?: string) => {
     if (!text.trim() || loading) return;
-    const userMsg: Message = { id: Date.now()+'u', role:'user', content:text, ts:Date.now() };
+    const userMsg: Message = { id: Date.now()+'u', role:'user', content: displayText || text, ts:Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
     const pdfToSend = pdfBase64 || '';
     const pdfNameToSend = pdfToSend ? (fileName || 'scan.pdf') : '';
+    const attachBase64 = chatAttachment?.base64 || '';
+    const attachName = chatAttachment?.name || '';
+    if (chatAttachment) setChatAttachment(null);
 
     try {
       const controller = new AbortController();
@@ -440,7 +785,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       const res = await fetch(SYNTH_API + '/api/diagnostic/stream', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + API_TOKEN },
-        body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...(pdfToSend ? { pdf_base64: pdfToSend, pdf_name: pdfNameToSend } : {}) }),
+        body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...((attachBase64 && isValidPdfBase64(attachBase64)) ? { pdf_base64: attachBase64, pdf_name: attachName } : (pdfToSend && isValidPdfBase64(pdfToSend)) ? { pdf_base64: pdfToSend, pdf_name: pdfNameToSend } : {}) }),
         signal: controller.signal,
       });
         clearTimeout(abortTimer);
@@ -460,32 +805,33 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         if (!ln.startsWith('data: ')) continue;
         const payload = ln.slice(6).trim();
         if (payload === '[DONE]') continue;
-        try { const p = JSON.parse(payload); sseContent += p.token ?? p.text ?? p.response ?? p.message ?? ''; }
+        try {
+          const p = JSON.parse(payload);
+          sseContent += p.token ?? p.text ?? p.response ?? p.message ?? '';
+          // Synth signals readiness via SSE sibling fields in the final chunk.
+          // The web app does NOT parse <<REPORT_FINAL:...>> -- that token is stripped server-side.
+          if (p.ready_for_report) { setReportReady(true); }
+          if (typeof p.confidence === 'number') { setSynthConfidence(p.confidence); }
+          if (p.pdf_base64) { setPdfBase64Report(p.pdf_base64); }
+          if (p.pdf_filename) { setPdfFilenameReport(p.pdf_filename); }
+        }
         catch { if (payload) sseContent += payload; }
       }
       const reply = sseContent || (()=>{ try { return JSON.parse(rawText).response || JSON.parse(rawText).message || ''; } catch { return rawText.trim(); } })();
-      setMessages(prev => [...prev, { id: Date.now()+'s', role: 'synth', content: reply, ts: Date.now() }]);
+      const cleanReply = scrubInternalMarkers(reply);
+      setMessages(prev => [...prev, { id: Date.now()+'s', role: 'synth', content: cleanReply, ts: Date.now() }]);
       setApiStatus('ok');
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
         setWarmingUp(false);
-        setMessages((prev: any[]) => [...prev, { role: 'assistant', content: 'Request timed out - please try again in a moment.' }]);
+        setMessages(prev => [...prev, { id: Date.now()+'t', role: 'synth', content: 'Request timed out - please try again in a moment.', ts: Date.now() }]);
       } else {
       setApiStatus('error');
       setMessages(prev => [...prev, { id: Date.now()+'e', role:'synth', content:'Unable to connect to Synth. Please check your connection and try again.', ts:Date.now() }]);
       }
     } finally { setLoading(false); setWarmingUp(false); }
   };
-  useEffect(() => { if (!autoSent && initMsg) { setAutoSent(true); sendMessage(initMsg); } }, []);
-  const buildReport = (): DiagnosticReport => ({
-    summary: `Diagnostic for ${vehicle.year||''} ${vehicle.make||''} ${vehicle.model||''}`.trim(),
-    rootCause: messages.filter(m => m.role==='synth').slice(-1)[0]?.content.substring(0,300) || 'See conversation',
-    confidence: 82,
-    recommendedActions: ['Review Synth findings', 'Verify with physical inspection', 'Clear codes after repair'],
-    partsNeeded: codes.map(c => c.code),
-    estimatedTime: '1-3 hours',
-    additionalNotes: symptoms,
-  });
+  useEffect(() => { if (!autoSent && initMsg) { setAutoSent(true); sendMessage(initMsg, [vehicle.year && vehicle.make ? 'Analyzing: ' + vehicle.year + ' ' + vehicle.make + ' ' + vehicle.model : 'Analyzing scanner data', fileName ? '(' + fileName + ')' : '', codes.filter((c:any)=>c.code).length > 0 ? codes.filter((c:any)=>c.code).length + ' fault code(s) detected' : '', symptoms ? 'Symptoms: ' + symptoms.substring(0,80) : ''].filter(Boolean).join(' -- ')); } }, []);
 
   // Warm up Synth API on load (Render free tier spins down after inactivity)
   useEffect(() => {
@@ -496,6 +842,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const iconStyle: React.CSSProperties = { width:30, height:30, borderRadius:8, background:'linear-gradient(135deg,#00c3ff,#0055ff)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, alignSelf:'flex-end' };
   return (
     <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {showVinGate && (<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{background:'var(--bg-card)',borderRadius:20,padding:28,width:'100%',maxWidth:440,border:'1px solid var(--border-card)'}}><div style={{fontSize:20,fontWeight:800,color:'var(--text-1)',marginBottom:6}}>VIN Required</div><div style={{fontSize:13,color:'var(--text-2)',marginBottom:20}}>Enter your VIN to verify this diagnostic matches your vehicle before generating the report.</div><input value={vinGateInput} onChange={e=>setVinGateInput(e.target.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,''))} placeholder='Enter 17-character VIN' maxLength={17} autoFocus style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1px solid var(--border-card)',background:'var(--bg-input)',color:'var(--text-1)',fontSize:16,fontFamily:'monospace',letterSpacing:'0.1em',fontWeight:700,boxSizing:'border-box',marginBottom:8}} /><div style={{fontSize:11,color:'var(--text-3)',marginBottom:12}}>Found on the driver door jamb, dashboard (windshield side), or vehicle documents.</div>{vinGateError&&<div style={{fontSize:12,color:'#ef4444',marginBottom:10,lineHeight:1.5}}>{vinGateError}</div>}<div style={{display:'flex',gap:8}}><button onClick={()=>{setShowVinGate(false);setVinGateError('');setVinGateInput('');}} style={{flex:1,padding:'11px',borderRadius:10,border:'1px solid var(--border-card)',background:'var(--bg-input)',color:'var(--text-2)',fontWeight:700,fontSize:14,cursor:'pointer'}}>Cancel</button><button onClick={validateAndViewReport} disabled={vinGateInput.length!==17||vinValidating} style={{flex:2,padding:'11px',borderRadius:10,border:'none',background:vinGateInput.length===17&&!vinValidating?'linear-gradient(135deg,#10b981,#059669)':'var(--bg-input)',color:vinGateInput.length===17&&!vinValidating?'#fff':'var(--text-3)',fontWeight:700,fontSize:14,cursor:vinGateInput.length===17&&!vinValidating?'pointer':'not-allowed'}}>{vinValidating?'Verifying VIN...':'Verify & View Report'}</button></div></div></div>)}
+    {/* === VIN Gate Modal === */}
       <div style={{ padding:'10px 20px', borderBottom:'1px solid var(--border-card)', background:'var(--bg-feed)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
           <div style={{ display:'flex', alignItems:'center', gap:6 }}>
@@ -508,8 +856,23 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}> Back</button>
-          <button onClick={() => messages.filter((m:any)=>m.role==='synth'||m.role==='assistant').length > 0 && onReport(buildReport(), messages)} disabled={messages.filter((m:any)=>m.role==='synth'||m.role==='assistant').length===0}
-            style={{ padding:'6px 14px', borderRadius:8, background: messages.length > 1 ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)', border:'none', color: messages.length > 1 ? '#fff' : 'var(--text-3)', fontSize:12, fontWeight:700, cursor: messages.length > 1 ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', gap:6 }}>
+          <button
+            disabled={!reportReady || !pdfBase64Report}
+            onClick={() => {
+              if (!reportReady || !pdfBase64Report) return;
+              const synthReport: SynthReport = { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence };
+              if (vehicle.vin) { onReport(synthReport, messages); }
+              else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }
+            }}
+            style={{
+              padding: '6px 14px', borderRadius: 8,
+              background: (reportReady && pdfBase64Report) ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)',
+              border: 'none',
+              color: (reportReady && pdfBase64Report) ? '#fff' : 'var(--text-3)',
+              fontSize: 12, fontWeight: 700,
+              cursor: (reportReady && pdfBase64Report) ? 'pointer' : 'not-allowed',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
             <FileText size={13} /> View Report
           </button>
         </div>
@@ -535,14 +898,62 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
           </p>
         )}
             <div style={iconStyle}><Zap size={14} color='#fff' fill='#fff' /></div>
-            <div style={{ padding:'14px 18px', borderRadius:'16px 16px 16px 4px', background:'var(--bg-card)', border:'1px solid var(--border-card)', display:'flex', gap:6, alignItems:'center' }}>
-              {[0,1,2].map(i => <div key={i} style={{ width:7, height:7, borderRadius:'50%', background:'var(--accent)', opacity:0.4+i*0.3 }} />)}
+            <div style={{ padding:'14px 18px', borderRadius:'16px 16px 16px 4px', background:'var(--bg-card)', border:'1px solid var(--border-card)', display:'flex', gap:10, alignItems:'center', minWidth:280 }}>
+              <div className="animate-pulse" style={{ width:7, height:7, borderRadius:'50%', background:'var(--accent)', boxShadow:'0 0 8px var(--accent)', flexShrink:0 }} />
+              <div key={pipelineStage} style={{ fontSize:13, color:'var(--text-2)', fontWeight:500, fontStyle:'italic' }}>
+                {PIPELINE_STAGES[pipelineStage]}
+              </div>
             </div>
           </div>
         )}
         <div ref={bottomRef} />
       </div>
-      <div style={{ padding:'14px 20px', borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', display:'flex', gap:10, flexShrink:0 }}>
+      {/* Synth-driven status. The user does not decide when the report is ready -- Synth does. */}
+      {messages.filter((m:any) => m.role === 'synth').length > 0 && (
+        <div style={{ padding: '0 20px 12px' }}>
+          {!reportReady ? (
+            <div style={{
+              width: '100%', padding: '11px 14px', borderRadius: 10,
+              background: 'var(--bg-input)', border: '1px solid var(--border-input)',
+              color: 'var(--text-2)', fontSize: 13, fontWeight: 600,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 6px rgba(245,158,11,0.7)' }} />
+              Synth is analyzing -- continue the conversation until Synth is ready.
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                const synthReport: SynthReport = { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence };
+                if (vehicle.vin) { onReport(synthReport, messages); }
+                else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }
+              }}
+              disabled={!pdfBase64Report}
+              style={{
+                width: '100%', padding: '13px', borderRadius: 12, border: 'none',
+                background: pdfBase64Report ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)',
+                boxShadow: pdfBase64Report ? '0 0 20px rgba(16,185,129,0.4)' : 'none',
+                color: pdfBase64Report ? '#fff' : 'var(--text-3)',
+                fontWeight: 700, fontSize: 15,
+                cursor: pdfBase64Report ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}>
+              Synth has finished -- View Report
+            </button>
+          )}
+        </div>
+      )}
+
+      <div style={{ padding:'10px 20px 14px', display:'flex', flexDirection:'column', gap:6, borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', flexShrink:0 }}>
+        {chatAttachment && (<div style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',background:'rgba(0,195,255,0.1)',borderRadius:8,fontSize:11,color:'var(--text-2)'}}>
+          <span style={{maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{chatAttachment.name}</span>
+          <button onClick={()=>setChatAttachment(null)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-3)',fontSize:14,padding:0,lineHeight:1}}>x</button>
+        </div>)}
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <input type='file' id='chat-file-input' accept='.pids,.pdf,.txt,.csv,.png,.jpg,.jpeg' style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{const b64=(r.result as string).split(',')[1]||'';setChatAttachment({name:f.name,base64:b64});};r.readAsDataURL(f);e.target.value='';}} />
+        <button onClick={()=>document.getElementById('chat-file-input')?.click()} title='Attach file' style={{width:38,height:38,borderRadius:9,background:'var(--bg-input)',border:'1px solid var(--border-card)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,color:chatAttachment?'#00c3ff':'var(--text-2)'}}>
+          <svg width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'><path d='m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'/></svg>
+        </button>
         <textarea rows={1} value={input} onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }}}
           placeholder='Ask Synth a follow-up question or provide more details'
@@ -551,18 +962,57 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
           style={{ width:42, height:42, borderRadius:11, background:'linear-gradient(135deg,#00c3ff,#0055ff)', border:'none', display:'flex', alignItems:'center', justifyContent:'center', cursor: loading||!input.trim()?'not-allowed':'pointer', opacity: loading||!input.trim()?0.5:1, flexShrink:0 }}>
           <Send size={17} color='#fff' />
         </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack }:
-  { report: DiagnosticReport; vehicle: Vehicle; codes: DtcCode[]; messages: Message[]; onFeedback: () => void; onBack: () => void }
+function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
+  { synthReport: SynthReport; vehicle: Vehicle; codes: DtcCode[]; onFeedback: () => void; onBack: () => void }
 ) {
-  const lastSynth = messages.filter(m => m.role==='synth').slice(-1)[0]?.content || '';
+  // The PDF Synth produced IS the report body. Render it inline + offer download.
+  // No client-side text fabrication, no chat-text echoing.
+  const pdfUrl = useMemo(() => {
+    if (!synthReport.pdf_base64) return '';
+    try {
+      const bytes = Uint8Array.from(atob(synthReport.pdf_base64), c => c.charCodeAt(0));
+      return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    } catch {
+      return '';
+    }
+  }, [synthReport.pdf_base64]);
+  useEffect(() => {
+    return () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); };
+  }, [pdfUrl]);
+
+  const downloadPdf = () => {
+    if (!synthReport.pdf_base64) return;
+    const bytes = Uint8Array.from(atob(synthReport.pdf_base64), (c: string) => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = synthReport.pdf_filename || 'TechPulse_Report.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+    // Persist a copy server-side (best effort, fire-and-forget)
+    const token = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
+    fetch('https://techpulse-api.onrender.com/api/save-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        pdf_base64: synthReport.pdf_base64,
+        filename: synthReport.pdf_filename || 'TechPulse_Report.pdf',
+        year: vehicle.year || '', make: vehicle.make || '', model: vehicle.model || '',
+        session_id: typeof window !== 'undefined' ? (localStorage.getItem('synth-session-id') || '') : '',
+        email: useAuthStore.getState().user?.email || '',
+      }),
+    }).catch(() => {});
+  };
+
   return (
     <div style={{ flex:1, overflowY:'auto', padding:'28px', display:'flex', flexDirection:'column', alignItems:'center' }}>
-      <div style={{ width:'100%', maxWidth:700 }}>
+      <div style={{ width:'100%', maxWidth:780 }}>
         <div style={{ padding:'20px 24px', borderRadius:16, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:14 }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
@@ -572,7 +1022,11 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack }:
                 <div style={{ fontSize:12, color:'var(--text-3)' }}>{new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</div>
               </div>
             </div>
-            <div style={{ padding:'5px 14px', borderRadius:20, background:'rgba(16,185,129,0.12)', border:'1px solid rgba(16,185,129,0.25)', fontSize:12, fontWeight:700, color:'#10b981' }}>{report.confidence}% Confidence</div>
+            {synthReport.confidence > 0 && (
+              <div style={{ padding:'5px 14px', borderRadius:20, background:'rgba(16,185,129,0.12)', border:'1px solid rgba(16,185,129,0.25)', fontSize:12, fontWeight:700, color:'#10b981' }}>
+                {synthReport.confidence}% Confidence
+              </div>
+            )}
           </div>
           <div style={{ padding:'12px 14px', borderRadius:10, background:'var(--bg-feed)', border:'1px solid var(--border-card)' }}>
             <div style={{ fontSize:12, color:'var(--text-3)', marginBottom:4 }}>Vehicle</div>
@@ -581,6 +1035,7 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack }:
             </div>
           </div>
         </div>
+
         {codes.length > 0 && (
           <div style={{ padding:'18px 20px', borderRadius:14, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:14 }}>
             <div style={{ fontSize:13, fontWeight:700, color:'var(--text-2)', marginBottom:12, display:'flex', alignItems:'center', gap:6 }}><AlertTriangle size={14} color='#f59e0b' /> FAULT CODES</div>
@@ -594,19 +1049,33 @@ function ReportStep({ report, vehicle, codes, messages, onFeedback, onBack }:
             </div>
           </div>
         )}
-        <div style={{ padding:'18px 20px', borderRadius:14, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:14 }}>
-          <div style={{ fontSize:13, fontWeight:700, color:'var(--text-2)', marginBottom:12, display:'flex', alignItems:'center', gap:6 }}><Zap size={14} color='var(--accent)' /> SYNTH ANALYSIS</div>
-          <div style={{ fontSize:14, color:'var(--text-1)', lineHeight:1.7, whiteSpace:'pre-wrap' }}>{lastSynth}</div>
-        </div>
-        <div style={{ padding:'18px 20px', borderRadius:14, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:20 }}>
-          <div style={{ fontSize:13, fontWeight:700, color:'var(--text-2)', marginBottom:12, display:'flex', alignItems:'center', gap:6 }}><CheckCircle size={14} color='#10b981' /> RECOMMENDED ACTIONS</div>
-          {report.recommendedActions.map((a,i) => (
-            <div key={i} style={{ display:'flex', gap:10, marginBottom:8 }}>
-              <div style={{ width:20, height:20, borderRadius:'50%', background:'rgba(16,185,129,0.15)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginTop:1 }}><span style={{ fontSize:10, fontWeight:800, color:'#10b981' }}>{i+1}</span></div>
-              <span style={{ fontSize:14, color:'var(--text-1)', lineHeight:1.5 }}>{a}</span>
-            </div>
-          ))}
-        </div>
+
+        {/* The PDF Synth produced IS the report body. Embed inline. */}
+        {pdfUrl ? (
+          <iframe
+            src={pdfUrl}
+            title='TechPulse Diagnostic Report'
+            style={{ width:'100%', height:'70vh', border:'1px solid var(--border-card)', borderRadius:14, marginBottom:14, background:'#fff' }}
+          />
+        ) : (
+          <div style={{ padding:'24px', borderRadius:14, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:14, textAlign:'center', color:'var(--text-3)', fontSize:13 }}>
+            Report unavailable -- please return to the diagnosis and continue with Synth.
+          </div>
+        )}
+
+        {synthReport.pdf_base64 && (
+          <button
+            onClick={downloadPdf}
+            style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'12px 20px',
+              borderRadius:11, border:'none', background:'linear-gradient(135deg,#1B4F8A,#2E75B6)',
+              color:'#fff', fontWeight:700, fontSize:14, cursor:'pointer', marginBottom:12, width:'100%' }}>
+            <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'>
+              <path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' y1='15' x2='12' y2='3'/>
+            </svg>
+            Download PDF Report
+          </button>
+        )}
+
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={onBack} style={{ padding:'12px 18px', borderRadius:12, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:14, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}><ChevronLeft size={16} /> Back</button>
           <button onClick={onFeedback} style={{ flex:1, padding:'13px', borderRadius:12, background:'linear-gradient(135deg,#00c3ff,#0055ff)', border:'none', color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>Confirm & Rate <ChevronRight size={18} /></button>
@@ -640,6 +1109,7 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
           <h2 style={{ fontSize:22, fontWeight:800, color:'var(--text-1)', margin:'0 0 6px' }}>Confirm Diagnosis</h2>
           <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>Help Synth learn by rating the accuracy of this diagnosis.</p>
         </div>
+        {repaired !== false && (
         <div style={{ marginBottom:24 }}>
           <label style={{ fontSize:13, fontWeight:600, color:'var(--text-2)', display:'block', marginBottom:12 }}>How accurate was the diagnosis?</label>
           <div style={{ display:'flex', gap:10 }}>
@@ -651,6 +1121,7 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
             ))}
           </div>
         </div>
+        )}
         <div style={{ marginBottom:28 }}>
           <label style={{ fontSize:13, fontWeight:600, color:'var(--text-2)', display:'block', marginBottom:12 }}>Was the vehicle repaired?</label>
           <div style={{ display:'flex', gap:10 }}>
@@ -659,8 +1130,8 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
             ))}
           </div>
         </div>
-        <button onClick={() => setSubmitted(true)} disabled={!rating||repaired===null}
-          style={{ width:'100%', padding:'14px', borderRadius:12, background: rating&&repaired!==null?'linear-gradient(135deg,#00c3ff,#0055ff)':'var(--bg-input)', color: rating&&repaired!==null?'#fff':'var(--text-3)', fontSize:15, fontWeight:700, border:'none', cursor: rating&&repaired!==null?'pointer':'not-allowed' }}>
+        <button onClick={() => setSubmitted(true)} disabled={repaired===null||(repaired===true&&!rating)}
+          style={{ width:'100%', padding:'14px', borderRadius:12, background: repaired!==null&&(repaired===false||rating)?'linear-gradient(135deg,#00c3ff,#0055ff)':'var(--bg-input)', color: rating&&repaired!==null?'#fff':'var(--text-3)', fontSize:15, fontWeight:700, border:'none', cursor: rating&&repaired!==null?'pointer':'not-allowed' }}>
           Submit Feedback
         </button>
       </div>
@@ -670,43 +1141,126 @@ function FeedbackStep({ onRestart }: { onRestart: () => void }) {
 
 export default function ChatPage() {
   const { user } = useAuthStore();
+  const isDemoUser = ((user as { email?: string } | null)?.email || '').toLowerCase() === DEMO_USER_EMAIL;
+  // Pre-warm Synth API immediately on demo-user login so the chat step doesn't
+  // pay the ~30-60s Render cold-start. Fires once per ChatPage mount.
+  useEffect(() => {
+    if (isDemoUser) {
+      fetch(`${SYNTH_API}/health`, { method: 'GET' }).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemoUser]);
   const [step, setStep] = useState<Step>('vin');
-  const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', vin:'' });
+  const [vehicle, setVehicle] = useState<Vehicle>({ year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
   const [uploadedReport, setUploadedReport] = useState<string|undefined>();
   const [fileName, setFileName] = useState<string|undefined>();
   const [uploadedPdfBase64, setUploadedPdfBase64] = useState<string>('');
   const [codes, setCodes] = useState<DtcCode[]>([]);
   const [symptoms, setSymptoms] = useState('');
-  const [report, setReport] = useState<DiagnosticReport|null>(null);
+  const [synthReport, setSynthReport] = useState<SynthReport|null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
-  const [sessionId] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const s = localStorage.getItem('synth-session-id');
-      if (s) return s;
-      const id = crypto.randomUUID();
-      localStorage.setItem('synth-session-id', id);
-      return id;
-    }
-    return 'session-1';
-  });
+  const [sessionId] = useState(() => getOrCreateSessionUnid());
+
+  // === Persist on report completion (direct to shared Supabase) ===
+  // When synthReport becomes available, fire HTML upload + case insert directly
+  // against the shared Supabase. Fire-and-forget; never blocks UI.
+  useEffect(() => {
+    if (!synthReport) return;
+    if (!SUPABASE_ANON_KEY) return;
+    try {
+      const _u = user as { email?: string; businessName?: string } | null;
+      const _shopName = (_u && _u.businessName) ? _u.businessName : '';
+      const _unid = sessionId;
+      const _vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'Unknown Vehicle';
+      const _codesArr: string[] = (codes || []).map((c: DtcCode) => (c && c.code) || '').filter(Boolean);
+      const _conversationText = (chatMessages || [])
+        .map((m: Message) => (m.role === 'user' ? 'TECH' : 'SYNTH') + ': ' + (m.content || ''))
+        .join('\n\n');
+      const _diagnosisText = _conversationText.slice(-3000);
+      const _reportFilename = _unid + ' - ' + _vehicleLabel + ' - Diagnostic Report.html';
+      const _htmlContent = buildDiagnosticHtmlReport({
+        unid: _unid,
+        vehicle,
+        codes: _codesArr,
+        complaint: symptoms || '',
+        diagnosis: _diagnosisText,
+        messages: chatMessages || [],
+        shopName: _shopName,
+      });
+      // Sanitize shop_name for use in storage path (no slashes, no leading/trailing whitespace).
+      const _shopFolder = (_shopName || 'unknown')
+        .replace(/[\\\/]+/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim() || 'unknown';
+      const _objectPath = encodeURIComponent(_shopFolder) + '/' + encodeURIComponent(_unid) + '/' + encodeURIComponent(_reportFilename);
+
+      // 1) Upload HTML report to the diagnostic-reports storage bucket.
+      fetch(SUPABASE_URL + '/storage/v1/object/diagnostic-reports/' + _objectPath, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'text/html',
+          'x-upsert': 'true',
+        },
+        body: _htmlContent,
+      }).catch(() => {});
+
+      // 2) Insert case row into diagnostic_case_studies.
+      fetch(SUPABASE_URL + '/rest/v1/diagnostic_case_studies', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({
+          unid: _unid,
+          source: isDemoUser(user) ? 'demo' : 'web',
+          synth_guided: false,             // Gate: unverified web write — invisible to Synth
+          diagnosis_outcome: 'pending_review',  // Override default 'confirmed_correct' — these are NOT verified
+          messages: chatMessages || [],
+          title: _vehicleLabel + (_codesArr.length ? ' — ' + _codesArr.join(', ') : ''),  // NOT NULL
+          year: vehicle.year ? (parseInt(vehicle.year, 10) || null) : null,  // schema is integer
+          make: vehicle.make || '',
+          model: vehicle.model || '',
+          engine: vehicle.engine || '',
+          vin: vehicle.vin || '',
+          dtc_codes: _codesArr,
+          complaint: symptoms || '',
+          symptoms: symptoms || '',        // Mike's q_cases checks both columns
+          diagnosis: _diagnosisText,
+          fix: '',
+          conclusion: '',
+          shop_name: _shopName || '',
+          full_content: null,              // Gate: built on promotion only
+          embedding: null,                 // Gate: generated on promotion only
+        }),
+      }).catch(() => {});
+    } catch { /* never let persistence errors break the report flow */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [synthReport]);
   if (!user) return null;
   const restart = () => {
-    setStep('vin'); setVehicle({ year:'', make:'', model:'', engine:'', vin:'' });
+    setStep('vin'); setVehicle({ year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
     setUploadedReport(undefined); setFileName(undefined); setUploadedPdfBase64('');
-    setCodes([]); setSymptoms(''); setReport(null); setChatMessages([]);
+    setCodes([]); setSymptoms(''); setSynthReport(null); setChatMessages([]);
     localStorage.removeItem('synth-session-id');
   };
   return (
     <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-page)' }}>
       <StepBar step={step} />
-      {step==='vin'      && <VinStep onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); setStep('codes'); }} />}
-      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} onNext={(c,s) => { setCodes(c); setSymptoms(s); setStep('chat'); }} onBack={() => setStep('vin')} />}
-      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} onReport={(r,msgs) => { setReport(r); setChatMessages(msgs); setStep('report'); }} onBack={() => setStep('codes')} />}
-      {step==='report'   && report && <ReportStep report={report} vehicle={vehicle} codes={codes} messages={chatMessages} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
+      {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); setStep('codes'); }} />}
+      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); setStep('chat'); }} onBack={() => setStep('vin')} />}
+      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); setStep('report'); }} onBack={() => setStep('codes')} />}
+      {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep onRestart={restart} />}
     </div>
   );
 }
+
+
 
 
 

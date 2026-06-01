@@ -1,220 +1,234 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { AppLayout } from '@/components/layout';
-import { Card, CardContent, CardHeader, Button } from '@/components/ui';
-import {
-  Upload,
-  FileText,
-  Search,
-  Download,
-  Trash2,
-  Eye,
-  Calendar,
-  HardDrive,
-} from 'lucide-react';
-import { formatDate, formatFileSize } from '@/lib/utils';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { useAuthStore } from '@/stores/authStore';
 
-const reports = [
-  {
-    id: '1',
-    fileName: '2018_Honda_Accord_Full_Diagnostic.pdf',
-    fileSize: 2456000,
-    uploadedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-    description: 'Complete engine and transmission diagnostic report',
-  },
-  {
-    id: '2',
-    fileName: 'Ford_F150_ABS_Scan.pdf',
-    fileSize: 1234000,
-    uploadedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
-    description: 'ABS module scan results',
-  },
-  {
-    id: '3',
-    fileName: 'Toyota_Camry_Emissions_Test.pdf',
-    fileSize: 890000,
-    uploadedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-    description: 'State emissions test results',
-  },
-  {
-    id: '4',
-    fileName: 'Chevrolet_Silverado_ECM_Data.pdf',
-    fileSize: 3120000,
-    uploadedAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
-    description: 'ECM freeze frame data and live readings',
-  },
-];
+const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+interface Report {
+  id: string;            // session_id (unid)
+  filename: string;
+  vehicle_make: string;
+  vehicle_year: string;
+  vehicle_model: string;
+  vin?: string;
+  created_at: string;
+}
+
+// Row shape from diagnostic_case_studies
+type CaseRow = {
+  unid: string;
+  year?: string | null;
+  make?: string | null;
+  model?: string | null;
+  vin?: string | null;
+  shop_name?: string | null;
+  created_at: string;
+};
 
 export default function ReportsPage() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const filteredReports = reports.filter((report) =>
-    report.fileName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    report.description?.toLowerCase().includes(searchQuery.toLowerCase())
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Loading…</div>}>
+      <ReportsPageInner />
+    </Suspense>
   );
+}
 
-  const totalSize = reports.reduce((acc, report) => acc + report.fileSize, 0);
+function ReportsPageInner() {
+  const { user } = useAuthStore();
+  const shopName = user?.businessName || '';
+  const searchParams = useSearchParams();
+  const vinFilter = searchParams.get('vin') || '';
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const navy = '#1B3A6B';
+  const teal = '#2E75B6';
+
+  const fetchReports = useCallback(async (q = '') => {
+    if (!SUPABASE_ANON_KEY) {
+      setError('Supabase not configured');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set('select', 'unid,year,make,model,vin,shop_name,created_at');
+      params.set('order', 'created_at.desc');
+      params.set('limit', '200');
+      params.set('source', 'eq.web');     // Only show user-generated web sessions, not training corpus
+      if (shopName) {
+        params.set('shop_name', `eq.${shopName}`);
+      }
+      if (vinFilter) {
+        params.set('vin', `eq.${vinFilter}`);
+      }
+      if (q && q.trim()) {
+        const term = q.trim();
+        const orClause = `(year.ilike.*${term}*,make.ilike.*${term}*,model.ilike.*${term}*,vin.ilike.*${term}*)`;
+        // PostgREST: ilike wildcards use * here (URLSearchParams handles % encoding)
+        params.set('or', orClause);
+      }
+      const url = `${SUPABASE_URL}/rest/v1/diagnostic_case_studies?${params.toString()}`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
+      });
+      if (!res.ok) throw new Error(`Couldn't load reports (HTTP ${res.status}).`);
+      const rows: CaseRow[] = await res.json();
+      const mapped: Report[] = (Array.isArray(rows) ? rows : []).map(r => ({
+        id: r.unid,
+        filename: '',
+        vehicle_make: r.make || '',
+        vehicle_year: r.year || '',
+        vehicle_model: r.model || '',
+        vin: r.vin || '',
+        created_at: r.created_at,
+      }));
+      setReports(mapped);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load reports');
+    } finally {
+      setLoading(false);
+    }
+  }, [shopName, vinFilter]);
+
+  useEffect(() => { fetchReports(); }, [fetchReports]);
+
+  const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsDragging(true);
+    setSearch(searchInput);
+    fetchReports(searchInput);
   };
 
-  const handleDragLeave = () => {
-    setIsDragging(false);
+  const formatDate = (iso: string) => {
+    try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+    catch { return iso; }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    // Handle file upload
-    const files = e.dataTransfer.files;
-    console.log('Dropped files:', files);
-  };
+  const vehicleLabel = (r: Report) =>
+    [r.vehicle_year, r.vehicle_make, r.vehicle_model].filter(Boolean).join(' ') || 'Unknown Vehicle';
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    console.log('Selected files:', files);
-  };
+  const totalReports = reports.length;
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
-        {/* Upload Area */}
-        <Card>
-          <CardContent className="p-6">
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
-                isDragging
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-300 hover:border-gray-400'
-              }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf"
-                multiple
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-              <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Upload diagnostic reports
-              </h3>
-              <p className="text-gray-500 mb-4">
-                Drag and drop PDF files here, or click to browse
-              </p>
-              <Button onClick={() => fileInputRef.current?.click()}>
-                Select Files
-              </Button>
-              <p className="text-xs text-gray-400 mt-4">
-                PDF files only • Unlimited uploads • Stored indefinitely
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+    <div style={{ maxWidth: 800, margin: '0 auto' }}>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <FileText className="w-6 h-6 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900">{reports.length}</p>
-                <p className="text-sm text-gray-500">Total Reports</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <HardDrive className="w-6 h-6 text-green-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900">{formatFileSize(totalSize)}</p>
-                <p className="text-sm text-gray-500">Total Storage</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <Calendar className="w-6 h-6 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900">
-                  {formatDate(reports[0]?.uploadedAt || new Date())}
-                </p>
-                <p className="text-sm text-gray-500">Last Upload</p>
-              </div>
-            </CardContent>
-          </Card>
+      {/* VIN filter banner */}
+      {vinFilter && (
+        <div style={{
+          background: '#F0F6FB', border: '1px solid #D0E2F2', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap',
+        }}>
+          <div style={{ fontSize: 13, color: navy }}>
+            Filtering by VIN: <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{vinFilter}</span>
+          </div>
+          <Link href="/app/reports" style={{ fontSize: 12, fontWeight: 600, color: teal, textDecoration: 'none' }}>
+            Clear filter ×
+          </Link>
         </div>
+      )}
 
-        {/* Reports List */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Your Reports</h3>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search reports..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y divide-gray-100">
-              {filteredReports.map((report) => (
-                <div
-                  key={report.id}
-                  className="flex items-center gap-4 p-4 hover:bg-gray-50"
-                >
-                  <div className="p-3 bg-red-100 rounded-lg">
-                    <FileText className="w-6 h-6 text-red-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-gray-900 truncate">
-                      {report.fileName}
-                    </h4>
-                    <p className="text-sm text-gray-500 truncate">
-                      {report.description}
-                    </p>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
-                      <span>{formatFileSize(report.fileSize)}</span>
-                      <span>•</span>
-                      <span>{formatDate(report.uploadedAt)}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
-                      <Eye className="w-5 h-5" />
-                    </button>
-                    <button className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg">
-                      <Download className="w-5 h-5" />
-                    </button>
-                    <button className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: navy }}>Reports</h1>
+          <p style={{ margin: '2px 0 0', fontSize: 13, color: '#888' }}>Diagnostic history</p>
+        </div>
+        {/* Search */}
+        <form onSubmit={handleSearch} style={{ display: 'flex', gap: 8 }}>
+          <input
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            placeholder="Search VIN, make, model, year..."
+            style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #E0E0E0', fontSize: 13, width: 240, outline: 'none', color: navy }}
+          />
+          <button type="submit" style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${navy}, ${teal})`, color: 'white', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+            Search
+          </button>
+          {search && (
+            <button type="button" onClick={() => { setSearchInput(''); setSearch(''); fetchReports(''); }}
+              style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #E0E0E0', background: 'white', fontSize: 13, cursor: 'pointer', color: '#666' }}>
+              Clear
+            </button>
+          )}
+        </form>
       </div>
-    </AppLayout>
+
+      {/* Stats */}
+      {!loading && !error && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+          {[
+            { label: 'Total Reports', value: totalReports },
+            { label: 'Most Recent', value: reports[0] ? formatDate(reports[0].created_at) : '' },
+            { label: 'Vehicles', value: new Set(reports.map(r => [r.vehicle_make, r.vehicle_model].filter(Boolean).join(' '))).size || '' },
+          ].map(stat => (
+            <div key={stat.label} style={{ background: 'white', border: '1px solid #E8E8E8', borderRadius: 12, padding: '16px 20px' }}>
+              <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: navy }}>{stat.value}</p>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: '#888' }}>{stat.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Content */}
+      <div style={{ background: 'white', border: '1px solid #E0E0E0', borderRadius: 16, overflow: 'hidden' }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#888', fontSize: 14 }}>Loading reports...</div>
+        ) : error ? (
+          <div style={{ padding: 40, textAlign: 'center' }}>
+            <p style={{ color: '#E74C3C', fontSize: 14, marginBottom: 12 }}>{error}</p>
+            <button onClick={() => fetchReports(search)} style={{ padding: '8px 20px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${navy}, ${teal})`, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              Retry
+            </button>
+          </div>
+        ) : reports.length === 0 ? (
+          <div style={{ padding: 56, textAlign: 'center', color: '#888' }}>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: navy }}>
+              {search ? `No reports matching "${search}"` : 'No diagnostic reports yet'}
+            </p>
+            <p style={{ margin: '6px 0 0', fontSize: 13 }}>
+              {search ? 'Try a different search term.' : 'Complete a diagnostic session to see your history here.'}
+            </p>
+          </div>
+        ) : (
+          reports.map((r, i) => (
+            <Link
+              key={r.id}
+              href={`/app/diagnostic/${r.id}`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px',
+                borderBottom: i < reports.length - 1 ? '1px solid #F0F0F0' : 'none',
+                textDecoration: 'none', color: 'inherit', cursor: 'pointer',
+                transition: 'background 0.15s ease',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.background = '#FAFAFA'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'; }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: navy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {vehicleLabel(r)}
+                </p>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#888' }}>
+                  {r.vin ? `VIN ${r.vin} · ` : ''}{formatDate(r.created_at)}
+                </p>
+              </div>
+              <span style={{ fontSize: 11, color: '#AAA', flexShrink: 0 }}>VIEW</span>
+            </Link>
+          ))
+        )}
+      </div>
+    </div>
   );
 }

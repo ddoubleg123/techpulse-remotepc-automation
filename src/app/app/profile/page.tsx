@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Camera, Save } from 'lucide-react';
-import { AppLayout } from '@/components/layout';
 import { useAuthStore } from '@/stores/authStore';
 
 const CONNECTOR = 'https://techpulse-app.onrender.com';
@@ -38,7 +37,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <AppLayout>
+    <>
       <div className="max-w-xl space-y-6">
 
         <Link href="/app/settings" className="flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
@@ -91,6 +90,7 @@ export default function ProfilePage() {
         </button>
 
       </div>
-    </AppLayout>
+    </>
   );
 }
+

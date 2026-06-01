@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { AppLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, Button, Badge, Avatar } from '@/components/ui';
 import {
   Plus,
@@ -111,7 +110,7 @@ export default function CommunityPage() {
   });
 
   return (
-    <AppLayout>
+    <>
       <div className="space-y-6">
         {/* Tabs */}
         <div className="flex gap-4 border-b border-gray-200">
@@ -247,7 +246,7 @@ export default function CommunityPage() {
                               <Eye className="w-4 h-4" />
                               {post.views}
                             </span>
-                            <span className="text-gray-300">•</span>
+                            <span className="text-gray-300"></span>
                             <span>{post.author.name}</span>
                           </div>
                         </div>
@@ -341,6 +340,7 @@ export default function CommunityPage() {
           </div>
         )}
       </div>
-    </AppLayout>
+    </>
   );
 }
+
