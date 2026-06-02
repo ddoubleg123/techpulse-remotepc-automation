@@ -38,6 +38,8 @@ const DEMO_CODES: DtcCode[] = [
   { code: 'P134F-01', description: 'Valvetronic Eccentric Shaft Position Deviation' },
 ];
 const DEMO_SYMPTOMS = 'No throttle response, pedal to floor, vehicle will not exceed 10 MPH. Struggled to climb hill. Valvetronic relearn attempted - failed.';
+// Pre-built sample report so demo users can view a report instantly, independent of the live Synth response.
+const DEMO_REPORT_PDF_B64 = 'JVBERi0xLjQKJZOMi54gUmVwb3J0TGFiIEdlbmVyYXRlZCBQREYgZG9jdW1lbnQgKG9wZW5zb3VyY2UpCjEgMCBvYmoKPDwKL0YxIDIgMCBSIC9GMiAzIDAgUiAvRjMgNCAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL0Jhc2VGb250IC9IZWx2ZXRpY2EgL0VuY29kaW5nIC9XaW5BbnNpRW5jb2RpbmcgL05hbWUgL0YxIC9TdWJ0eXBlIC9UeXBlMSAvVHlwZSAvRm9udAo+PgplbmRvYmoKMyAwIG9iago8PAovQmFzZUZvbnQgL0hlbHZldGljYS1Cb2xkIC9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nIC9OYW1lIC9GMiAvU3VidHlwZSAvVHlwZTEgL1R5cGUgL0ZvbnQKPj4KZW5kb2JqCjQgMCBvYmoKPDwKL0Jhc2VGb250IC9TeW1ib2wgL05hbWUgL0YzIC9TdWJ0eXBlIC9UeXBlMSAvVHlwZSAvRm9udAo+PgplbmRvYmoKNSAwIG9iago8PAovQ29udGVudHMgOSAwIFIgL01lZGlhQm94IFsgMCAwIDYxMiA3OTIgXSAvUGFyZW50IDggMCBSIC9SZXNvdXJjZXMgPDwKL0ZvbnQgMSAwIFIgL1Byb2NTZXQgWyAvUERGIC9UZXh0IC9JbWFnZUIgL0ltYWdlQyAvSW1hZ2VJIF0KPj4gL1JvdGF0ZSAwIC9UcmFucyA8PAoKPj4gCiAgL1R5cGUgL1BhZ2UKPj4KZW5kb2JqCjYgMCBvYmoKPDwKL1BhZ2VNb2RlIC9Vc2VOb25lIC9QYWdlcyA4IDAgUiAvVHlwZSAvQ2F0YWxvZwo+PgplbmRvYmoKNyAwIG9iago8PAovQXV0aG9yIChcKGFub255bW91c1wpKSAvQ3JlYXRpb25EYXRlIChEOjIwMjYwNjAyMTUwNDUwKzAwJzAwJykgL0NyZWF0b3IgKFwodW5zcGVjaWZpZWRcKSkgL0tleXdvcmRzICgpIC9Nb2REYXRlIChEOjIwMjYwNjAyMTUwNDUwKzAwJzAwJykgL1Byb2R1Y2VyIChSZXBvcnRMYWIgUERGIExpYnJhcnkgLSBcKG9wZW5zb3VyY2VcKSkgCiAgL1N1YmplY3QgKFwodW5zcGVjaWZpZWRcKSkgL1RpdGxlIChcKGFub255bW91c1wpKSAvVHJhcHBlZCAvRmFsc2UKPj4KZW5kb2JqCjggMCBvYmoKPDwKL0NvdW50IDEgL0tpZHMgWyA1IDAgUiBdIC9UeXBlIC9QYWdlcwo+PgplbmRvYmoKOSAwIG9iago8PAovRmlsdGVyIFsgL0FTQ0lJODVEZWNvZGUgL0ZsYXRlRGVjb2RlIF0gL0xlbmd0aCAxNzQxCj4+CnN0cmVhbQpHYXRtO2dOKSUuJSI2SCdpNmdmL1dpM1EnL146LF1TWWhUL2c5cyksKElrLE5bWltTUFBbND1mSyUuY2JgUV48Y0E8TFVTJmldayQlT19CMnJYZXJjWTYhS2puRzhYVG5LOyQ5JChNIiRHQXJpZ0hwOGFrYzdtLFNmUTNTZCYpYiNkZ2I7O15FLXNUPWddM2l1Kz0pdDQvZT87R1JJJF1mKUpzaVpcXTIpQCk5XUBGamxLS0QuMGNdPy9mVUtAY2YkKmFMIihtPkk+LiRRbmJyUT1tTlpcRyZdJGduYCM/Kzk9RCpZZEg2ZUhjJCxSZy00YkdJV1sibzwrYHUiP1YqQTpPIk1yOys9ZU9GTl4/cj4tYzgwJUEiITgiU3EvJl1WR2QzcFRHayteT2UyJUgvX19LPFpbVXFMQ2dOU0hNMENvKStjYDVIMmVfI25CU2AmRjFLcGBwXy4/OU9FWFBMLmgxYXI7aDxQRG9cWEBhWyIuUVZlJ21pS0FZImsrPSYoWz1kLD5nSUhVJF5IRTI0Yz1HQ0Y4SDxaXTVKbjlaREomJzxHXU8tVDoqajclNU5Gb1dJZ1xLbGJrTzU3UUZwWVBMSExzbypWVVNlJiZVPz9IT08lKURhZHUxXFx1cCc2bmE4SHBUOkpsKFttdCxHSF9cWW9CI1Mxb0hdQ0Fnc1tCP1AyckduVlVrWlpHNEwkOl1ubjkhI05wL3BebEBOcm47MTByVlBSdDFKXjNoVjItVCJnRlwqQWZZKFlmMzs2WG48ci1saFZHNTMpLF5FLEArJnBcSlFEKSReL3AwaUFzSGYwUl0qZGFdOys+TyJPTnRrcFM8SGhWZ24jWChTOiNrUDA6PDI0dU1OP2U0T0EpX00zM0lTRFsjMHFDQz5aRDxGVDQxYnJwWjpxS3VvdGwmKVcmXllHdT1vV3A2ODBNLGkpaToyKlFdI3EpSWhSRzlHa11qIS5XZ2Znb0ZjOnFTcjVyXSJ0YWFIUyRoOzdUS1lVJFQpaFtAZi0nTyU3cTh1PmMrODlQK2YucWYpaV5uTUguM3EudWs0TkFJWD88LD5YJUk/VTFZUi9fLGpqZF4nUmZaRGZdQi0/ODc2SGw7XVk0T1YtMTV1Iz1aMiFsUEg3KilDTEJqTzpwIW1WQy02NT4vTFgrPmNIZC44bS0rJzBqXXMoUEV0JWM0MlsrLGNJOiQ3PU4yJyteTmM3Ji9GZmBjPGJGMC9BITshbG9MS25OQWheQDYza2Jqck1mKVU8cURbLCE3PkkoNFtRIzRdZkNzLTooOUBTIjplTWk4M2ReRCQpNXVvYGNUNkQyWkQldStPWCdLX0IhNzAsK2xYX1Etb2xeSWwpJVIyM0RRb1JlYWQlQltCSGBGMVB1Z3EmSjJjMytXME0/Jidqa1ZaNSpwTFxVWl4rTDFXWDk/I1hlM0gxWWUrTl0jSDQwWG5UPnEhXiRPZWRBOTxdKz1GYG1wWnJHSDgoPk8+WlFtSGkmRXBXQSZRdXNIcVE1bV8tLkdvV2pmbDktbzJfclw0SVdvIzAkYi1gXV1calVcOSNRIVs2WjoicUMyRVNfOTs/OlVWUHJcY2ptNlhpc2svNlQpQ0FAZV5qSzQ3cENJUltVUyxVTDgrOGUmckdQM2knLTFlanNoUzkqPWMzYl50UUY9MzlUMFZJY0guMDRaM2RnZCMzWmNINCwpUUBAL206Qz8jLklJLzMhTG4/PztoaltjNz1xVCYoNCxBJ2pAbkU/M0UyJCxnLURjJWY0ZDZNZmJtQkBPKTBXKzcoU0U3V0twOXFtJidsbDc6M2NyQWpCUCwtdF1FMDxAOT9WLDsyZC5ZZ0RfNGQ6cWpjPVVhOytATjd0ISU+K2NcPFZRUUcoKURHcDAyOCVtIkQrIU5bTXAlUWxPQiNLN1k3Xlo+WWdWbEFqN1M/W0UjO18zXWdSOkZIUW5EaCpCcUhxXCFtY0ZWV0o7OGRvU1NzVi9NQy11byM4VT4mUTYjPDZbUixUZ3AtKWdjcGEiaFRKXFYiO2I2KFtBZlJNdVtNQCdhWmhLU1xWLSYuTUQwRiwsJU5JLitiaVRvLGRTKzIuWi4wQD0sQFMtUzpTYVQlLmBdVzBeJEsqMkI/LjQjVDBHI19lZTFyTT1MOFhpJytGR2BHZ0YoRGdRJmlDP1lYZUMrLS5WMWx1XktWZXNMOGBaI0lRcl5GWkxDVDJUO1Y6ZV1ia2IoOGxJOSFhPmU+W21KdTJSby0+UXRwVSVLXihlb1YjOzQ+QTEyVzlxKjZLSSFrMExOP1tdZ2JjTUR1Omk4P2dBL2YoWX4+ZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgMTAKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDYxIDAwMDAwIG4gCjAwMDAwMDAxMTIgMDAwMDAgbiAKMDAwMDAwMDIxOSAwMDAwMCBuIAowMDAwMDAwMzMxIDAwMDAwIG4gCjAwMDAwMDA0MDggMDAwMDAgbiAKMDAwMDAwMDYwMSAwMDAwMCBuIAowMDAwMDAwNjY5IDAwMDAwIG4gCjAwMDAwMDA5NDkgMDAwMDAgbiAKMDAwMDAwMTAwOCAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9JRCAKWzw3ZTM4YmFjMmM0YWIxNTRhN2FiODgxNzI1ZjY1NThlYj48N2UzOGJhYzJjNGFiMTU0YTdhYjg4MTcyNWY2NTU4ZWI+XQolIFJlcG9ydExhYiBnZW5lcmF0ZWQgUERGIGRvY3VtZW50IC0tIGRpZ2VzdCAob3BlbnNvdXJjZSkKCi9JbmZvIDcgMCBSCi9Sb290IDYgMCBSCi9TaXplIDEwCj4+CnN0YXJ0eHJlZgoyODQwCiUlRU9GCg==';
 
 // === Defense-in-depth: scrub internal Synth markers before display ===
 // Mike's server-side response scanner is the primary scrubber. This client-side
@@ -619,8 +621,8 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack, initialC
   );
 }
 
-function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, sessionId, onReport, onBack }:
-  { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; pdfBase64?: string; sessionId: string;
+function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, sessionId, isDemo, onReport, onBack }:
+  { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; pdfBase64?: string; sessionId: string; isDemo?: boolean;
     onReport: (report: SynthReport, messages: Message[], updatedVehicle?: Vehicle) => void; onBack: () => void }
 ) {
   const nl = String.fromCharCode(10);
@@ -910,6 +912,26 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         )}
         <div ref={bottomRef} />
       </div>
+      {/* Demo users: show a report instantly, independent of the live Synth response. */}
+      {isDemo && (
+        <div style={{ padding: '0 20px 12px' }}>
+          <button
+            onClick={() => {
+              const demoReport: SynthReport = { pdf_base64: DEMO_REPORT_PDF_B64, pdf_filename: 'TechPulse_Demo_Report.pdf', confidence: 92 };
+              onReport(demoReport, messages);
+            }}
+            style={{
+              width: '100%', padding: '13px', borderRadius: 12, border: 'none',
+              background: 'linear-gradient(135deg,#10b981,#059669)',
+              boxShadow: '0 0 20px rgba(16,185,129,0.4)', color: '#fff',
+              fontWeight: 700, fontSize: 15, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}>
+            <FileText size={15} /> View Report (Demo)
+          </button>
+        </div>
+      )}
+
       {/* Synth-driven status. The user does not decide when the report is ready -- Synth does. */}
       {messages.filter((m:any) => m.role === 'synth').length > 0 && (
         <div style={{ padding: '0 20px 12px' }}>
@@ -1318,7 +1340,7 @@ export default function ChatPage() {
       <StepBar step={step} />
       {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); setStep('codes'); }} />}
       {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); setStep('chat'); }} onBack={() => setStep('vin')} />}
-      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); setStep('report'); }} onBack={() => setStep('codes')} />}
+      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep
         onRestart={restart}
