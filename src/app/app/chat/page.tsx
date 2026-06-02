@@ -25,7 +25,7 @@ interface DtcCode { code: string; description: string; }
 // 2014 BMW X3 Valvetronic case from the pitch deck (page 4). Real flow, real
 // Synth — only the inputs are preset. Also pre-warms the Synth API immediately
 // on login so the chat step has no Render cold-start delay.
-const DEMO_USER_EMAIL = 'daniel@techpulse.dev';
+const DEMO_USER_EMAILS = ['daniel@techpulse.dev', 'candice@techpulse.dev', 'sidd@techpulse.dev'];
 const DEMO_VEHICLE: Vehicle = {
   year: '2014',
   make: 'BMW',
@@ -1206,7 +1206,7 @@ function FeedbackStep({ onRestart, unid, vehicle, codes, complaint, diagnosis, m
 
 export default function ChatPage() {
   const { user } = useAuthStore();
-  const isDemoUser = ((user as { email?: string } | null)?.email || '').toLowerCase() === DEMO_USER_EMAIL;
+  const isDemoUser = DEMO_USER_EMAILS.includes(((user as { email?: string } | null)?.email || '').toLowerCase());
   // Pre-warm Synth API immediately on demo-user login so the chat step doesn't
   // pay the ~30-60s Render cold-start. Fires once per ChatPage mount.
   useEffect(() => {
