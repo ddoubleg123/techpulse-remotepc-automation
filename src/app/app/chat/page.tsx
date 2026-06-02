@@ -40,6 +40,8 @@ const DEMO_CODES: DtcCode[] = [
 const DEMO_SYMPTOMS = 'No throttle response, pedal to floor, vehicle will not exceed 10 MPH. Struggled to climb hill. Valvetronic relearn attempted - failed.';
 // Pre-built sample report so demo users can view a report instantly, independent of the live Synth response.
 const DEMO_REPORT_PDF_B64 = 'JVBERi0xLjQKJZOMi54gUmVwb3J0TGFiIEdlbmVyYXRlZCBQREYgZG9jdW1lbnQgKG9wZW5zb3VyY2UpCjEgMCBvYmoKPDwKL0YxIDIgMCBSIC9GMiAzIDAgUiAvRjMgNCAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL0Jhc2VGb250IC9IZWx2ZXRpY2EgL0VuY29kaW5nIC9XaW5BbnNpRW5jb2RpbmcgL05hbWUgL0YxIC9TdWJ0eXBlIC9UeXBlMSAvVHlwZSAvRm9udAo+PgplbmRvYmoKMyAwIG9iago8PAovQmFzZUZvbnQgL0hlbHZldGljYS1Cb2xkIC9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nIC9OYW1lIC9GMiAvU3VidHlwZSAvVHlwZTEgL1R5cGUgL0ZvbnQKPj4KZW5kb2JqCjQgMCBvYmoKPDwKL0Jhc2VGb250IC9TeW1ib2wgL05hbWUgL0YzIC9TdWJ0eXBlIC9UeXBlMSAvVHlwZSAvRm9udAo+PgplbmRvYmoKNSAwIG9iago8PAovQ29udGVudHMgOSAwIFIgL01lZGlhQm94IFsgMCAwIDYxMiA3OTIgXSAvUGFyZW50IDggMCBSIC9SZXNvdXJjZXMgPDwKL0ZvbnQgMSAwIFIgL1Byb2NTZXQgWyAvUERGIC9UZXh0IC9JbWFnZUIgL0ltYWdlQyAvSW1hZ2VJIF0KPj4gL1JvdGF0ZSAwIC9UcmFucyA8PAoKPj4gCiAgL1R5cGUgL1BhZ2UKPj4KZW5kb2JqCjYgMCBvYmoKPDwKL1BhZ2VNb2RlIC9Vc2VOb25lIC9QYWdlcyA4IDAgUiAvVHlwZSAvQ2F0YWxvZwo+PgplbmRvYmoKNyAwIG9iago8PAovQXV0aG9yIChcKGFub255bW91c1wpKSAvQ3JlYXRpb25EYXRlIChEOjIwMjYwNjAyMTUwNDUwKzAwJzAwJykgL0NyZWF0b3IgKFwodW5zcGVjaWZpZWRcKSkgL0tleXdvcmRzICgpIC9Nb2REYXRlIChEOjIwMjYwNjAyMTUwNDUwKzAwJzAwJykgL1Byb2R1Y2VyIChSZXBvcnRMYWIgUERGIExpYnJhcnkgLSBcKG9wZW5zb3VyY2VcKSkgCiAgL1N1YmplY3QgKFwodW5zcGVjaWZpZWRcKSkgL1RpdGxlIChcKGFub255bW91c1wpKSAvVHJhcHBlZCAvRmFsc2UKPj4KZW5kb2JqCjggMCBvYmoKPDwKL0NvdW50IDEgL0tpZHMgWyA1IDAgUiBdIC9UeXBlIC9QYWdlcwo+PgplbmRvYmoKOSAwIG9iago8PAovRmlsdGVyIFsgL0FTQ0lJODVEZWNvZGUgL0ZsYXRlRGVjb2RlIF0gL0xlbmd0aCAxNzQxCj4+CnN0cmVhbQpHYXRtO2dOKSUuJSI2SCdpNmdmL1dpM1EnL146LF1TWWhUL2c5cyksKElrLE5bWltTUFBbND1mSyUuY2JgUV48Y0E8TFVTJmldayQlT19CMnJYZXJjWTYhS2puRzhYVG5LOyQ5JChNIiRHQXJpZ0hwOGFrYzdtLFNmUTNTZCYpYiNkZ2I7O15FLXNUPWddM2l1Kz0pdDQvZT87R1JJJF1mKUpzaVpcXTIpQCk5XUBGamxLS0QuMGNdPy9mVUtAY2YkKmFMIihtPkk+LiRRbmJyUT1tTlpcRyZdJGduYCM/Kzk9RCpZZEg2ZUhjJCxSZy00YkdJV1sibzwrYHUiP1YqQTpPIk1yOys9ZU9GTl4/cj4tYzgwJUEiITgiU3EvJl1WR2QzcFRHayteT2UyJUgvX19LPFpbVXFMQ2dOU0hNMENvKStjYDVIMmVfI25CU2AmRjFLcGBwXy4/OU9FWFBMLmgxYXI7aDxQRG9cWEBhWyIuUVZlJ21pS0FZImsrPSYoWz1kLD5nSUhVJF5IRTI0Yz1HQ0Y4SDxaXTVKbjlaREomJzxHXU8tVDoqajclNU5Gb1dJZ1xLbGJrTzU3UUZwWVBMSExzbypWVVNlJiZVPz9IT08lKURhZHUxXFx1cCc2bmE4SHBUOkpsKFttdCxHSF9cWW9CI1Mxb0hdQ0Fnc1tCP1AyckduVlVrWlpHNEwkOl1ubjkhI05wL3BebEBOcm47MTByVlBSdDFKXjNoVjItVCJnRlwqQWZZKFlmMzs2WG48ci1saFZHNTMpLF5FLEArJnBcSlFEKSReL3AwaUFzSGYwUl0qZGFdOys+TyJPTnRrcFM8SGhWZ24jWChTOiNrUDA6PDI0dU1OP2U0T0EpX00zM0lTRFsjMHFDQz5aRDxGVDQxYnJwWjpxS3VvdGwmKVcmXllHdT1vV3A2ODBNLGkpaToyKlFdI3EpSWhSRzlHa11qIS5XZ2Znb0ZjOnFTcjVyXSJ0YWFIUyRoOzdUS1lVJFQpaFtAZi0nTyU3cTh1PmMrODlQK2YucWYpaV5uTUguM3EudWs0TkFJWD88LD5YJUk/VTFZUi9fLGpqZF4nUmZaRGZdQi0/ODc2SGw7XVk0T1YtMTV1Iz1aMiFsUEg3KilDTEJqTzpwIW1WQy02NT4vTFgrPmNIZC44bS0rJzBqXXMoUEV0JWM0MlsrLGNJOiQ3PU4yJyteTmM3Ji9GZmBjPGJGMC9BITshbG9MS25OQWheQDYza2Jqck1mKVU8cURbLCE3PkkoNFtRIzRdZkNzLTooOUBTIjplTWk4M2ReRCQpNXVvYGNUNkQyWkQldStPWCdLX0IhNzAsK2xYX1Etb2xeSWwpJVIyM0RRb1JlYWQlQltCSGBGMVB1Z3EmSjJjMytXME0/Jidqa1ZaNSpwTFxVWl4rTDFXWDk/I1hlM0gxWWUrTl0jSDQwWG5UPnEhXiRPZWRBOTxdKz1GYG1wWnJHSDgoPk8+WlFtSGkmRXBXQSZRdXNIcVE1bV8tLkdvV2pmbDktbzJfclw0SVdvIzAkYi1gXV1calVcOSNRIVs2WjoicUMyRVNfOTs/OlVWUHJcY2ptNlhpc2svNlQpQ0FAZV5qSzQ3cENJUltVUyxVTDgrOGUmckdQM2knLTFlanNoUzkqPWMzYl50UUY9MzlUMFZJY0guMDRaM2RnZCMzWmNINCwpUUBAL206Qz8jLklJLzMhTG4/PztoaltjNz1xVCYoNCxBJ2pAbkU/M0UyJCxnLURjJWY0ZDZNZmJtQkBPKTBXKzcoU0U3V0twOXFtJidsbDc6M2NyQWpCUCwtdF1FMDxAOT9WLDsyZC5ZZ0RfNGQ6cWpjPVVhOytATjd0ISU+K2NcPFZRUUcoKURHcDAyOCVtIkQrIU5bTXAlUWxPQiNLN1k3Xlo+WWdWbEFqN1M/W0UjO18zXWdSOkZIUW5EaCpCcUhxXCFtY0ZWV0o7OGRvU1NzVi9NQy11byM4VT4mUTYjPDZbUixUZ3AtKWdjcGEiaFRKXFYiO2I2KFtBZlJNdVtNQCdhWmhLU1xWLSYuTUQwRiwsJU5JLitiaVRvLGRTKzIuWi4wQD0sQFMtUzpTYVQlLmBdVzBeJEsqMkI/LjQjVDBHI19lZTFyTT1MOFhpJytGR2BHZ0YoRGdRJmlDP1lYZUMrLS5WMWx1XktWZXNMOGBaI0lRcl5GWkxDVDJUO1Y6ZV1ia2IoOGxJOSFhPmU+W21KdTJSby0+UXRwVSVLXihlb1YjOzQ+QTEyVzlxKjZLSSFrMExOP1tdZ2JjTUR1Omk4P2dBL2YoWX4+ZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgMTAKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDYxIDAwMDAwIG4gCjAwMDAwMDAxMTIgMDAwMDAgbiAKMDAwMDAwMDIxOSAwMDAwMCBuIAowMDAwMDAwMzMxIDAwMDAwIG4gCjAwMDAwMDA0MDggMDAwMDAgbiAKMDAwMDAwMDYwMSAwMDAwMCBuIAowMDAwMDAwNjY5IDAwMDAwIG4gCjAwMDAwMDA5NDkgMDAwMDAgbiAKMDAwMDAwMTAwOCAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9JRCAKWzw3ZTM4YmFjMmM0YWIxNTRhN2FiODgxNzI1ZjY1NThlYj48N2UzOGJhYzJjNGFiMTU0YTdhYjg4MTcyNWY2NTU4ZWI+XQolIFJlcG9ydExhYiBnZW5lcmF0ZWQgUERGIGRvY3VtZW50IC0tIGRpZ2VzdCAob3BlbnNvdXJjZSkKCi9JbmZvIDcgMCBSCi9Sb290IDYgMCBSCi9TaXplIDEwCj4+CnN0YXJ0eHJlZgoyODQwCiUlRU9GCg==';
+// Canned Synth reply for demo users, so a diagnostic response always appears even if the live API is down.
+const DEMO_SYNTH_REPLY = "Based on the scan data and your description, this is a confirmed Valvetronic eccentric shaft position fault (P134F) on the N55 engine.\n\nThe symptom set \u2014 no throttle response, pedal-to-floor with the vehicle limited to ~10 MPH \u2014 is the classic signature of the DME forcing limp mode because it cannot achieve the commanded eccentric shaft position. The Valvetronic system varies intake valve lift via a servo-driven eccentric shaft; when that shaft can't reach the commanded position, the engine loses usable power.\n\nMost likely root cause: wear or stripped teeth on the eccentric shaft gear, or a failing Valvetronic motor. The failed relearn attempt supports a mechanical (not just adaptation) fault.\n\nRecommended next steps: inspect the eccentric shaft gear for wear, verify Valvetronic motor operation, and if gear damage is confirmed, replace the eccentric shaft assembly and perform the limit-position relearn with an ISTA/ISTA+ capable tool.\n\nClick \u201cView Report\u201d below for the full diagnostic report.";
 
 // === Defense-in-depth: scrub internal Synth markers before display ===
 // Mike's server-side response scanner is the primary scrubber. This client-side
@@ -775,6 +777,17 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     const userMsg: Message = { id: Date.now()+'u', role:'user', content: displayText || text, ts:Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+    // Demo users: return a canned Synth reply instead of calling the live API,
+    // so a diagnostic response always appears. The demo report unlocks after this reply.
+    if (isDemo) {
+      if (chatAttachment) setChatAttachment(null);
+      setLoading(true);
+      setTimeout(() => {
+        setMessages(prev => [...prev, { id: Date.now()+'s', role: 'synth', content: DEMO_SYNTH_REPLY, ts: Date.now() }]);
+        setLoading(false);
+      }, 800);
+      return;
+    }
     setLoading(true);
     const pdfToSend = pdfBase64 || '';
     const pdfNameToSend = pdfToSend ? (fileName || 'scan.pdf') : '';
@@ -860,7 +873,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}> Back</button>
-          <button
+          {!isDemo && <button
             disabled={!reportReady || !pdfBase64Report}
             onClick={() => {
               if (!reportReady || !pdfBase64Report) return;
@@ -878,7 +891,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
               display: 'flex', alignItems: 'center', gap: 6,
             }}>
             <FileText size={13} /> View Report
-          </button>
+          </button>}
         </div>
       </div>
       <div style={{ flex:1, overflowY:'auto', padding:'20px' }}>
@@ -912,8 +925,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         )}
         <div ref={bottomRef} />
       </div>
-      {/* Demo users: show a report instantly, independent of the live Synth response. */}
-      {isDemo && (
+      {/* Demo users: report unlocks after at least one user message and one Synth reply. */}
+      {isDemo && messages.some(m => m.role === 'user') && messages.some(m => m.role === 'synth') && (
         <div style={{ padding: '0 20px 12px' }}>
           <button
             onClick={() => {
@@ -927,13 +940,13 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
               fontWeight: 700, fontSize: 15, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}>
-            <FileText size={15} /> View Report (Demo)
+            <FileText size={15} /> View Report
           </button>
         </div>
       )}
 
       {/* Synth-driven status. The user does not decide when the report is ready -- Synth does. */}
-      {messages.filter((m:any) => m.role === 'synth').length > 0 && (
+      {!isDemo && messages.filter((m:any) => m.role === 'synth').length > 0 && (
         <div style={{ padding: '0 20px 12px' }}>
           {!reportReady ? (
             <div style={{
