@@ -1,27 +1,42 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { LayoutDashboard, MessageSquare, RefreshCw, FileText, Bell, Settings, Gift, LogOut, Activity, BookOpen, Library, FileSearch } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 
 const navItems = [
-  { label: 'Dashboard',       href: '/app',              icon: LayoutDashboard },
-  { label: 'Diagnostic Chat', href: '/app/chat',          icon: MessageSquare },
-  { label: 'Sync Data',       href: '/app/sync',          icon: RefreshCw },
-  { label: 'Reports',         href: '/app/reports',       icon: FileText },
-  { label: 'Knowledge Base',  href: '/app/knowledge',     icon: BookOpen },
-  { label: 'Case Studies',    href: '/app/cases',         icon: Library },
-  { label: 'TSBs',            href: '/app/tsbs',          icon: FileSearch },
-  { label: 'Scope Patterns',  href: '/app/scope-patterns', icon: Activity },
-  { label: 'Notifications',   href: '/app/notifications', icon: Bell },
+  { label: 'Dashboard', href: '/app', icon: LayoutDashboard },
+  { label: 'Diagnostic Chat', href: '/app/chat', icon: MessageSquare },
+  { label: 'Sync Data', href: '/app/sync', icon: RefreshCw },
+  { label: 'Reports', href: '/app/reports', icon: FileText },
+  { label: 'Knowledge Base', href: '/app/knowledge', icon: BookOpen },
+  { label: 'Case Studies', href: '/app/cases', icon: Library },
+  { label: 'TSBs', href: '/app/tsbs', icon: FileSearch },
+  { label: 'Scope Patterns', href: '/app/scope-patterns', icon: Activity },
+  { label: 'Notifications', href: '/app/notifications', icon: Bell },
   { label: 'Referrals', href: '/app/referrals', icon: Gift },
-  { label: 'Settings',        href: '/app/settings',      icon: Settings },
+  { label: 'Settings', href: '/app/settings', icon: Settings },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, signOut } = useAuthStore();
+
+  const handleSignOut = () => {
+    // Clear auth state, then navigate to login. Explicit navigation ensures
+    // sign-out works on every page regardless of redirect guards.
+    signOut();
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth-storage');
+      }
+    } catch {
+      // ignore storage errors
+    }
+    router.replace('/auth/login');
+  };
 
   return (
     <aside className="flex flex-col w-64 min-h-screen bg-[var(--sidebar-bg)] border-r border-[var(--border)] shrink-0">
@@ -71,7 +86,7 @@ export default function Sidebar() {
           </div>
         </Link>
         <button
-          onClick={signOut}
+          onClick={handleSignOut}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover)] hover:text-red-500 transition-colors w-full"
         >
           <LogOut className="w-4 h-4 shrink-0" />
