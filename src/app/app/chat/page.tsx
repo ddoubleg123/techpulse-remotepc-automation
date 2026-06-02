@@ -691,6 +691,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const vinGateStreamRef = useRef<MediaStream|null>(null);
   const [warmingUp, setWarmingUp] = useState(false);
   const [autoSent, setAutoSent] = useState(false);
+  const [hasManuallyEngaged, setHasManuallyEngaged] = useState(false);
   const [apiStatus, setApiStatus] = useState<'ok'|'placeholder'|'error'>('ok');
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages]);
@@ -772,13 +773,15 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
 
 
 
-  const sendMessage = async (text: string, displayText?: string) => {
+  const sendMessage = async (text: string, displayText?: string, isAuto?: boolean) => {
     if (!text.trim() || loading) return;
+    if (!isAuto) setHasManuallyEngaged(true);
     const userMsg: Message = { id: Date.now()+'u', role:'user', content: displayText || text, ts:Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     // Demo users: return a canned Synth reply instead of calling the live API,
-    // so a diagnostic response always appears. The demo report unlocks after this reply.
+    // so a diagnostic response always appears. The demo report unlocks after the
+    // user's own first message (not the automatic intro message).
     if (isDemo) {
       if (chatAttachment) setChatAttachment(null);
       setLoading(true);
@@ -848,7 +851,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       }
     } finally { setLoading(false); setWarmingUp(false); }
   };
-  useEffect(() => { if (!autoSent && initMsg) { setAutoSent(true); sendMessage(initMsg, [vehicle.year && vehicle.make ? 'Analyzing: ' + vehicle.year + ' ' + vehicle.make + ' ' + vehicle.model : 'Analyzing scanner data', fileName ? '(' + fileName + ')' : '', codes.filter((c:any)=>c.code).length > 0 ? codes.filter((c:any)=>c.code).length + ' fault code(s) detected' : '', symptoms ? 'Symptoms: ' + symptoms.substring(0,80) : ''].filter(Boolean).join(' -- ')); } }, []);
+  useEffect(() => { if (!autoSent && initMsg) { setAutoSent(true); sendMessage(initMsg, [vehicle.year && vehicle.make ? 'Analyzing: ' + vehicle.year + ' ' + vehicle.make + ' ' + vehicle.model : 'Analyzing scanner data', fileName ? '(' + fileName + ')' : '', codes.filter((c:any)=>c.code).length > 0 ? codes.filter((c:any)=>c.code).length + ' fault code(s) detected' : '', symptoms ? 'Symptoms: ' + symptoms.substring(0,80) : ''].filter(Boolean).join(' -- '), true); } }, []);
 
   // Warm up Synth API on load (Render free tier spins down after inactivity)
   useEffect(() => {
@@ -925,8 +928,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         )}
         <div ref={bottomRef} />
       </div>
-      {/* Demo users: report unlocks after at least one user message and one Synth reply. */}
-      {isDemo && messages.some(m => m.role === 'user') && messages.some(m => m.role === 'synth') && (
+      {/* Demo users: report unlocks after the user sends their own message and Synth replies. */}
+      {isDemo && hasManuallyEngaged && messages.some(m => m.role === 'synth') && (
         <div style={{ padding: '0 20px 12px' }}>
           <button
             onClick={() => {
