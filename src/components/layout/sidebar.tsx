@@ -87,7 +87,7 @@ export default function Sidebar() {
         </Link>
         <button
           onClick={handleSignOut}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover)] hover:text-red-500 transition-colors w-full"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover)] hover:text-red-500 transition-colors w-full cursor-pointer"
         >
           <LogOut className="w-4 h-4 shrink-0" />
           Sign Out
