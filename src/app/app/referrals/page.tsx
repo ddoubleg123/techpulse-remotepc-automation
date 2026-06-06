@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 
-const CONNECTOR_BASE = 'https://techpulse-app.onrender.com';
+const CONNECTOR_BASE = 'https://techpulse-app-p12j.onrender.com';
 
 type Referral = {
   id: string;
