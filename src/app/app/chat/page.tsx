@@ -971,7 +971,6 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
                                                                                                                                                                                                                 }}>
                                                                                                                                                                                                                               <FileText size={15} /> {loading ? 'Generating report...' : 'Generate Report'}
                                                                                                                                                                                                                                           </button>
-          )}
           ) : (
             <button
               onClick={() => {
