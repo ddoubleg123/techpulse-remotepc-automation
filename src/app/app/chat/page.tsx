@@ -956,15 +956,22 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       {!isDemo && messages.filter((m:any) => m.role === 'synth').length > 0 && (
         <div style={{ padding: '0 20px 12px' }}>
           {!reportReady ? (
-            <div style={{
-              width: '100%', padding: '11px 14px', borderRadius: 10,
-              background: 'var(--bg-input)', border: '1px solid var(--border-input)',
-              color: 'var(--text-2)', fontSize: 13, fontWeight: 600,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            }}>
-              <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 6px rgba(245,158,11,0.7)' }} />
-              Synth is analyzing -- continue the conversation until Synth is ready.
-            </div>
+                        <button
+                                      onClick={() => { if (!loading) sendMessage('FINALIZE_REPORT', 'Generating report...'); }}
+                                                    disabled={loading}
+                                                                  style={{
+                                                                                  width: '100%', padding: '13px', borderRadius: 12,
+                                                                                                  background: loading ? 'var(--bg-input)' : 'linear-gradient(135deg,#10b981,#059669)',
+                                                                                                                  border: loading ? '1px solid var(--border-input)' : 'none',
+                                                                                                                                  boxShadow: loading ? 'none' : '0 0 20px rgba(16,185,129,0.4)',
+                                                                                                                                                  color: loading ? 'var(--text-3)' : '#fff',
+                                                                                                                                                                  fontSize: 15, fontWeight: 700,
+                                                                                                                                                                                  cursor: loading ? 'not-allowed' : 'pointer',
+                                                                                                                                                                                                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                                                                                                                                                                                                }}>
+                                                                                                                                                                                                                              <FileText size={15} /> {loading ? 'Generating report...' : 'Generate Report'}
+                                                                                                                                                                                                                                          </button>
+          )}
           ) : (
             <button
               onClick={() => {
