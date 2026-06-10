@@ -1306,12 +1306,13 @@ export default function ChatPage() {
         .replace(/\s+/g, ' ')
         .trim() || 'unknown';
       const _objectPath = encodeURIComponent(_shopFolder) + '/' + encodeURIComponent(_unid) + '/' + encodeURIComponent(_reportFilename);
+      const _userToken = useAuthStore.getState().token || SUPABASE_ANON_KEY;
 
       // 1) Upload HTML report to the diagnostic-reports storage bucket.
       fetch(SUPABASE_URL + '/storage/v1/object/diagnostic-reports/' + _objectPath, {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + _userToken,
           'apikey': SUPABASE_ANON_KEY,
           'Content-Type': 'text/html',
           'x-upsert': 'true',
@@ -1323,7 +1324,7 @@ export default function ChatPage() {
       fetch(SUPABASE_URL + '/rest/v1/diagnostic_case_studies', {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + _userToken,
           'apikey': SUPABASE_ANON_KEY,
           'Content-Type': 'application/json',
           'Prefer': 'return=minimal',
