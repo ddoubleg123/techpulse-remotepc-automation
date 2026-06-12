@@ -1,15 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { LayoutDashboard, MessageSquare, RefreshCw, FileText, Bell, Settings, Gift, LogOut, History } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
-import { listSessions, type SessionSummary } from '@/lib/sessionHistory';
 
 const navItems = [
   { label: 'Dashboard', href: '/app', icon: LayoutDashboard },
   { label: 'Diagnostic Chat', href: '/app/chat', icon: MessageSquare },
+  { label: 'Auto History', href: '/app/history', icon: History },
   { label: 'Sync Data', href: '/app/sync', icon: RefreshCw },
   { label: 'Reports', href: '/app/reports', icon: FileText },
   // { label: 'Knowledge Base', href: '/app/knowledge', icon: BookOpen },
@@ -20,67 +19,6 @@ const navItems = [
   { label: 'Referrals', href: '/app/referrals', icon: Gift },
   { label: 'Settings', href: '/app/settings', icon: Settings },
 ];
-
-function RecentDiagnostics() {
-  const router = useRouter();
-  const [items, setItems] = useState<SessionSummary[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-
-  const load = async (before?: string) => {
-    setLoading(true);
-    try {
-      const page = await listSessions({ limit: 15, before });
-      setItems((prev) => (before ? [...prev, ...page] : page));
-      if (page.length < 15) setDone(true);
-    } finally {
-      setLoading(false);
-      setLoaded(true);
-    }
-  };
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Hide the whole section if there's nothing to show (e.g. user has no shop / no history).
-  if (loaded && items.length === 0) return null;
-
-  return (
-    <div className="mt-4 pt-3 border-t border-[var(--border)]">
-      <div className="flex items-center gap-2 px-3 pb-1 text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
-        <History className="w-3.5 h-3.5 shrink-0" />
-        Recent Diagnostics
-      </div>
-      {items.map((s) => (
-        <button
-          key={s.session_id}
-          onClick={() => router.push(`/app/chat?session=${encodeURIComponent(s.session_id)}`)}
-          className="block w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--hover)] transition-colors cursor-pointer"
-        >
-          <div className="text-sm font-medium text-[var(--text-primary)] truncate">
-            {s.title || 'Diagnostic'}
-          </div>
-          <div className="text-xs text-[var(--text-secondary)] truncate">
-            {new Date(s.created_at).toLocaleDateString()}
-            {s.user_email ? ` \u00b7 ${s.user_email}` : ''}
-          </div>
-        </button>
-      ))}
-      {!done && items.length > 0 && (
-        <button
-          onClick={() => load(items[items.length - 1]?.created_at)}
-          disabled={loading}
-          className="w-full text-left px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-        >
-          {loading ? 'Loading\u2026' : 'Load more'}
-        </button>
-      )}
-    </div>
-  );
-}
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -130,8 +68,6 @@ export default function Sidebar() {
             </Link>
           );
         })}
-
-        <RecentDiagnostics />
       </nav>
 
       {/* User card */}
