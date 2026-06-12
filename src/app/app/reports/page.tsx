@@ -40,6 +40,7 @@ export default function ReportsPage() {
 function ReportsPageInner() {
   const { user } = useAuthStore();
   const shopName = user?.businessName || '';
+  const shopId = (user as any)?.shop_id || '';
   const searchParams = useSearchParams();
   const vinFilter = searchParams.get('vin') || '';
   const [reports, setReports] = useState<Report[]>([]);
@@ -61,11 +62,13 @@ function ReportsPageInner() {
     setError(null);
     try {
       const params = new URLSearchParams();
-      params.set('select', 'unid,year,make,model,vin,shop_name,created_at');
+      params.set('select', 'unid,year,make,model,vin,shop_id,shop_name,created_at');
       params.set('order', 'created_at.desc');
       params.set('limit', '200');
       params.set('source', 'eq.web');     // Only show user-generated web sessions, not training corpus
-      if (shopName) {
+      if (shopId) {
+        params.set('shop_id', `eq.${shopId}`);
+      } else if (shopName) {
         params.set('shop_name', `eq.${shopName}`);
       }
       if (vinFilter) {
@@ -101,7 +104,7 @@ function ReportsPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [shopName, vinFilter]);
+  }, [shopId, shopName, vinFilter]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
