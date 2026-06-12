@@ -1312,9 +1312,26 @@ function ChatPageInner() {
   useEffect(() => {
     if (!synthReport) return;
     if (!SUPABASE_ANON_KEY) return;
+    (async () => {
     try {
       const _u = user as { email?: string; businessName?: string } | null;
       const _shopName = (_u && _u.businessName) ? _u.businessName : '';
+      // Resolve shop_id once (preferred shop key). Used by both the case-study
+      // insert (#2) and the chat_sessions upsert (#3).
+      let _shopId: string | null = (_u as any)?.shop_id || null;
+      try {
+        if (!_shopId) {
+          const _tok0 = useAuthStore.getState().token || '';
+          const _sub0 = JSON.parse(atob(_tok0.split('.')[1] || '')).sub || '';
+          if (_sub0) {
+            const _pr0 = await fetch(
+              SUPABASE_URL + '/rest/v1/user_profiles?id=eq.' + encodeURIComponent(_sub0) + '&select=shop_id',
+              { headers: { Authorization: 'Bearer ' + (useAuthStore.getState().token || SUPABASE_ANON_KEY), apikey: SUPABASE_ANON_KEY } }
+            );
+            if (_pr0.ok) { const _r0 = await _pr0.json(); _shopId = (_r0 && _r0[0] && _r0[0].shop_id) || null; }
+          }
+        }
+      } catch { /* best effort */ }
       const _unid = sessionId;
       const _vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'Unknown Vehicle';
       const _codesArr: string[] = (codes || []).map((c: DtcCode) => (c && c.code) || '').filter(Boolean);
@@ -1380,6 +1397,7 @@ function ChatPageInner() {
           fix: '',
           conclusion: '',
           shop_name: _shopName || '',
+          shop_id: _shopId,                // Prefer FK; shop_name kept for back-compat
           full_content: null,              // Gate: built on promotion only
           embedding: null,                 // Gate: generated on promotion only
         }),
@@ -1388,24 +1406,23 @@ function ChatPageInner() {
       // 3) Upsert a diagnostic session row for shop-wide history (Recent Diagnostics).
       //    shop_id is resolved from the user's profile (auth sub == user_profiles.id),
       //    then the session is upserted on session_id so re-entry/refresh updates in place.
-      (async () => {
-        try {
+      try {
           const _sub = (() => {
             try {
               const _t = useAuthStore.getState().token || '';
               return JSON.parse(atob(_t.split('.')[1] || '')).sub || '';
             } catch { return ''; }
           })();
-          if (!_sub) return;
-          const _profRes = await fetch(
-            SUPABASE_URL + '/rest/v1/user_profiles?id=eq.' + encodeURIComponent(_sub) + '&select=shop_id,email',
-            { headers: { 'Authorization': 'Bearer ' + _userToken, 'apikey': SUPABASE_ANON_KEY } }
-          );
-          if (!_profRes.ok) return;
-          const _profRows = await _profRes.json();
-          const _shopId = (_profRows && _profRows[0] && _profRows[0].shop_id) || null;
-          const _email = (_profRows && _profRows[0] && _profRows[0].email) || (_u && _u.email) || '';
-          if (!_shopId) return; // user not attached to a shop -> no shop-wide history
+          // Reuse the shop_id resolved above; only fetch email here.
+          if (!_sub || !_shopId) return; // not attached to a shop -> no shop-wide history
+          let _email = (_u && _u.email) || '';
+          try {
+            const _emRes = await fetch(
+              SUPABASE_URL + '/rest/v1/user_profiles?id=eq.' + encodeURIComponent(_sub) + '&select=email',
+              { headers: { 'Authorization': 'Bearer ' + _userToken, 'apikey': SUPABASE_ANON_KEY } }
+            );
+            if (_emRes.ok) { const _er = await _emRes.json(); _email = (_er && _er[0] && _er[0].email) || _email; }
+          } catch { /* email is best-effort */ }
           await fetch(SUPABASE_URL + '/rest/v1/chat_sessions?on_conflict=session_id', {
             method: 'POST',
             headers: {
@@ -1426,9 +1443,9 @@ function ChatPageInner() {
               last_step: 'report',
             }),
           });
-        } catch { /* history write is best-effort; never break the report flow */ }
-      })();
+      } catch { /* history write is best-effort; never break the report flow */ }
     } catch { /* never let persistence errors break the report flow */ }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [synthReport]);
   if (!user) return null;
