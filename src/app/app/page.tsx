@@ -91,7 +91,7 @@ export default function DashboardPage() {
     try { sub = JSON.parse(atob(token.split('.')[1] || '')).sub || ''; } catch { /* not a JWT */ }
     if (!sub || !SUPABASE_ANON_KEY) { setProfileLoaded(true); return; }
     fetch(
-      `${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(sub)}&select=onboarding_completed,shop_id,businessName,name`,
+      `${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(sub)}&select=onboarding_completed,shop_id,businessName:business_name,name`,
       { headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY } }
     )
       .then((r) => (r.ok ? r.json() : null))
