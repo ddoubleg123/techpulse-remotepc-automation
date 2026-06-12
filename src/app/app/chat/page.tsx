@@ -378,7 +378,7 @@ function VinStep({ onNext, initialVehicle }: { onNext: (vehicle: Vehicle, upload
             style={{ padding:'11px 14px', borderRadius:10, border:'1px solid var(--border-card)', cursor:'pointer',
               background: showCamera ? '#ef4444' : 'var(--bg-input)', color: showCamera ? '#fff' : 'var(--text-2)',
               fontSize:18, display:'flex', alignItems:'center', flexShrink:0 }}>
-            {showCamera ? '&#x2715;' : '&#x1F4F7;'}
+            {showCamera ? '✕' : '📷'}
           </button>
           </div>
           {cameraError && <p style={{ color:'#ef4444', fontSize:12, marginTop:4 }}>{cameraError}</p>}
