@@ -28,7 +28,7 @@ type Session = {
   created_at: string;
 };
 
-function useSessions(shopName: string | null) {
+function useSessions(shopId: string | null, shopName: string | null) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -36,11 +36,13 @@ function useSessions(shopName: string | null) {
     if (!SUPABASE_ANON_KEY) { setLoading(false); return; }
     let cancelled = false;
     const params = new URLSearchParams();
-    params.set('select', 'unid,year,make,model,engine,dtc_codes,symptoms,diagnosis_outcome,shop_name,created_at');
+    params.set('select', 'unid,year,make,model,engine,dtc_codes,symptoms,diagnosis_outcome,shop_id,shop_name,created_at');
     params.set('source', 'eq.web');
     params.set('order', 'created_at.desc');
     params.set('limit', '50');
-    if (shopName) params.set('shop_name', `eq.${shopName}`);
+    // Prefer shop_id (FK); fall back to legacy shop_name string during migration.
+    if (shopId) params.set('shop_id', `eq.${shopId}`);
+    else if (shopName) params.set('shop_name', `eq.${shopName}`);
     fetch(`${SUPABASE_URL}/rest/v1/diagnostic_case_studies?${params.toString()}`, {
       headers: { Authorization: `Bearer ${SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY },
     })
@@ -49,7 +51,7 @@ function useSessions(shopName: string | null) {
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [shopName]);
+  }, [shopId, shopName]);
 
   return { sessions, loading };
 }
@@ -108,7 +110,8 @@ export default function DashboardPage() {
 
   const router = useRouter();
   const shopName = (user as any)?.businessName || null;
-  const { sessions, loading } = useSessions(shopName);
+  const shopId = (user as any)?.shop_id || null;
+  const { sessions, loading } = useSessions(shopId, shopName);
 
   useEffect(() => { if (!user) router.push('/auth/login'); }, [user, router]);
 
