@@ -123,7 +123,7 @@ function HistoryList({
               border: 'none', cursor: loading ? 'default' : 'pointer', borderRadius: 8,
             }}
           >
-            {loading ? 'Loading\u2026' : 'Load more'}
+            {loading ? 'Loading…' : 'Load more'}
           </button>
         )}
       </div>
@@ -274,7 +274,7 @@ function AutoHistoryInner() {
             {/* Conversation */}
             <div ref={feedRef} style={{ flex: 1, overflowY: 'auto', padding: '24px', minHeight: 0 }}>
               {loadingDetail && (
-                <div style={{ color: 'var(--text-3)', fontSize: 14 }}>Loading conversation\u2026</div>
+                <div style={{ color: 'var(--text-3)', fontSize: 14 }}>Loading conversation…</div>
               )}
               {!loadingDetail && messages.length === 0 && (
                 <div style={{ color: 'var(--text-3)', fontSize: 14 }}>This diagnostic has no saved messages.</div>
@@ -301,7 +301,7 @@ function AutoHistoryInner() {
                       padding: '12px 16px', borderRadius: 14, fontSize: 14, color: 'var(--text-3)',
                       background: 'var(--bg-synth)', border: '1px solid var(--border-synth)',
                     }}>
-                      Synth is thinking\u2026
+                      Synth is thinking…
                     </div>
                   </div>
                 )}
@@ -315,7 +315,7 @@ function AutoHistoryInner() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-                  placeholder="Ask Synth a follow-up about this vehicle\u2026"
+                  placeholder="Ask Synth a follow-up about this vehicle…"
                   rows={1}
                   style={{
                     flex: 1, resize: 'none', maxHeight: 160, padding: '12px 14px', borderRadius: 12,
