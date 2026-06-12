@@ -80,28 +80,29 @@ function isResolved(s: Session): boolean {
 export default function DashboardPage() {
   const { user, token } = useAuthStore();
 
+  // Profile is read from Supabase (the users table) using the Supabase session JWT,
+  // consistent with the rest of the app. The old sync-api call rejected Supabase-issued
+  // tokens with a 401 and signed the user out — that caused the dashboard flash + logout.
+  const [profileLoaded, setProfileLoaded] = useState(false);
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    fetch('https://techpulse-sync-api.onrender.com/api/profile/me', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => {
-        if (cancelled) return null;
-        if (r.status === 401) {
-          useAuthStore.getState().signOut();
-          window.location.href = '/auth/login';
-          return null;
-        }
-        return r.ok ? r.json() : null;
-      })
-      .then((profile) => {
-        if (cancelled || !profile) return;
+    let sub = '';
+    try { sub = JSON.parse(atob(token.split('.')[1] || '')).sub || ''; } catch { /* not a JWT */ }
+    if (!sub || !SUPABASE_ANON_KEY) { setProfileLoaded(true); return; }
+    fetch(
+      `${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(sub)}&select=onboarding_completed,shop_id,businessName,name`,
+      { headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY } }
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rows) => {
+        if (cancelled || !Array.isArray(rows) || !rows[0]) return;
         useAuthStore.setState((state: any) => ({
-          user: state.user ? { ...state.user, ...profile } : state.user,
+          user: state.user ? { ...state.user, ...rows[0] } : state.user,
         }));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setProfileLoaded(true); });
     return () => { cancelled = true; };
   }, [token]);
 
@@ -260,7 +261,7 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
-    {user && !user.onboarding_completed && !isDemoUser(user) && <OnboardingModal />}
+    {user && profileLoaded && !user.onboarding_completed && !isDemoUser(user) && <OnboardingModal />}
     </div>
   );
 }
