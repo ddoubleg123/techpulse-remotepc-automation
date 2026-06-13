@@ -4,6 +4,8 @@ import { useState, useRef } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 
 const SYNC_API = 'https://techpulse-sync-api.onrender.com';
+const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
@@ -153,26 +155,64 @@ export default function OnboardingModal() {
     setStep(3);
   };
 
+  // Create or join a shop and link this user's shop_id via a SECURITY DEFINER RPC.
+  // Returns the shop_id, or null on failure. Requires a Supabase JWT (auth.uid()).
+  const assignShop = async (): Promise<string | null> => {
+    if (!SUPABASE_ANON_KEY || !token) return null;
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/onboarding_assign_shop`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          p_shop_name: formData.businessName,
+          p_address: formData.address || null,
+          p_phone: formData.phone || null,
+        }),
+      });
+      if (!res.ok) return null;
+      const shopId = await res.json(); // RPC returns the uuid (or null)
+      return (typeof shopId === 'string' && shopId) ? shopId : null;
+    } catch {
+      return null;
+    }
+  };
+
   const submitStep3 = async () => {
     setError(null);
     setLoading(true);
     try {
+      // 1) Save the profile fields (name/address/phone) via sync-api as before.
       const data = await apiCall('/api/profile/onboarding', {
         businessName: formData.businessName,
         address: formData.address,
         phone: formData.phone,
       });
-      if (data?.user) {
-        mergeUser({
-          businessName: data.user.businessName,
-          address: data.user.address,
-          phone: data.user.phone,
-          businessAddress: data.user.businessAddress,
-          onboarding_completed: true,
-        });
-      } else {
-        mergeUser({ onboarding_completed: true });
+
+      // 2) Create/join the shop and link users.shop_id. This is REQUIRED:
+      //    without a shop_id, history + shop-scoped reports return nothing and
+      //    the user would be bounced back into onboarding. Only mark complete
+      //    once the shop is actually assigned.
+      const shopId = await assignShop();
+      if (!shopId) {
+        setError('We could not link your shop. Please check the business name and try again.');
+        return; // do NOT mark onboarding complete — user stays in onboarding
       }
+
+      const userUpdates: Record<string, any> = {
+        shop_id: shopId,
+        onboarding_completed: true,
+      };
+      if (data?.user) {
+        userUpdates.businessName = data.user.businessName;
+        userUpdates.address = data.user.address;
+        userUpdates.phone = data.user.phone;
+        userUpdates.businessAddress = data.user.businessAddress;
+      }
+      mergeUser(userUpdates);
     } catch (e: any) {
       setError(e?.message || 'Failed to complete setup. Please try again.');
     } finally {
