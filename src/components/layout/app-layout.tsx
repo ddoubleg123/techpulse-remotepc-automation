@@ -1,10 +1,12 @@
 'use client';
 
 import { useAuthStore } from '@/stores/authStore';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Sidebar from './sidebar';
 import Header from './header';
 import DemoBanner from '@/components/DemoBanner';
+import OnboardingModal from '@/components/onboarding/OnboardingModal';
+import { isDemoUser } from '@/lib/demoUsers';
 import { captureReferralCode } from '@/lib/referralCapture';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
@@ -44,6 +46,52 @@ async function refreshSupabaseToken(refreshToken: string): Promise<{ access_toke
     console.error('Supabase token refresh error', e);
     return null;
   }
+}
+
+// App-wide onboarding gate: forces any signed-in, non-demo user WITHOUT a shop
+// (or who hasn't completed onboarding) into the onboarding flow, on EVERY /app/* route
+// — not just the dashboard. Renders nothing until the profile has loaded, to avoid a
+// flash before data arrives.
+function OnboardingGate() {
+  const { user } = useAuthStore();
+  const [loaded, setLoaded] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const token = useAuthStore.getState().token;
+    if (!user || !token || !SUPABASE_ANON_KEY) { setLoaded(false); return; }
+    if (isDemoUser(user)) { setNeedsOnboarding(false); setLoaded(true); return; }
+
+    let sub = '';
+    try { sub = JSON.parse(atob((token.split('.')[1] || '').replace(/-/g,'+').replace(/_/g,'/'))).sub || ''; } catch { /* not a JWT */ }
+    if (!sub) {
+      // No Supabase sub (legacy / email-OTP token). These users can't complete the
+      // shop-assign RPC (it needs a Supabase JWT), and per MVP decision OTP users are
+      // allowed through without history. Do NOT gate them — that would be an unescapable loop.
+      if (!cancelled) { setNeedsOnboarding(false); setLoaded(true); }
+      return;
+    }
+
+    fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(sub)}&select=onboarding_completed,shop_id`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(rows => {
+        if (cancelled) return;
+        const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+        // Gate if we can read the row and it shows no shop / not completed.
+        // If the read fails (row null), do NOT gate — avoid locking users out on a transient error.
+        if (row) setNeedsOnboarding(!row.onboarding_completed || !row.shop_id);
+        setLoaded(true);
+      })
+      .catch(() => { if (!cancelled) setLoaded(true); });
+
+    return () => { cancelled = true; };
+  }, [user]);
+
+  if (!user || !loaded || !needsOnboarding) return null;
+  return <OnboardingModal />;
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -160,6 +208,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+      <OnboardingGate />
     </div>
   );
 }
