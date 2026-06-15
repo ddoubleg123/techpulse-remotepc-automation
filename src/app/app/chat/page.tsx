@@ -53,6 +53,12 @@ const DEMO_SYNTH_REPLY = "Confirmed: this is a Valvetronic eccentric shaft posit
 function scrubInternalMarkers(content: string): string {
   if (!content) return content;
   let s = content;
+  // Strip the <<REPORT_FINAL: {...}>> marker. Synth is supposed to strip this
+  // server-side, but it can arrive in the SSE stream; never show the raw marker
+  // (or a partially-streamed opener) to the user. Matches the full marker incl.
+  // multi-line JSON and the closing '>>', plus any dangling opener.
+  s = s.replace(/<<\s*REPORT_FINAL\s*:[\s\S]*?>>/gi, '');
+  s = s.replace(/<<\s*REPORT_FINAL\s*:[\s\S]*$/gi, '');
   // Strip [KB GATE] ... [/KB GATE] blocks (the pre-flight KB-check output)
   s = s.replace(/\[KB GATE\][\s\S]*?\[\/KB GATE\]\s*/g, '');
   // Strip fenced code blocks that reference internal scripts/paths
@@ -835,7 +841,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
           const p = JSON.parse(payload);
           sseContent += p.token ?? p.text ?? p.response ?? p.message ?? '';
           // Synth signals readiness via SSE sibling fields in the final chunk.
-          // The web app does NOT parse <<REPORT_FINAL:...>> -- that token is stripped server-side.
+          // The <<REPORT_FINAL:...>> marker is meant to be stripped server-side, but
+          // can still arrive in the stream — scrubInternalMarkers() removes it before display.
           if (p.ready_for_report) { setReportReady(true); }
           if (typeof p.confidence === 'number') { setSynthConfidence(p.confidence); }
           if (p.pdf_base64) { setPdfBase64Report(p.pdf_base64); }
