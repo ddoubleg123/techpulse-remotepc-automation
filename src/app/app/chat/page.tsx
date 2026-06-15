@@ -50,6 +50,62 @@ const DEMO_SYNTH_REPLY = "Confirmed: this is a Valvetronic eccentric shaft posit
 // filter catches patterns that slip past the server scanner (e.g., the KB GATE
 // pre-flight block, pre_flight.py source listings, VERDICT lines naming the
 // internal logic). Defensive layer — primary fix lives in the Synth API.
+// Condense a scanner export for inlining into the Synth prompt.
+// A .pids file stores each PID as a long run of <sample> tags (hundreds each),
+// so a flat character cap only ever reaches the first few PIDs and Synth reports
+// "insufficient data". This parses the .pids XML and emits a compact per-PID
+// summary (min / max / avg / first / last) across ALL PIDs — every channel Synth
+// needs, in a fraction of the size. Non-.pids text falls back to a generous raw cap.
+function summarizeScannerData(raw: string): string {
+  const nl = String.fromCharCode(10);
+  const isPids = /<pids-collection/i.test(raw) || /<pid\b[^>]*\bname=/i.test(raw);
+  if (!isPids) {
+    // Plain text/csv export: send a generous slice (was 1500 — too small for real dumps).
+    const CAP = 50000;
+    return raw.length > CAP
+      ? raw.substring(0, CAP) + nl + `[...truncated; ${raw.length} total chars]`
+      : raw;
+  }
+  const lines: string[] = [];
+  // Iterate each <pid ... name="X"> ... </pid> block.
+  const pidRe = /<pid\b[^>]*\bname=["']([^"']+)["'][^>]*>([\s\S]*?)<\/pid>/gi;
+  let m: RegExpExecArray | null;
+  let count = 0;
+  while ((m = pidRe.exec(raw)) !== null && count < 200) {
+    const name = m[1];
+    const body = m[2];
+    const vals: number[] = [];
+    const sampleRe = /<sample\b[^>]*>([^<]*)<\/sample>/gi;
+    let s: RegExpExecArray | null;
+    let firstStr = '', lastStr = '';
+    let nSamples = 0;
+    while ((s = sampleRe.exec(body)) !== null) {
+      const txt = (s[1] || '').trim();
+      if (nSamples === 0) firstStr = txt;
+      lastStr = txt;
+      nSamples++;
+      const num = parseFloat(txt);
+      if (!isNaN(num)) vals.push(num);
+    }
+    if (nSamples === 0) continue;
+    count++;
+    if (vals.length > 0) {
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const r = (n: number) => (Math.round(n * 100) / 100);
+      lines.push(`${name}: min=${r(min)} max=${r(max)} avg=${r(avg)} first=${r(vals[0])} last=${r(vals[vals.length - 1])} (n=${nSamples})`);
+    } else {
+      // non-numeric PID (status strings) — show first/last/distinct
+      lines.push(`${name}: first="${firstStr}" last="${lastStr}" (n=${nSamples})`);
+    }
+  }
+  if (lines.length === 0) {
+    // fallback if parsing failed for any reason
+    return raw.substring(0, 50000);
+  }
+  return `Live data capture summarized across ${lines.length} PIDs (min/max/avg/first/last per channel):${nl}${lines.join(nl)}`;
+}
+
 function scrubInternalMarkers(content: string): string {
   if (!content) return content;
   let s = content;
@@ -648,7 +704,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     uploadedReport && hasPdfAttachment
       ? `${nl}Scanner PDF attached: ${fileName || 'report.pdf'} (full document sent separately for analysis).`
       : uploadedReport
-        ? `${nl}Scanner Data (from ${fileName || 'uploaded file'}):${nl}${uploadedReport.substring(0, 1500)}`
+        ? `${nl}Scanner Data (from ${fileName || 'uploaded file'}):${nl}${summarizeScannerData(uploadedReport)}`
         : null;
   const initMsg = [
     vehicle.year && vehicle.make ? `Vehicle: ${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? ' ' + vehicle.engine : ''}` : vehicle.vin ? `VIN: ${vehicle.vin}` : null,
