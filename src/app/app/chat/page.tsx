@@ -1083,6 +1083,94 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   );
 }
 
+function ShareWithCustomer({ synthReport, vehicle }: { synthReport: SynthReport; vehicle: Vehicle }) {
+  const [state, setState] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
+  const [shareUrl, setShareUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
+
+  const SYNTH_API = 'https://techpulse-api.onrender.com';
+
+  const handleShare = async () => {
+    setState('working'); setErrMsg('');
+    try {
+      const sessionId = typeof window !== 'undefined' ? (localStorage.getItem('synth-session-id') || '') : '';
+      if (!sessionId) { setErrMsg('No session found.'); setState('error'); return; }
+      const t1 = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
+      // 1) Ensure the report exists server-side (save is idempotent enough for our purpose)
+      await fetch(`${SYNTH_API}/api/save-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + t1 },
+        body: JSON.stringify({
+          pdf_base64: synthReport.pdf_base64,
+          filename: synthReport.pdf_filename || 'TechPulse_Report.pdf',
+          year: vehicle.year || '', make: vehicle.make || '', model: vehicle.model || '',
+          session_id: sessionId,
+          email: useAuthStore.getState().user?.email || '',
+        }),
+      }).catch(() => {});
+      // 2) Mint the share token using the USER's Supabase JWT (not the T1 token)
+      const userToken = useAuthStore.getState().token || '';
+      const res = await fetch(`${SYNTH_API}/api/reports/${encodeURIComponent(sessionId)}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + userToken },
+        body: JSON.stringify({ expires_days: 60 }),
+      });
+      if (!res.ok) {
+        if (res.status === 401) setErrMsg('Please sign in again to share.');
+        else if (res.status === 403) setErrMsg('You can only share reports from your own shop.');
+        else if (res.status === 404) setErrMsg('Report not found yet — try downloading it first.');
+        else setErrMsg('Could not create share link.');
+        setState('error'); return;
+      }
+      const data = await res.json();
+      setShareUrl(data.share_url || '');
+      setState('done');
+    } catch {
+      setErrMsg('Something went wrong creating the link.');
+      setState('error');
+    }
+  };
+
+  const copyLink = () => {
+    if (!shareUrl) return;
+    navigator.clipboard?.writeText(shareUrl).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  };
+
+  if (state === 'done') {
+    return (
+      <div style={{ padding:'14px 16px', borderRadius:11, background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', marginBottom:12 }}>
+        <div style={{ fontSize:13, fontWeight:700, color:'#10b981', marginBottom:8 }}>Share link ready</div>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <input readOnly value={shareUrl} onFocus={e => e.currentTarget.select()}
+            style={{ flex:1, padding:'9px 12px', borderRadius:8, border:'1px solid var(--border-card)', background:'var(--bg-input)', color:'var(--text-1)', fontSize:13 }} />
+          <button onClick={copyLink}
+            style={{ padding:'9px 16px', borderRadius:8, border:'none', background:'#10b981', color:'#fff', fontWeight:700, fontSize:13, cursor:'pointer', whiteSpace:'nowrap' }}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        <div style={{ fontSize:11, color:'var(--text-3)', marginTop:8 }}>Send this to the customer. It opens a read-only report, no login needed, and expires in 60 days.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom:12 }}>
+      <button
+        onClick={handleShare}
+        disabled={state === 'working'}
+        style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'12px 20px',
+          borderRadius:11, border:'1px solid var(--border-card)', background:'var(--bg-card)',
+          color:'var(--text-1)', fontWeight:700, fontSize:14, cursor: state==='working'?'wait':'pointer', width:'100%' }}>
+        <Send size={15} /> {state === 'working' ? 'Creating link...' : 'Share with Customer'}
+      </button>
+      {state === 'error' && <div style={{ fontSize:12, color:'#ef4444', marginTop:6 }}>{errMsg}</div>}
+    </div>
+  );
+}
+
 function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
   { synthReport: SynthReport; vehicle: Vehicle; codes: DtcCode[]; onFeedback: () => void; onBack: () => void }
 ) {
@@ -1189,6 +1277,10 @@ function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
             </svg>
             Download PDF Report
           </button>
+        )}
+
+        {synthReport.pdf_base64 && (
+          <ShareWithCustomer synthReport={synthReport} vehicle={vehicle} />
         )}
 
         <div style={{ display:'flex', gap:10 }}>

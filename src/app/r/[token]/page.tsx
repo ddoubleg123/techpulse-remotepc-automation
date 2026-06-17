@@ -8,15 +8,13 @@ const SYNTH_API = 'https://techpulse-api.onrender.com';
 interface SharedReport {
   shop_name?: string;
   vehicle?: string;
-  vehicle_year?: string;
-  vehicle_make?: string;
-  vehicle_model?: string;
-  vin?: string;
   dtc_codes?: string[];
-  summary?: string;
-  fix?: string;
-  confidence?: number;
-  created_at?: string;
+  complaint?: string;
+  findings?: string;
+  root_cause?: string;
+  recommendation?: string;
+  tsb?: string;
+  report_date?: string;
   pdf_base64?: string;
 }
 
@@ -37,7 +35,7 @@ export default function SharedReportPage() {
   useEffect(() => {
     if (!token) { setState('notfound'); return; }
     let cancelled = false;
-    fetch(`${SYNTH_API}/api/shared-report/${encodeURIComponent(token)}`)
+    fetch(`${SYNTH_API}/api/reports/shared/${encodeURIComponent(token)}`)
       .then(async (r) => {
         if (cancelled) return;
         if (r.status === 404) { setState('notfound'); return; }
@@ -51,10 +49,7 @@ export default function SharedReportPage() {
     return () => { cancelled = true; };
   }, [token]);
 
-  const vehicleLabel =
-    report?.vehicle ||
-    [report?.vehicle_year, report?.vehicle_make, report?.vehicle_model].filter(Boolean).join(' ') ||
-    'Vehicle';
+  const vehicleLabel = report?.vehicle || 'Vehicle';
 
   return (
     <div style={{ minHeight: '100vh', background: '#f4f6fb', padding: '24px 16px', fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif', color: '#1a1a2e' }}>
@@ -94,10 +89,9 @@ export default function SharedReportPage() {
           <>
             <Card>
               <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>
-                {report.shop_name || 'TechPulse'}{report.created_at ? ` · ${new Date(report.created_at).toLocaleDateString()}` : ''}
+                {report.shop_name || 'TechPulse'}{report.report_date ? ` · ${new Date(report.report_date).toLocaleDateString()}` : ''}
               </div>
               <h1 style={{ margin: '0 0 4px', fontSize: 24, color: '#0a1a3a' }}>{vehicleLabel}</h1>
-              {report.vin && <div style={{ color: '#666', fontSize: 13 }}>VIN: {report.vin}</div>}
 
               {Array.isArray(report.dtc_codes) && report.dtc_codes.length > 0 && (
                 <div style={{ marginTop: 16 }}>
@@ -110,23 +104,38 @@ export default function SharedReportPage() {
                 </div>
               )}
 
-              {report.summary && (
+              {report.complaint && (
                 <div style={{ marginTop: 16 }}>
-                  <SectionTitle>Summary</SectionTitle>
-                  <p style={{ lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{report.summary}</p>
+                  <SectionTitle>Customer Concern</SectionTitle>
+                  <p style={{ lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{report.complaint}</p>
                 </div>
               )}
 
-              {report.fix && (
+              {report.findings && (
+                <div style={{ marginTop: 16 }}>
+                  <SectionTitle>Findings</SectionTitle>
+                  <p style={{ lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{report.findings}</p>
+                </div>
+              )}
+
+              {report.root_cause && (
+                <div style={{ marginTop: 16 }}>
+                  <SectionTitle>Root Cause</SectionTitle>
+                  <p style={{ lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{report.root_cause}</p>
+                </div>
+              )}
+
+              {report.recommendation && (
                 <div style={{ marginTop: 16 }}>
                   <SectionTitle>Recommended Repair</SectionTitle>
-                  <div style={{ background: '#fff8e1', borderLeft: '3px solid #f0b400', padding: '12px 16px', borderRadius: 4, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{report.fix}</div>
+                  <div style={{ background: '#fff8e1', borderLeft: '3px solid #f0b400', padding: '12px 16px', borderRadius: 4, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{report.recommendation}</div>
                 </div>
               )}
 
-              {typeof report.confidence === 'number' && report.confidence > 0 && (
-                <div style={{ marginTop: 16, fontSize: 14, color: '#444' }}>
-                  Diagnostic confidence: <strong>{report.confidence}%</strong>
+              {report.tsb && (
+                <div style={{ marginTop: 16 }}>
+                  <SectionTitle>Related TSB</SectionTitle>
+                  <p style={{ lineHeight: 1.55, whiteSpace: 'pre-wrap', color: '#444' }}>{report.tsb}</p>
                 </div>
               )}
             </Card>
