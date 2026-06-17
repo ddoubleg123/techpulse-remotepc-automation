@@ -23,7 +23,7 @@ import { useAuthStore } from '@/stores/authStore';
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-type TicketStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed';
+type TicketStatus = 'open' | 'active' | 'closed';
 
 interface Ticket {
   id: string;
@@ -46,16 +46,13 @@ interface Ticket {
 
 const statusConfig: Record<TicketStatus, { label: string; variant: 'default' | 'success' | 'warning' | 'info'; icon: typeof Clock }> = {
   open: { label: 'Open', variant: 'info', icon: AlertCircle },
-  in_progress: { label: 'In Progress', variant: 'warning', icon: Clock },
-  waiting: { label: 'Waiting', variant: 'default', icon: Clock },
-  resolved: { label: 'Resolved', variant: 'success', icon: CheckCircle },
-  closed: { label: 'Closed', variant: 'default', icon: CheckCircle },
+  active: { label: 'Active', variant: 'warning', icon: Clock },
+  closed: { label: 'Closed', variant: 'success', icon: CheckCircle },
 };
 
 const priorityConfig: Record<string, string> = {
-  low: 'bg-gray-100 text-gray-700',
-  medium: 'bg-yellow-100 text-yellow-700',
-  high: 'bg-red-100 text-red-700',
+  normal: 'bg-gray-100 text-gray-700',
+  high: 'bg-yellow-100 text-yellow-700',
   urgent: 'bg-red-100 text-red-700',
 };
 
@@ -175,9 +172,9 @@ export default function TicketsPage() {
 
   const counts = {
     open: tickets.filter((t) => normStatus(t.status) === 'open').length,
-    in_progress: tickets.filter((t) => normStatus(t.status) === 'in_progress').length,
-    waiting: tickets.filter((t) => normStatus(t.status) === 'waiting').length,
-    resolved: tickets.filter((t) => normStatus(t.status) === 'resolved').length,
+    active: tickets.filter((t) => normStatus(t.status) === 'active').length,
+    closed: tickets.filter((t) => normStatus(t.status) === 'closed').length,
+    total: tickets.length,
   };
 
   return (
@@ -203,9 +200,8 @@ export default function TicketsPage() {
             >
               <option value="all">All Status</option>
               <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="waiting">Waiting</option>
-              <option value="resolved">Resolved</option>
+              <option value="active">Active</option>
+              <option value="closed">Closed</option>
             </select>
           </div>
           <div className="flex gap-2">
@@ -223,9 +219,9 @@ export default function TicketsPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { label: 'Open', count: counts.open, color: 'text-blue-600' },
-            { label: 'In Progress', count: counts.in_progress, color: 'text-yellow-600' },
-            { label: 'Waiting', count: counts.waiting, color: 'text-gray-600' },
-            { label: 'Resolved', count: counts.resolved, color: 'text-green-600' },
+            { label: 'Active', count: counts.active, color: 'text-yellow-600' },
+            { label: 'Closed', count: counts.closed, color: 'text-green-600' },
+            { label: 'Total', count: counts.total, color: 'text-gray-600' },
           ].map((stat) => (
             <Card key={stat.label}>
               <CardContent className="p-4 text-center">
@@ -253,7 +249,7 @@ export default function TicketsPage() {
                   const status = statusConfig[normStatus(ticket.status)];
                   const vehicle = [ticket.year, ticket.make, ticket.model].filter(Boolean).join(' ');
                   const ref = ticket.ticket_number || ticket.case_id || ticket.id.slice(0, 8);
-                  const priority = (ticket.priority || 'medium').toLowerCase();
+                  const priority = (ticket.priority || 'normal').toLowerCase();
                   const created = ticket.created_at ? new Date(ticket.created_at) : new Date();
                   return (
                     <div key={ticket.id} className="flex items-center gap-4 p-4">
@@ -284,7 +280,7 @@ export default function TicketsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs text-gray-500">{ref}</span>
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${priorityConfig[priority] || priorityConfig.medium}`}>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${priorityConfig[priority] || priorityConfig.normal}`}>
                             {priority}
                           </span>
                         </div>
@@ -341,7 +337,7 @@ function NewTicketModal({
   const [complaint, setComplaint] = useState('');
   const [notes, setNotes] = useState('');
   const [specialty, setSpecialty] = useState('');
-  const [priority, setPriority] = useState('medium');
+  const [priority, setPriority] = useState('normal');
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState('');
 
@@ -389,7 +385,7 @@ function NewTicketModal({
           dtc_codes: codes.trim() || null,
           complaint: complaint.trim() || null,
           notes: notes.trim() || null,
-          specialty: specialty.trim() || null,
+          specialty: specialty || null,
           priority,
           status: 'open',
           tech_name: techName,
@@ -497,19 +493,18 @@ function NewTicketModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Specialty (optional)</label>
-              <input
-                className={field}
-                value={specialty}
-                onChange={(e) => setSpecialty(e.target.value)}
-                placeholder="Electrical, drivetrain…"
-              />
+              <label className="block text-xs font-medium text-gray-600 mb-1">Vehicle Origin (optional)</label>
+              <select className={field} value={specialty} onChange={(e) => setSpecialty(e.target.value)}>
+                <option value="">Not specified</option>
+                <option value="american">American</option>
+                <option value="asian">Asian</option>
+                <option value="european">European</option>
+              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Priority</label>
               <select className={field} value={priority} onChange={(e) => setPriority(e.target.value)}>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
+                <option value="normal">Normal</option>
                 <option value="high">High</option>
                 <option value="urgent">Urgent</option>
               </select>
