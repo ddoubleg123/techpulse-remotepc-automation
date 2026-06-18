@@ -9,24 +9,24 @@ export interface AdminUser {
 }
 
 /**
- * Authoritative admin check, server-side only.
+ * Authoritative admin check, server-side only. Uses the user's own token +
+ * the publishable/anon key — no service key required.
  *  1. Reads the access token from the tp_at cookie.
- *  2. Validates it against Supabase /auth/v1/user (verifies signature + expiry
- *     server-side — we never trust the token's claims unverified).
- *  3. Looks up the user's role in public.users via the service-role key
- *     (bypasses RLS) and requires role = 'admin'.
- * Returns the admin user, or null if anything fails (fail closed).
+ *  2. Validates it via Supabase /auth/v1/user (verifies ES256 signature +
+ *     expiry server-side).
+ *  3. Reads the caller's own users row with their token (RLS lets a user read
+ *     their own row) and requires role = 'admin'.
+ * Returns the admin user, or null on any failure (fail closed).
  */
 export async function requireAdmin(): Promise<AdminUser | null> {
-  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-  if (!SERVICE_KEY || !ANON_KEY) return null; // not configured -> deny
+  if (!ANON_KEY) return null;
 
   const cookieStore = await cookies();
   const token = cookieStore.get('tp_at')?.value || '';
   if (!token) return null;
 
-  // 1) Validate the token (Supabase verifies the ES256 signature + expiry).
+  // 1) Validate the token.
   let sub = '';
   let email = '';
   try {
@@ -43,12 +43,12 @@ export async function requireAdmin(): Promise<AdminUser | null> {
     return null;
   }
 
-  // 2) Authoritative role lookup via service role.
+  // 2) Read the caller's own row with their token (RLS: auth.uid() = id).
   try {
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(sub)}&select=id,email,role`,
       {
-        headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY },
+        headers: { Authorization: `Bearer ${token}`, apikey: ANON_KEY },
         cache: 'no-store',
       }
     );
