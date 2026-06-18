@@ -55,11 +55,25 @@ async function refreshSupabaseToken(refreshToken: string): Promise<RefreshResult
   }
 }
 
+// Mirror the access token into a cookie so server-side middleware can read it
+// (localStorage is not visible to middleware). This is the same token already in
+// localStorage — no new exposure; the service-role key is never in the browser.
+function setAuthCookie(token: string) {
+  if (typeof document === 'undefined' || !token) return;
+  // session cookie, scoped to the app, sent on same-site navigations
+  document.cookie = `tp_at=${token}; Path=/; SameSite=Lax; Secure`;
+}
+function clearAuthCookie() {
+  if (typeof document === 'undefined') return;
+  document.cookie = 'tp_at=; Path=/; Max-Age=0; SameSite=Lax; Secure';
+}
+
 // Clear the session and bounce to login when the refresh token is dead.
 function forceSignOut() {
   try {
     localStorage.removeItem('supabase-refresh-token');
   } catch { /* ignore */ }
+  clearAuthCookie();
   try {
     useAuthStore.getState().signOut();
   } catch { /* ignore */ }
@@ -144,6 +158,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           localStorage.setItem('supabase-refresh-token', result.refresh_token);
         }
         signIn(currentUser, result.access_token);
+        setAuthCookie(result.access_token);
         scheduleRefresh(result.access_token, nextRefresh);
       }, refreshInMs);
     };
@@ -166,6 +181,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               localStorage.setItem('supabase-refresh-token', refreshToken);
             }
             signIn({ id, email, name: email.split('@')[0], hasPaymentMethodOnFile: false }, accessToken);
+            setAuthCookie(accessToken);
             if (refreshToken) scheduleRefresh(accessToken, refreshToken);
             window.history.replaceState({}, '', window.location.pathname);
             return () => { if (refreshTimer) clearTimeout(refreshTimer); };
@@ -182,6 +198,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const email = params.get('email');
     if (token && email) {
       signIn({ id: '1', email, name: email.split('@')[0], hasPaymentMethodOnFile: false }, token);
+      setAuthCookie(token);
       window.history.replaceState({}, '', window.location.pathname);
       return () => { if (refreshTimer) clearTimeout(refreshTimer); };
     }
@@ -192,6 +209,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       const auth = stored ? JSON.parse(stored) : null;
       const existingToken = auth?.state?.token;
       const existingRefresh = localStorage.getItem('supabase-refresh-token');
+      // Keep the middleware-readable cookie in sync with the current token,
+      // so already-signed-in users (no refresh needed) are still gated correctly.
+      if (existingToken) {
+        const exp0 = getTokenExp(existingToken);
+        if (exp0 && exp0 > Math.floor(Date.now() / 1000)) setAuthCookie(existingToken);
+      }
       if (existingToken && existingRefresh) {
         const exp = getTokenExp(existingToken);
         if (exp) {
@@ -210,6 +233,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 localStorage.setItem('supabase-refresh-token', result.refresh_token);
               }
               signIn(currentUser, result.access_token);
+              setAuthCookie(result.access_token);
               scheduleRefresh(result.access_token, nextRefresh);
             })();
           } else {
