@@ -14,6 +14,23 @@ export async function GET() {
     service_key_len: SERVICE_KEY.length,
     anon_key_present: !!ANON_KEY,
   };
+  // Safe structural check: decode ONLY the JWT payload's role/ref claims so we can
+  // tell anon vs service_role. Never returns the key itself.
+  try {
+    if (SERVICE_KEY.includes('.')) {
+      let p = SERVICE_KEY.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (p.length % 4) p += '=';
+      const claims = JSON.parse(atob(p));
+      out.service_key_role_claim = claims.role || null;
+      out.service_key_ref = claims.ref || null;
+      out.service_key_is_jwt = true;
+    } else {
+      out.service_key_is_jwt = false;
+      out.service_key_prefix = SERVICE_KEY.slice(0, 8); // e.g. "sb_secret" vs "sb_publi"
+    }
+  } catch (e) {
+    out.service_key_decode_error = String(e);
+  }
 
   const cookieStore = await cookies();
   const token = cookieStore.get('tp_at')?.value || '';
