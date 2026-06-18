@@ -16,6 +16,7 @@ interface Row {
   role: string | null;
   membership_active: boolean | null;
   shop_id: string | null;
+  onboarding_completed: boolean | null;
   created_at: string | null;
 }
 
@@ -41,7 +42,7 @@ export default function AdminUsersPage() {
       const t = useAuthStore.getState().token;
       if (!t || !SUPABASE_ANON_KEY) { setLoading(false); return; }
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/users?select=id,email,name,role,membership_active,shop_id,created_at&order=created_at.desc`,
+        `${SUPABASE_URL}/rest/v1/users?select=id,email,name,role,membership_active,shop_id,onboarding_completed,created_at&order=created_at.desc`,
         { headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY } }
       );
       if (!res.ok) { setErr('Could not load users.'); setRows([]); }
@@ -60,6 +61,30 @@ export default function AdminUsersPage() {
     return hay.includes(q.toLowerCase());
   });
 
+  // Stats computed from the loaded rows (no extra queries).
+  const now = Date.now();
+  const within = (days: number, iso: string | null) =>
+    iso ? now - new Date(iso).getTime() <= days * 86400000 : false;
+  const stats = {
+    total: rows.length,
+    onboarded: rows.filter((r) => r.onboarding_completed === true).length,
+    notOnboarded: rows.filter((r) => r.onboarding_completed !== true).length,
+    shopless: rows.filter((r) => !r.shop_id).length,
+    active: rows.filter((r) => r.membership_active === true).length,
+    new7: rows.filter((r) => within(7, r.created_at)).length,
+    new30: rows.filter((r) => within(30, r.created_at)).length,
+  };
+  const roleOrder = ['admin', 'shop_owner', 'technician', 'customer', 'developer'];
+  const roleCounts = rows.reduce<Record<string, number>>((acc, r) => {
+    const k = r.role || 'other';
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
+  const rolesSorted = Object.keys(roleCounts).sort(
+    (a, b) => (roleOrder.indexOf(a) + 1 || 99) - (roleOrder.indexOf(b) + 1 || 99)
+  );
+  const pct = (n: number) => (stats.total ? Math.round((n / stats.total) * 100) : 0);
+
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="max-w-5xl mx-auto p-6">
@@ -73,6 +98,60 @@ export default function AdminUsersPage() {
             <RefreshCw className="w-4 h-4 text-gray-600" />
           </button>
         </div>
+
+        {!loading && !err && rows.length > 0 && (
+          <div className="mb-6 space-y-4">
+            {/* Stat cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Total users', value: stats.total, sub: `${stats.active} active` },
+                { label: 'Onboarded', value: stats.onboarded, sub: `${pct(stats.onboarded)}% of users` },
+                { label: 'Not onboarded', value: stats.notOnboarded, sub: `${stats.shopless} without a shop` },
+                { label: 'New (30 days)', value: stats.new30, sub: `${stats.new7} in last 7 days` },
+              ].map((s) => (
+                <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4">
+                  <p className="text-xs text-gray-500">{s.label}</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{s.value}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{s.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              {/* Role distribution */}
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <p className="text-sm font-semibold text-gray-900 mb-3">By role</p>
+                <div className="space-y-2">
+                  {rolesSorted.map((role) => (
+                    <div key={role} className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium w-24 text-center shrink-0 ${roleCls[role] || 'bg-gray-100 text-gray-700'}`}>
+                        {role}
+                      </span>
+                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-gray-400 rounded-full" style={{ width: `${pct(roleCounts[role])}%` }} />
+                      </div>
+                      <span className="text-sm text-gray-600 w-10 text-right shrink-0">{roleCounts[role]}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Onboarding status */}
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <p className="text-sm font-semibold text-gray-900 mb-3">Onboarding</p>
+                <div className="flex h-3 rounded-full overflow-hidden mb-3">
+                  <div className="bg-green-500" style={{ width: `${pct(stats.onboarded)}%` }} title={`${stats.onboarded} onboarded`} />
+                  <div className="bg-amber-400" style={{ width: `${pct(stats.notOnboarded)}%` }} title={`${stats.notOnboarded} not onboarded`} />
+                </div>
+                <div className="flex items-center gap-4 text-sm">
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-green-500" /> Onboarded {stats.onboarded}</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Pending {stats.notOnboarded}</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-3">{stats.shopless} user{stats.shopless === 1 ? '' : 's'} not yet assigned to a shop.</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="relative mb-4 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
