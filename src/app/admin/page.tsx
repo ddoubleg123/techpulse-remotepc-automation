@@ -7,9 +7,6 @@ import {
   Users,
   Ticket,
   TrendingUp,
-  Search,
-  Bell,
-  Settings,
   LogOut,
   BarChart3,
   UserCheck,
@@ -17,7 +14,6 @@ import {
   CheckCircle,
   Clock,
   DollarSign,
-  Activity,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, Badge, Avatar, Button } from '@/components/ui';
 import { formatRelativeTime } from '@/lib/utils';
@@ -86,6 +82,18 @@ const statusColors: Record<string, string> = {
 export default function AdminDashboard() {
   const [sidebarOpen] = useState(true);
   const token = useAuthStore((s) => s.token);
+  const signOut = useAuthStore((s) => s.signOut);
+  const adminUser = useAuthStore((s) => s.user) as { name?: string; email?: string } | null;
+  const adminName = adminUser?.name || '';
+  const adminEmail = adminUser?.email || '';
+
+  const handleSignOut = () => {
+    try {
+      document.cookie = 'tp_at=; Path=/; Max-Age=0; SameSite=Lax; Secure';
+      signOut();
+    } catch { /* ignore */ }
+    window.location.href = '/auth/login';
+  };
 
   const [counts, setCounts] = useState<{ users: number | null; subs: number | null; openTickets: number | null; shops: number | null }>({
     users: null, subs: null, openTickets: null, shops: null,
@@ -145,8 +153,6 @@ export default function AdminDashboard() {
             { icon: BarChart3, label: 'Dashboard', href: '/admin', active: true },
             { icon: Users, label: 'Users', href: '/admin/users' },
             { icon: Ticket, label: 'Tickets', href: '/admin/tickets' },
-            { icon: Activity, label: 'Analytics', href: '/admin/analytics' },
-            { icon: Settings, label: 'Settings', href: '/admin/settings' },
           ].map((item) => (
             <Link
               key={item.label}
@@ -162,7 +168,7 @@ export default function AdminDashboard() {
         </nav>
 
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-800">
-          <button className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-800 w-full text-gray-400 hover:text-white">
+          <button onClick={handleSignOut} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-800 w-full text-gray-400 hover:text-white">
             <LogOut className="w-5 h-5" />
             {sidebarOpen && <span>Sign Out</span>}
           </button>
@@ -176,22 +182,11 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-              <p className="text-sm text-gray-500">Welcome back, Admin</p>
+              <p className="text-sm text-gray-500">Welcome back{adminName ? `, ${adminName}` : ''}</p>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
-                />
-              </div>
-              <button className="relative p-2 rounded-lg hover:bg-gray-100">
-                <Bell className="w-5 h-5 text-gray-600" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-              </button>
-              <Avatar name="Admin User" size="md" />
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500 hidden sm:inline">{adminEmail}</span>
+              <Avatar name={adminName || adminEmail || 'Admin'} size="md" />
             </div>
           </div>
         </header>
@@ -305,22 +300,24 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-3">
-                <Button>
-                  <Users className="w-4 h-4 mr-2" />
-                  Add User
-                </Button>
-                <Button variant="outline">
-                  <Ticket className="w-4 h-4 mr-2" />
-                  Create Ticket
-                </Button>
-                <Button variant="outline">
-                  <TrendingUp className="w-4 h-4 mr-2" />
-                  Export Report
-                </Button>
-                <Button variant="outline">
-                  <Settings className="w-4 h-4 mr-2" />
-                  System Settings
-                </Button>
+                <Link href="/admin/tickets">
+                  <Button>
+                    <Ticket className="w-4 h-4 mr-2" />
+                    Manage Tickets
+                  </Button>
+                </Link>
+                <Link href="/admin/users">
+                  <Button variant="outline">
+                    <Users className="w-4 h-4 mr-2" />
+                    View Users
+                  </Button>
+                </Link>
+                <Link href="/app/tickets">
+                  <Button variant="outline">
+                    <TrendingUp className="w-4 h-4 mr-2" />
+                    New Ticket
+                  </Button>
+                </Link>
               </div>
             </CardContent>
           </Card>
