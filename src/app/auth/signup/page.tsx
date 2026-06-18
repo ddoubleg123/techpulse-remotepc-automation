@@ -5,9 +5,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Zap, Mail, Phone, User } from 'lucide-react';
 import { Button, Input, Card, CardContent } from '@/components/ui';
+import { useAuthStore } from '@/stores/authStore';
+
+const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 export default function SignupPage() {
   const router = useRouter();
+  const { signIn } = useAuthStore();
   const [step, setStep] = useState<'info' | 'verify'>('info');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -15,22 +20,53 @@ export default function SignupPage() {
   const [otp, setOtp] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleCreateAccount = async () => {
-    setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setStep('verify');
-    setIsLoading(false);
+    if (!name || !email) { setError('Please enter your name and email'); return; }
+    setIsLoading(true); setError('');
+    try {
+      // Real Supabase email OTP. create_user:true registers the account; the
+      // full_name is passed as user metadata so the handle_new_user trigger can
+      // populate it. Onboarding (shop assignment) happens after first sign-in.
+      const res = await fetch(SUPABASE_URL + '/auth/v1/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ email, create_user: true, data: { full_name: name, phone } }),
+      });
+      if (res.ok) { setStep('verify'); }
+      else {
+        const d = await res.json().catch(() => ({}));
+        setError(d.msg || d.error_description || 'Could not send verification code');
+      }
+    } catch { setError('Network error — please try again'); } finally { setIsLoading(false); }
   };
 
   const handleVerifyOTP = async () => {
-    setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    router.push('/app');
+    if (otp.length !== 6) return;
+    setIsLoading(true); setError('');
+    try {
+      const res = await fetch(SUPABASE_URL + '/auth/v1/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ type: 'email', email, token: otp }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.access_token) {
+        let uid = '1';
+        try { uid = JSON.parse(atob(d.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).sub || '1'; } catch { /* ignore */ }
+        if (d.refresh_token) { try { localStorage.setItem('supabase-refresh-token', d.refresh_token); } catch { /* ignore */ } }
+        try { document.cookie = `tp_at=${d.access_token}; Path=/; SameSite=Lax; Secure`; } catch { /* ignore */ }
+        signIn({ id: uid, email, name: name || email.split('@')[0], hasPaymentMethodOnFile: false }, d.access_token);
+        router.push('/app');
+      } else {
+        setError(d.msg || d.error_description || 'Invalid code');
+      }
+    } catch { setError('Network error — please try again'); } finally { setIsLoading(false); }
   };
 
   const handleGoogleSignup = () => {
-    router.push('/app');
+    window.location.href = SUPABASE_URL + '/auth/v1/authorize?provider=google&redirect_to=' + encodeURIComponent(window.location.origin + '/app/chat');
   };
 
   return (
@@ -52,6 +88,12 @@ export default function SignupPage() {
             <p className="text-gray-500 text-center mb-6">
               Start your free 1-month trial today
             </p>
+
+            {error && (
+              <div className="mb-4 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-sm text-red-600 text-center">
+                {error}
+              </div>
+            )}
 
             {step === 'info' ? (
               <>

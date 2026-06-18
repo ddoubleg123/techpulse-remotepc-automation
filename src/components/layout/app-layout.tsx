@@ -100,9 +100,10 @@ function OnboardingGate() {
     let sub = '';
     try { sub = JSON.parse(atob((token.split('.')[1] || '').replace(/-/g,'+').replace(/_/g,'/'))).sub || ''; } catch { /* not a JWT */ }
     if (!sub) {
-      // No Supabase sub (legacy / email-OTP token). These users can't complete the
-      // shop-assign RPC (it needs a Supabase JWT), and per MVP decision OTP users are
-      // allowed through without history. Do NOT gate them — that would be an unescapable loop.
+      // All auth (Google + email OTP) now goes through real Supabase auth, so a
+      // valid session always carries a sub. Reaching here means the token isn't a
+      // usable Supabase JWT — don't show onboarding (the shop-assign RPC needs a
+      // Supabase JWT); the session/refresh logic will handle re-auth if needed.
       if (!cancelled) { setNeedsOnboarding(false); setLoaded(true); }
       return;
     }

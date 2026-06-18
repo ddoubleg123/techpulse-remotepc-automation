@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 
-const AUTH_API = 'https://techpulse-sync-api.onrender.com';
+const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,48 +19,52 @@ export default function LoginPage() {
   // Already logged in -> go to app
   useEffect(() => { if (user) router.push('/app'); }, [user, router]);
 
-  // Auth API redirects back here with ?token=...&email=... after Google OAuth
-  useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    const token = p.get('token');
-    const em = p.get('email');
-    if (token && em) {
-      try {
-        const pl = JSON.parse(atob(token));
-        signIn({ id: pl.userId || '1', email: em, name: em.split('@')[0], hasPaymentMethodOnFile: false }, token);
-        router.push('/app');
-      } catch { setError('Authentication failed. Please try again.'); }
-    }
-  }, [router, signIn]);
-
-  // Route through auth API - never call Google directly
+  // Google sign-in uses Supabase OAuth (implicit flow). The access_token comes
+  // back as a hash fragment and is handled by AppLayout, which then routes here.
   const handleGoogle = () => { window.location.href = 'https://fcqejcrxtrqdxybgyueu.supabase.co/auth/v1/authorize?provider=google&redirect_to=' + encodeURIComponent(window.location.origin + '/app/chat'); };
 
   const handleSendOtp = async () => {
     if (!email) { setError('Please enter your email'); return; }
     setLoading(true); setError('');
     try {
-      const res = await fetch(AUTH_API + '/api/auth/email/send-otp', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+      // Supabase-native email OTP. create_user:true so first-time emails are
+      // registered in Supabase Auth (the handle_new_user trigger then creates
+      // their public.users row). This keeps every user on real Supabase auth.
+      const res = await fetch(SUPABASE_URL + '/auth/v1/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ email, create_user: true }),
       });
-      const d = await res.json();
-      if (res.ok) { setOtpSent(true); if (d.debug?.otp) setOtp(d.debug.otp); }
-      else setError(d.message || 'Failed to send OTP');
+      if (res.ok) { setOtpSent(true); }
+      else {
+        const d = await res.json().catch(() => ({}));
+        setError(d.msg || d.error_description || 'Failed to send code');
+      }
     } catch { setError('Network error — please try again'); } finally { setLoading(false); }
   };
 
   const handleVerifyOtp = async () => {
-    if (!otp) { setError('Please enter the OTP'); return; }
+    if (!otp) { setError('Please enter the code'); return; }
     setLoading(true); setError('');
     try {
-      const res = await fetch(AUTH_API + '/api/auth/email/verify-otp', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp }),
+      // Verify the email OTP -> Supabase returns a real access_token (ES256 JWT)
+      // + refresh_token. Store both so the app can refresh and gate properly.
+      const res = await fetch(SUPABASE_URL + '/auth/v1/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ type: 'email', email, token: otp }),
       });
-      const d = await res.json();
-      if (res.ok && d.token) { signIn(d.user, d.token); router.push('/app'); }
-      else setError(d.message || 'Invalid OTP');
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.access_token) {
+        let uid = '1';
+        try { uid = JSON.parse(atob(d.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).sub || '1'; } catch { /* ignore */ }
+        if (d.refresh_token) { try { localStorage.setItem('supabase-refresh-token', d.refresh_token); } catch { /* ignore */ } }
+        try { document.cookie = `tp_at=${d.access_token}; Path=/; SameSite=Lax; Secure`; } catch { /* ignore */ }
+        signIn({ id: uid, email, name: email.split('@')[0], hasPaymentMethodOnFile: false }, d.access_token);
+        router.push('/app');
+      } else {
+        setError(d.msg || d.error_description || 'Invalid code');
+      }
     } catch { setError('Network error — please try again'); } finally { setLoading(false); }
   };
 
