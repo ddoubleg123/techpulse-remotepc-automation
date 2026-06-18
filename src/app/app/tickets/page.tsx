@@ -64,7 +64,7 @@ function normStatus(s?: string | null): TicketStatus {
 
 // Resolve the tech's shop_id + auth sub the same way the diagnostic flow does:
 // auth sub == user_profiles.id (a view over users); user_profiles.shop_id is the FK.
-async function resolveIdentity(): Promise<{ sub: string; shopId: string | null; email: string }> {
+async function resolveIdentity(): Promise<{ sub: string; shopId: string | null; email: string; shopName: string }> {
   const token = useAuthStore.getState().token || '';
   let sub = '';
   try {
@@ -74,22 +74,37 @@ async function resolveIdentity(): Promise<{ sub: string; shopId: string | null; 
   }
   let shopId: string | null = null;
   let email = '';
+  let shopName = '';
   if (sub) {
     try {
+      const hdrs = { Authorization: 'Bearer ' + (token || SUPABASE_ANON_KEY), apikey: SUPABASE_ANON_KEY };
       const res = await fetch(
         SUPABASE_URL + '/rest/v1/user_profiles?id=eq.' + encodeURIComponent(sub) + '&select=shop_id,email',
-        { headers: { Authorization: 'Bearer ' + (token || SUPABASE_ANON_KEY), apikey: SUPABASE_ANON_KEY } }
+        { headers: hdrs }
       );
       if (res.ok) {
         const rows = await res.json();
-        shopId = (rows && rows[0] && rows[0].shop_id) || null;
-        email = (rows && rows[0] && rows[0].email) || '';
+        const row = (rows && rows[0]) || {};
+        shopId = row.shop_id || null;
+        email = row.email || '';
+      }
+      // Canonical shop name straight from the shops table (user_profiles is a view,
+      // so a PostgREST FK embed isn't reliable here — one explicit lookup instead).
+      if (shopId) {
+        const sres = await fetch(
+          SUPABASE_URL + '/rest/v1/shops?id=eq.' + encodeURIComponent(shopId) + '&select=shop_name',
+          { headers: hdrs }
+        );
+        if (sres.ok) {
+          const srows = await sres.json();
+          shopName = (srows && srows[0] && srows[0].shop_name) || '';
+        }
       }
     } catch {
       /* best effort */
     }
   }
-  return { sub, shopId, email };
+  return { sub, shopId, email, shopName };
 }
 
 function buildTicketHtml(t: {
@@ -139,7 +154,14 @@ export default function TicketsPage() {
         setLoading(false);
         return;
       }
-      const token = useAuthStore.getState().token || SUPABASE_ANON_KEY;
+      // Zustand persist rehydrates from localStorage just after mount; on the very
+      // first render the token can still be null. Wait for it rather than firing an
+      // anon-key request that returns nothing and flashes an error.
+      const authToken = useAuthStore.getState().token;
+      if (!authToken) {
+        return; // keep the loading state; the token effect re-runs this once hydrated
+      }
+      const token = authToken;
       const res = await fetch(
         SUPABASE_URL +
           '/rest/v1/support_tickets?select=id,ticket_number,case_id,shop_name,year,make,model,dtc_codes,complaint,notes,specialty,priority,status,tech_name,tech_response,created_at&order=created_at.desc',
@@ -159,9 +181,11 @@ export default function TicketsPage() {
     }
   }, []);
 
+  const token = useAuthStore((s) => s.token);
+
   useEffect(() => {
     loadTickets();
-  }, [loadTickets]);
+  }, [loadTickets, token]);
 
   const filteredTickets = tickets.filter((t) => {
     const hay = [t.ticket_number, t.complaint, t.make, t.model, t.dtc_codes].filter(Boolean).join(' ').toLowerCase();
@@ -353,7 +377,7 @@ function NewTicketModal({
         setSubmitting(false);
         return;
       }
-      const { sub, shopId, email } = await resolveIdentity();
+      const { sub, shopId, email, shopName } = await resolveIdentity();
       if (!shopId) {
         setErrMsg('Your account is not linked to a shop yet, so the ticket cannot be routed. Contact your shop owner.');
         setSubmitting(false);
@@ -361,7 +385,7 @@ function NewTicketModal({
       }
       const ticketNumber = 'TKT-' + Date.now().toString(36).toUpperCase();
       const techName = user?.name || email || 'Technician';
-      const shopName = user?.businessName || '';
+      const resolvedShopName = shopName || user?.businessName || '';
 
       const token = useAuthStore.getState().token || SUPABASE_ANON_KEY;
       const res = await fetch(SUPABASE_URL + '/rest/v1/support_tickets', {
@@ -378,7 +402,7 @@ function NewTicketModal({
           shop_id: shopId,
           submitted_by: sub || null,
           submitter_email: email || user?.email || '',
-          shop_name: shopName,
+          shop_name: resolvedShopName,
           year: year.trim() || null,
           make: make.trim() || null,
           model: model.trim() || null,
