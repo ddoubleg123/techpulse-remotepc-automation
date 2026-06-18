@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CreditCard, Bell, Shield, HelpCircle, LogOut, ChevronRight } from 'lucide-react';
+import { CreditCard, Bell, Shield, HelpCircle, LogOut, ChevronRight, Users } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 
 export default function SettingsPage() {
@@ -35,6 +35,7 @@ export default function SettingsPage() {
         <div style={{ background:'white', border:'1px solid #E0E0E0', borderRadius:16, overflow:'hidden', marginBottom:20 }}>
           {[
             { label:'Billing & Subscription', icon:CreditCard, href:'/app/billing', desc:'Manage your plan and payments' },
+            { label:'Team',                    icon:Users,      href:'/app/settings/team', desc:'Manage members and invites' },
             { label:'Notifications',           icon:Bell,       href:'/app/notifications', desc:'Alert preferences' },
             { label:'Privacy & Security',      icon:Shield,     href:'/app/settings/privacy', desc:'Account security settings' },
             { label:'Help & Support',          icon:HelpCircle, href:'/app/settings/help', desc:'Get help with TechPulse' },
