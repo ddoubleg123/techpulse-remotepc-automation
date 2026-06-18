@@ -25,8 +25,12 @@ function getTokenExp(token: string): number | null {
   }
 }
 
-async function refreshSupabaseToken(refreshToken: string): Promise<{ access_token: string; refresh_token?: string } | null> {
-  if (!refreshToken || !SUPABASE_ANON_KEY) return null;
+type RefreshResult =
+  | { ok: true; access_token: string; refresh_token?: string }
+  | { ok: false; dead: boolean }; // dead=true => refresh token is invalid/expired (sign out)
+
+async function refreshSupabaseToken(refreshToken: string): Promise<RefreshResult> {
+  if (!refreshToken || !SUPABASE_ANON_KEY) return { ok: false, dead: true };
   try {
     const res = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
       method: 'POST',
@@ -37,14 +41,30 @@ async function refreshSupabaseToken(refreshToken: string): Promise<{ access_toke
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
     if (!res.ok) {
-      console.warn('Supabase token refresh failed:', res.status);
-      return null;
+      // 400/401/403 => the refresh token itself is bad; anything else is transient.
+      const dead = res.status === 400 || res.status === 401 || res.status === 403;
+      console.warn('Supabase token refresh failed:', res.status, dead ? '(session dead)' : '(transient)');
+      return { ok: false, dead };
     }
     const data = await res.json();
-    return data.access_token ? data : null;
+    if (data.access_token) return { ok: true, access_token: data.access_token, refresh_token: data.refresh_token };
+    return { ok: false, dead: true };
   } catch (e) {
     console.error('Supabase token refresh error', e);
-    return null;
+    return { ok: false, dead: false }; // network error: don't nuke the session
+  }
+}
+
+// Clear the session and bounce to login when the refresh token is dead.
+function forceSignOut() {
+  try {
+    localStorage.removeItem('supabase-refresh-token');
+  } catch { /* ignore */ }
+  try {
+    useAuthStore.getState().signOut();
+  } catch { /* ignore */ }
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/auth/')) {
+    window.location.href = '/auth/login';
   }
 }
 
@@ -112,16 +132,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       const refreshInMs = Math.max(1000, (secUntilExp - 300) * 1000);
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(async () => {
-        const newTokens = await refreshSupabaseToken(refreshToken);
-        if (!newTokens) return;
+        const result = await refreshSupabaseToken(refreshToken);
+        if (!result.ok) {
+          if (result.dead) forceSignOut();
+          return;
+        }
         const currentUser = useAuthStore.getState().user;
         if (!currentUser) return;
-        const nextRefresh = newTokens.refresh_token || refreshToken;
-        if (newTokens.refresh_token) {
-          localStorage.setItem('supabase-refresh-token', newTokens.refresh_token);
+        const nextRefresh = result.refresh_token || refreshToken;
+        if (result.refresh_token) {
+          localStorage.setItem('supabase-refresh-token', result.refresh_token);
         }
-        signIn(currentUser, newTokens.access_token);
-        scheduleRefresh(newTokens.access_token, nextRefresh);
+        signIn(currentUser, result.access_token);
+        scheduleRefresh(result.access_token, nextRefresh);
       }, refreshInMs);
     };
 
@@ -175,16 +198,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           const secUntilExp = exp - Math.floor(Date.now() / 1000);
           if (secUntilExp < 300) {
             (async () => {
-              const newTokens = await refreshSupabaseToken(existingRefresh);
-              if (!newTokens) return;
+              const result = await refreshSupabaseToken(existingRefresh);
+              if (!result.ok) {
+                if (result.dead) forceSignOut();
+                return;
+              }
               const currentUser = useAuthStore.getState().user;
               if (!currentUser) return;
-              const nextRefresh = newTokens.refresh_token || existingRefresh;
-              if (newTokens.refresh_token) {
-                localStorage.setItem('supabase-refresh-token', newTokens.refresh_token);
+              const nextRefresh = result.refresh_token || existingRefresh;
+              if (result.refresh_token) {
+                localStorage.setItem('supabase-refresh-token', result.refresh_token);
               }
-              signIn(currentUser, newTokens.access_token);
-              scheduleRefresh(newTokens.access_token, nextRefresh);
+              signIn(currentUser, result.access_token);
+              scheduleRefresh(result.access_token, nextRefresh);
             })();
           } else {
             scheduleRefresh(existingToken, existingRefresh);
