@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Zap,
@@ -21,43 +21,106 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, Badge, Avatar, Button } from '@/components/ui';
 import { formatRelativeTime } from '@/lib/utils';
+import { useAuthStore } from '@/stores/authStore';
 
-const stats = [
-  { name: 'Total Users', value: '1,234', change: '+12%', icon: Users, color: 'bg-blue-500' },
-  { name: 'Active Subscriptions', value: '892', change: '+8%', icon: UserCheck, color: 'bg-green-500' },
-  { name: 'Open Tickets', value: '47', change: '-5%', icon: Ticket, color: 'bg-yellow-500' },
-  { name: 'Monthly Revenue', value: '$312K', change: '+15%', icon: DollarSign, color: 'bg-purple-500' },
-];
+const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-const recentTickets = [
-  { id: 'TKT-1234', user: 'Mike Thompson', subject: 'Cannot upload PDF reports', status: 'open', priority: 'high', time: new Date(Date.now() - 15 * 60 * 1000) },
-  { id: 'TKT-1233', user: 'Sarah Chen', subject: 'Synth not responding to queries', status: 'in_progress', priority: 'high', time: new Date(Date.now() - 45 * 60 * 1000) },
-  { id: 'TKT-1232', user: 'Carlos Rodriguez', subject: 'Billing question about referral', status: 'waiting', priority: 'medium', time: new Date(Date.now() - 2 * 60 * 60 * 1000) },
-  { id: 'TKT-1231', user: 'Jennifer Lee', subject: 'Feature request: Audio export', status: 'resolved', priority: 'low', time: new Date(Date.now() - 5 * 60 * 60 * 1000) },
-];
+// Count via PostgREST: HEAD with Prefer count=exact returns Content-Range "*/N".
+async function fetchCount(table: string, token: string, filter = ''): Promise<number | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=id${filter ? '&' + filter : ''}`, {
+      method: 'HEAD',
+      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, Prefer: 'count=exact' },
+    });
+    const cr = res.headers.get('content-range') || '';
+    const n = cr.split('/')[1];
+    return n ? parseInt(n, 10) : null;
+  } catch {
+    return null;
+  }
+}
 
-const recentUsers = [
-  { name: 'David Park', email: 'david.park@example.com', plan: 'trial', joinedAt: new Date(Date.now() - 2 * 60 * 60 * 1000) },
-  { name: 'Lisa Martinez', email: 'lisa.m@autorepair.com', plan: 'active', joinedAt: new Date(Date.now() - 5 * 60 * 60 * 1000) },
-  { name: 'Tom Wilson', email: 'twilson@mechanics.net', plan: 'trial', joinedAt: new Date(Date.now() - 8 * 60 * 60 * 1000) },
-];
+async function fetchRows<T>(path: string, token: string): Promise<T[]> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
+    });
+    if (!res.ok) return [];
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
 
-const statusIcons = {
+interface AdminTicket {
+  id: string;
+  ticket_number: string | null;
+  shop_name: string | null;
+  complaint: string | null;
+  status: string | null;
+  priority: string | null;
+  created_at: string | null;
+}
+interface AdminUserRow {
+  id: string;
+  email: string | null;
+  name: string | null;
+  role: string | null;
+  created_at: string | null;
+}
+
+const statusIcons: Record<string, typeof AlertCircle> = {
   open: AlertCircle,
-  in_progress: Clock,
-  waiting: Clock,
-  resolved: CheckCircle,
+  active: Clock,
+  closed: CheckCircle,
 };
 
-const statusColors = {
+const statusColors: Record<string, string> = {
   open: 'text-blue-500',
-  in_progress: 'text-yellow-500',
-  waiting: 'text-gray-500',
-  resolved: 'text-green-500',
+  active: 'text-yellow-500',
+  closed: 'text-green-500',
 };
 
 export default function AdminDashboard() {
   const [sidebarOpen] = useState(true);
+  const token = useAuthStore((s) => s.token);
+
+  const [counts, setCounts] = useState<{ users: number | null; subs: number | null; openTickets: number | null; shops: number | null }>({
+    users: null, subs: null, openTickets: null, shops: null,
+  });
+  const [recentTickets, setRecentTickets] = useState<AdminTicket[]>([]);
+  const [recentUsers, setRecentUsers] = useState<AdminUserRow[]>([]);
+
+  useEffect(() => {
+    const t = useAuthStore.getState().token;
+    if (!t || !SUPABASE_ANON_KEY) return;
+    let cancelled = false;
+    (async () => {
+      const [users, subs, openTickets, shops, tickets, newUsers] = await Promise.all([
+        fetchCount('users', t),
+        fetchCount('subscriptions', t),
+        fetchCount('support_tickets', t, 'status=eq.open'),
+        fetchCount('shops', t),
+        fetchRows<AdminTicket>('support_tickets?select=id,ticket_number,shop_name,complaint,status,priority,created_at&order=created_at.desc&limit=5', t),
+        fetchRows<AdminUserRow>('users?select=id,email,name,role,created_at&order=created_at.desc&limit=5', t),
+      ]);
+      if (cancelled) return;
+      setCounts({ users, subs, openTickets, shops });
+      setRecentTickets(tickets);
+      setRecentUsers(newUsers);
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const fmt = (n: number | null) => (n === null ? '—' : n.toLocaleString());
+  const stats = [
+    { name: 'Total Users', value: fmt(counts.users), icon: Users, color: 'bg-blue-500' },
+    { name: 'Subscriptions', value: fmt(counts.subs), icon: UserCheck, color: 'bg-green-500' },
+    { name: 'Open Tickets', value: fmt(counts.openTickets), icon: Ticket, color: 'bg-yellow-500' },
+    { name: 'Shops', value: fmt(counts.shops), icon: DollarSign, color: 'bg-purple-500' },
+  ];
 
   return (
     <div className="flex min-h-screen bg-gray-100">
@@ -144,9 +207,6 @@ export default function AdminDashboard() {
                     <div>
                       <p className="text-sm text-gray-500">{stat.name}</p>
                       <p className="text-3xl font-bold text-gray-900 mt-1">{stat.value}</p>
-                      <p className={`text-sm mt-1 ${stat.change.startsWith('+') ? 'text-green-600' : 'text-red-600'}`}>
-                        {stat.change} from last month
-                      </p>
                     </div>
                     <div className={`p-3 rounded-xl ${stat.color} text-white`}>
                       <stat.icon className="w-6 h-6" />
@@ -168,22 +228,27 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="divide-y divide-gray-100">
+                  {recentTickets.length === 0 && (
+                    <div className="p-4 text-sm text-gray-500">No tickets yet.</div>
+                  )}
                   {recentTickets.map((ticket) => {
-                    const StatusIcon = statusIcons[ticket.status as keyof typeof statusIcons];
+                    const st = (ticket.status || 'open').toLowerCase();
+                    const StatusIcon = statusIcons[st] || AlertCircle;
+                    const pr = (ticket.priority || 'normal').toLowerCase();
                     return (
                       <div key={ticket.id} className="p-4 hover:bg-gray-50">
                         <div className="flex items-start gap-3">
-                          <StatusIcon className={`w-5 h-5 mt-0.5 ${statusColors[ticket.status as keyof typeof statusColors]}`} />
+                          <StatusIcon className={`w-5 h-5 mt-0.5 ${statusColors[st] || 'text-gray-500'}`} />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-500">{ticket.id}</span>
-                              <Badge variant={ticket.priority === 'high' ? 'error' : ticket.priority === 'medium' ? 'warning' : 'default'}>
-                                {ticket.priority}
+                              <span className="text-xs text-gray-500">{ticket.ticket_number || ticket.id.slice(0, 8)}</span>
+                              <Badge variant={pr === 'urgent' ? 'error' : pr === 'high' ? 'warning' : 'default'}>
+                                {pr}
                               </Badge>
                             </div>
-                            <p className="font-medium text-gray-900 truncate">{ticket.subject}</p>
+                            <p className="font-medium text-gray-900 truncate">{ticket.complaint || 'No description'}</p>
                             <p className="text-sm text-gray-500">
-                              {ticket.user} - {formatRelativeTime(ticket.time)}
+                              {(ticket.shop_name || 'Unknown shop')}{ticket.created_at ? ` - ${formatRelativeTime(new Date(ticket.created_at))}` : ''}
                             </p>
                           </div>
                         </div>
@@ -204,21 +269,26 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="divide-y divide-gray-100">
-                  {recentUsers.map((user, i) => (
-                    <div key={i} className="p-4 hover:bg-gray-50">
+                  {recentUsers.length === 0 && (
+                    <div className="p-4 text-sm text-gray-500">No users yet.</div>
+                  )}
+                  {recentUsers.map((u) => (
+                    <div key={u.id} className="p-4 hover:bg-gray-50">
                       <div className="flex items-center gap-3">
-                        <Avatar name={user.name} size="md" />
+                        <Avatar name={u.name || u.email || 'User'} size="md" />
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900">{user.name}</p>
-                          <p className="text-sm text-gray-500 truncate">{user.email}</p>
+                          <p className="font-medium text-gray-900 truncate">{u.name || (u.email ? u.email.split('@')[0] : 'User')}</p>
+                          <p className="text-sm text-gray-500 truncate">{u.email || '—'}</p>
                         </div>
                         <div className="text-right">
-                          <Badge variant={user.plan === 'active' ? 'success' : 'warning'}>
-                            {user.plan}
+                          <Badge variant={u.role === 'admin' ? 'success' : 'default'}>
+                            {u.role || 'user'}
                           </Badge>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {formatRelativeTime(user.joinedAt)}
-                          </p>
+                          {u.created_at && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              {formatRelativeTime(new Date(u.created_at))}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
