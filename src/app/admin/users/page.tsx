@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { ChevronLeft, RefreshCw, Search } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { formatRelativeTime } from '@/lib/utils';
 
@@ -86,12 +85,8 @@ export default function AdminUsersPage() {
   const pct = (n: number) => (stats.total ? Math.round((n / stats.total) * 100) : 0);
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="max-w-5xl mx-auto p-6">
-        <Link href="/admin" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline mb-4">
-          <ChevronLeft className="w-4 h-4" /> Admin Dashboard
-        </Link>
-
+    <div className="p-6">
+      <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-bold text-gray-900">Users ({rows.length})</h1>
           <button onClick={load} className="p-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50" title="Refresh">
