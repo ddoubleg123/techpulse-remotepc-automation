@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Users,
+  Activity,
   Ticket,
   TrendingUp,
   UserCheck,
@@ -38,6 +39,35 @@ async function fetchRows<T>(path: string, token: string): Promise<T[]> {
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
       headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
+    });
+    if (!res.ok) return [];
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+interface LoginActivityRow {
+  id: string;
+  email: string | null;
+  last_sign_in_at: string | null;
+  provider: string | null;
+  signed_up_at: string | null;
+  logged_in_today: boolean;
+}
+
+// Admin-only login activity from auth.users (via SECURITY DEFINER RPC).
+async function fetchLoginActivity(token: string): Promise<LoginActivityRow[]> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_login_activity`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
     });
     if (!res.ok) return [];
     const rows = await res.json();
@@ -84,24 +114,29 @@ export default function AdminDashboard() {
   });
   const [recentTickets, setRecentTickets] = useState<AdminTicket[]>([]);
   const [recentUsers, setRecentUsers] = useState<AdminUserRow[]>([]);
+  const [loginsToday, setLoginsToday] = useState<number | null>(null);
+  const [recentLogins, setRecentLogins] = useState<LoginActivityRow[]>([]);
 
   useEffect(() => {
     const t = useAuthStore.getState().token;
     if (!t || !SUPABASE_ANON_KEY) return;
     let cancelled = false;
     (async () => {
-      const [users, subs, openTickets, shops, tickets, newUsers] = await Promise.all([
+      const [users, subs, openTickets, shops, tickets, newUsers, loginActivity] = await Promise.all([
         fetchCount('users', t),
         fetchCount('subscriptions', t),
         fetchCount('support_tickets', t, 'status=eq.open'),
         fetchCount('shops', t),
         fetchRows<AdminTicket>('support_tickets?select=id,ticket_number,shop_name,complaint,status,priority,created_at&order=created_at.desc&limit=5', t),
         fetchRows<AdminUserRow>('users?select=id,email,name,role,created_at&order=created_at.desc&limit=5', t),
+        fetchLoginActivity(t),
       ]);
       if (cancelled) return;
       setCounts({ users, subs, openTickets, shops });
       setRecentTickets(tickets);
       setRecentUsers(newUsers);
+      setLoginsToday(loginActivity.filter((r) => r.logged_in_today).length);
+      setRecentLogins(loginActivity.filter((r) => r.last_sign_in_at).slice(0, 6));
     })();
     return () => { cancelled = true; };
   }, [token]);
@@ -109,6 +144,7 @@ export default function AdminDashboard() {
   const fmt = (n: number | null) => (n === null ? '—' : n.toLocaleString());
   const stats = [
     { name: 'Total Users', value: fmt(counts.users), icon: Users, color: 'bg-blue-500' },
+    { name: 'Logins Today', value: fmt(loginsToday), icon: Activity, color: 'bg-teal-500' },
     { name: 'Subscriptions', value: fmt(counts.subs), icon: UserCheck, color: 'bg-green-500' },
     { name: 'Open Tickets', value: fmt(counts.openTickets), icon: Ticket, color: 'bg-yellow-500' },
     { name: 'Shops', value: fmt(counts.shops), icon: DollarSign, color: 'bg-purple-500' },
@@ -146,7 +182,7 @@ export default function AdminDashboard() {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
         {stats.map((stat) => (
           <Card key={stat.name}>
             <CardContent className="p-6">
@@ -244,6 +280,41 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Recent Logins — sourced from auth.users (true sign-in activity) */}
+      <Card className="mt-6">
+        <CardHeader>
+          <h3 className="text-lg font-semibold text-gray-900">Recent Logins</h3>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="divide-y divide-gray-100">
+            {recentLogins.length === 0 && (
+              <div className="p-4 text-sm text-gray-500">No login activity.</div>
+            )}
+            {recentLogins.map((r) => (
+              <div key={r.id} className="p-4 hover:bg-gray-50 flex items-center gap-3">
+                <Avatar name={r.email || 'User'} size="md" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-900 truncate">{r.email || '—'}</p>
+                  <p className="text-sm text-gray-500">
+                    {r.provider === 'google' ? 'Google' : r.provider === 'email' ? 'Email OTP' : (r.provider || 'unknown')}
+                  </p>
+                </div>
+                <div className="text-right">
+                  {r.logged_in_today && (
+                    <Badge variant="success">Today</Badge>
+                  )}
+                  {r.last_sign_in_at && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {formatRelativeTime(new Date(r.last_sign_in_at))}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </main>
   );
 }

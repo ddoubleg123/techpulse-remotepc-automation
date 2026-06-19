@@ -17,6 +17,9 @@ interface Row {
   shop_id: string | null;
   onboarding_completed: boolean | null;
   created_at: string | null;
+  last_sign_in_at?: string | null;
+  provider?: string | null;
+  logged_in_today?: boolean;
 }
 
 const roleCls: Record<string, string> = {
@@ -40,12 +43,31 @@ export default function AdminUsersPage() {
     try {
       const t = useAuthStore.getState().token;
       if (!t || !SUPABASE_ANON_KEY) { setLoading(false); return; }
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/users?select=id,email,name,role,membership_active,shop_id,onboarding_completed,created_at&order=created_at.desc`,
-        { headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY } }
-      );
+      const [res, loginRes] = await Promise.all([
+        fetch(
+          `${SUPABASE_URL}/rest/v1/users?select=id,email,name,role,membership_active,shop_id,onboarding_completed,created_at&order=created_at.desc`,
+          { headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY } }
+        ),
+        fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_login_activity`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+          body: '{}',
+        }),
+      ]);
       if (!res.ok) { setErr('Could not load users.'); setRows([]); }
-      else setRows(await res.json());
+      else {
+        const userRows: Row[] = await res.json();
+        // Merge login activity (from auth.users) by id.
+        let logins: Record<string, { last_sign_in_at: string | null; provider: string | null; logged_in_today: boolean }> = {};
+        if (loginRes.ok) {
+          const la = await loginRes.json();
+          if (Array.isArray(la)) {
+            logins = Object.fromEntries(la.map((r: { id: string; last_sign_in_at: string | null; provider: string | null; logged_in_today: boolean }) =>
+              [r.id, { last_sign_in_at: r.last_sign_in_at, provider: r.provider, logged_in_today: r.logged_in_today }]));
+          }
+        }
+        setRows(userRows.map((u) => ({ ...u, ...(logins[u.id] || {}) })));
+      }
     } catch {
       setErr('Could not load users.');
     } finally {
@@ -179,7 +201,27 @@ export default function AdminUsersPage() {
                   <span className={`px-2 py-1 rounded text-xs font-medium ${roleCls[r.role || ''] || 'bg-gray-100 text-gray-700'}`}>
                     {r.role || 'user'}
                   </span>
-                  {r.created_at && <span className="text-xs text-gray-400 w-24 text-right shrink-0">{formatRelativeTime(new Date(r.created_at))}</span>}
+                  {/* Last login (from auth.users) */}
+                  <div className="w-28 text-right shrink-0">
+                    {r.last_sign_in_at ? (
+                      <>
+                        <div className="flex items-center justify-end gap-1">
+                          {r.logged_in_today && <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">Today</span>}
+                          <span className="text-xs text-gray-600">{formatRelativeTime(new Date(r.last_sign_in_at))}</span>
+                        </div>
+                        <span className="text-[10px] text-gray-400">
+                          {r.provider === 'google' ? 'Google' : r.provider === 'email' ? 'Email OTP' : (r.provider || '')}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-xs text-gray-300">never</span>
+                    )}
+                  </div>
+                  {r.created_at && (
+                    <span className="text-xs text-gray-400 w-24 text-right shrink-0">
+                      joined {formatRelativeTime(new Date(r.created_at))}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
