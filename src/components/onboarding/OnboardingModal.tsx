@@ -3,7 +3,6 @@
 import { useState, useRef } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 
-const SYNC_API = 'https://techpulse-sync-api.onrender.com';
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -16,19 +15,6 @@ type FormData = {
   address: string;
   phone: string;
 };
-
-async function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => {
-      const result = fr.result as string;
-      const base64 = result.split(',')[1] || '';
-      resolve(base64);
-    };
-    fr.onerror = () => reject(fr.error || new Error('FileReader error'));
-    fr.readAsDataURL(file);
-  });
-}
 
 function mergeUser(updates: Record<string, any>) {
   useAuthStore.setState((state: any) => ({
@@ -81,41 +67,76 @@ export default function OnboardingModal() {
     reader.readAsDataURL(file);
   };
 
-  async function apiCall(path: string, body: any) {
-    const res = await fetch(`${SYNC_API}${path}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
+  // PATCH the caller's own users row via PostgREST (RLS: auth.uid() = id).
+  async function patchSelf(fields: Record<string, unknown>) {
+    if (!SUPABASE_ANON_KEY || !token || !user?.id) throw new Error('Not signed in.');
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(user.id)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          apikey: SUPABASE_ANON_KEY,
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify(fields),
+      }
+    );
     if (res.status === 401) {
       useAuthStore.getState().signOut();
       window.location.href = '/auth/login';
       throw new Error('Session expired — redirecting to sign in.');
     }
-    const data = await res.json().catch(() => ({} as any));
     if (!res.ok) {
-      throw new Error(data?.error || `Request failed (${res.status})`);
+      const t = await res.text().catch(() => '');
+      throw new Error(t || `Request failed (${res.status})`);
     }
-    return data;
+  }
+
+  // Upload the profile photo to the public `profile-photos` Storage bucket and
+  // return its public URL.
+  async function uploadPhoto(file: File): Promise<string> {
+    if (!SUPABASE_ANON_KEY || !token || !user?.id) throw new Error('Not signed in.');
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = `${user.id}/avatar-${Date.now()}.${ext}`;
+    const res = await fetch(
+      `${SUPABASE_URL}/storage/v1/object/profile-photos/${encodeURIComponent(path)}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: SUPABASE_ANON_KEY,
+          'Content-Type': file.type,
+          'x-upsert': 'true',
+        },
+        body: file,
+      }
+    );
+    if (res.status === 401) {
+      useAuthStore.getState().signOut();
+      window.location.href = '/auth/login';
+      throw new Error('Session expired — redirecting to sign in.');
+    }
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(t || `Photo upload failed (${res.status})`);
+    }
+    return `${SUPABASE_URL}/storage/v1/object/public/profile-photos/${path}`;
   }
 
   const submitStep1 = async () => {
     setError(null);
     setLoading(true);
     try {
-      const data = await apiCall('/api/profile/update', {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
+      const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+      await patchSelf({
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        name: fullName,
+        full_name: fullName,
       });
-      if (data?.user) {
-        mergeUser({
-          firstName: data.user.firstName,
-          lastName: data.user.lastName,
-        });
-      }
+      mergeUser({ firstName: formData.firstName, lastName: formData.lastName, name: fullName });
       setStep(2);
     } catch (e: any) {
       setError(e?.message || 'Failed to save name. Please try again.');
@@ -132,14 +153,9 @@ export default function OnboardingModal() {
     }
     setLoading(true);
     try {
-      const base64 = await readFileAsBase64(photoFile);
-      const data = await apiCall('/api/profile/upload-photo', {
-        photoBase64: base64,
-        contentType: photoFile.type,
-      });
-      if (data?.photoUrl) {
-        mergeUser({ photoUrl: data.photoUrl });
-      }
+      const photoUrl = await uploadPhoto(photoFile);
+      await patchSelf({ photo_url: photoUrl });
+      mergeUser({ photoUrl });
       setStep(3);
     } catch (e: any) {
       setError(e?.message || 'Failed to upload photo. Please try again.');
@@ -185,34 +201,35 @@ export default function OnboardingModal() {
     setError(null);
     setLoading(true);
     try {
-      // 1) Save the profile fields (name/address/phone) via sync-api as before.
-      const data = await apiCall('/api/profile/onboarding', {
-        businessName: formData.businessName,
+      // 1) Save business profile fields directly to the user's row.
+      await patchSelf({
+        business_name: formData.businessName,
         address: formData.address,
+        business_address: formData.address,
         phone: formData.phone,
       });
 
-      // 2) Create/join the shop and link users.shop_id. This is REQUIRED:
-      //    without a shop_id, history + shop-scoped reports return nothing and
-      //    the user would be bounced back into onboarding. Only mark complete
-      //    once the shop is actually assigned.
+      // 2) Create/join the shop and link users.shop_id via the SECURITY DEFINER
+      //    RPC. REQUIRED: without a shop_id, history + shop-scoped reports return
+      //    nothing and the user is bounced back into onboarding. Only mark
+      //    onboarding complete once the shop is actually assigned.
       const shopId = await assignShop();
       if (!shopId) {
         setError('We could not link your shop. Please check the business name and try again.');
         return; // do NOT mark onboarding complete — user stays in onboarding
       }
 
-      const userUpdates: Record<string, any> = {
+      // 3) Mark onboarding complete now that the shop is linked.
+      await patchSelf({ shop_id: shopId, onboarding_completed: true });
+
+      mergeUser({
         shop_id: shopId,
         onboarding_completed: true,
-      };
-      if (data?.user) {
-        userUpdates.businessName = data.user.businessName;
-        userUpdates.address = data.user.address;
-        userUpdates.phone = data.user.phone;
-        userUpdates.businessAddress = data.user.businessAddress;
-      }
-      mergeUser(userUpdates);
+        businessName: formData.businessName,
+        address: formData.address,
+        businessAddress: formData.address,
+        phone: formData.phone,
+      });
     } catch (e: any) {
       setError(e?.message || 'Failed to complete setup. Please try again.');
     } finally {
