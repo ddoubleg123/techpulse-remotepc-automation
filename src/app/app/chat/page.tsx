@@ -1522,7 +1522,9 @@ function ChatPageInner() {
           'x-upsert': 'true',
         },
         body: _htmlContent,
-      }).catch(() => {});
+      }).then((r) => {
+        if (!r.ok) console.error('[report] storage upload failed', r.status);
+      }).catch((e) => console.error('[report] storage upload error', e));
 
       // 2) Insert case row into diagnostic_case_studies.
       fetch(SUPABASE_URL + '/rest/v1/diagnostic_case_studies', {
@@ -1556,7 +1558,9 @@ function ChatPageInner() {
           full_content: null,              // Gate: built on promotion only
           embedding: null,                 // Gate: generated on promotion only
         }),
-      }).catch(() => {});
+      }).then((r) => {
+        if (!r.ok) console.error('[report] case_studies insert failed', r.status);
+      }).catch((e) => console.error('[report] case_studies insert error', e));
 
       // 3) Upsert a diagnostic session row for shop-wide history (Recent Diagnostics).
       //    shop_id is resolved from the user's profile (auth sub == user_profiles.id),
@@ -1578,7 +1582,7 @@ function ChatPageInner() {
             );
             if (_emRes.ok) { const _er = await _emRes.json(); _email = (_er && _er[0] && _er[0].email) || _email; }
           } catch { /* email is best-effort */ }
-          await fetch(SUPABASE_URL + '/rest/v1/chat_sessions?on_conflict=session_id', {
+          const _csRes = await fetch(SUPABASE_URL + '/rest/v1/chat_sessions?on_conflict=session_id', {
             method: 'POST',
             headers: {
               'Authorization': 'Bearer ' + _userToken,
@@ -1598,7 +1602,8 @@ function ChatPageInner() {
               last_step: 'report',
             }),
           });
-      } catch { /* history write is best-effort; never break the report flow */ }
+          if (!_csRes.ok) console.error('[report] chat_sessions upsert failed', _csRes.status);
+      } catch (e) { console.error('[report] chat_sessions upsert error', e); }
     } catch { /* never let persistence errors break the report flow */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
