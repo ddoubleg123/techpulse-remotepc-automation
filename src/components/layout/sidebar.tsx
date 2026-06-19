@@ -76,7 +76,7 @@ export default function Sidebar() {
         {isAdmin && (
           <button
             onClick={() => window.open('/admin', '_blank', 'noopener,noreferrer')}
-            className="flex items-center gap-3 px-3 py-2.5 pl-9 rounded-lg text-sm font-medium w-full text-left text-[var(--text-secondary)] hover:bg-[var(--hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full text-left text-[var(--text-secondary)] hover:bg-[var(--hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
             title="Open the admin panel in a new window"
           >
             <Shield className="w-4 h-4 shrink-0" />
