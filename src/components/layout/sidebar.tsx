@@ -2,8 +2,9 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, MessageSquare, RefreshCw, FileText, Bell, Settings, Gift, LogOut, History } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, RefreshCw, FileText, Bell, Settings, Gift, LogOut, History, Shield, ExternalLink } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
+import { useIsAdmin } from '@/lib/useIsAdmin';
 
 const navItems = [
   { label: 'Dashboard', href: '/app', icon: LayoutDashboard },
@@ -24,6 +25,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, signOut } = useAuthStore();
+  const isAdmin = useIsAdmin();
 
   const handleSignOut = () => {
     // Clear auth state, then navigate to login. Explicit navigation ensures
@@ -68,6 +70,20 @@ export default function Sidebar() {
             </Link>
           );
         })}
+
+        {/* Admin Panel — visible only to admins. Opens the admin console in a
+            separate window so it sits alongside the regular dashboard. */}
+        {isAdmin && (
+          <button
+            onClick={() => window.open('/admin', '_blank', 'noopener,noreferrer')}
+            className="flex items-center gap-3 px-3 py-2.5 pl-9 rounded-lg text-sm font-medium w-full text-left text-[var(--text-secondary)] hover:bg-[var(--hover)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            title="Open the admin panel in a new window"
+          >
+            <Shield className="w-4 h-4 shrink-0" />
+            <span className="flex-1">Admin Panel</span>
+            <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-60" />
+          </button>
+        )}
       </nav>
 
       {/* User card */}
