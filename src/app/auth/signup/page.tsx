@@ -46,13 +46,21 @@ export default function SignupPage() {
     if (otp.length !== 6) return;
     setIsLoading(true); setError('');
     try {
-      const res = await fetch(SUPABASE_URL + '/auth/v1/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
-        body: JSON.stringify({ type: 'email', email, token: otp }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (res.ok && d.access_token) {
+      // Try the token types Supabase may issue (new vs existing email).
+      const types = ['email', 'signup', 'magiclink', 'recovery'];
+      let d: { access_token?: string; refresh_token?: string; msg?: string; error_description?: string } | null = null;
+      let lastErr = '';
+      for (const type of types) {
+        const res = await fetch(SUPABASE_URL + '/auth/v1/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+          body: JSON.stringify({ type, email, token: otp }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok && body.access_token) { d = body; break; }
+        lastErr = body.msg || body.error_description || '';
+      }
+      if (d && d.access_token) {
         let uid = '1';
         try { uid = JSON.parse(atob(d.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).sub || '1'; } catch { /* ignore */ }
         if (d.refresh_token) { try { localStorage.setItem('supabase-refresh-token', d.refresh_token); } catch { /* ignore */ } }
@@ -60,7 +68,7 @@ export default function SignupPage() {
         signIn({ id: uid, email, name: name || email.split('@')[0], hasPaymentMethodOnFile: false }, d.access_token);
         router.push('/app');
       } else {
-        setError(d.msg || d.error_description || 'Invalid code');
+        setError(lastErr || 'Invalid or expired code');
       }
     } catch { setError('Network error — please try again'); } finally { setIsLoading(false); }
   };

@@ -47,15 +47,26 @@ export default function LoginPage() {
     if (!otp) { setError('Please enter the code'); return; }
     setLoading(true); setError('');
     try {
-      // Verify the email OTP -> Supabase returns a real access_token (ES256 JWT)
-      // + refresh_token. Store both so the app can refresh and gate properly.
-      const res = await fetch(SUPABASE_URL + '/auth/v1/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
-        body: JSON.stringify({ type: 'email', email, token: otp }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (res.ok && d.access_token) {
+      // Supabase issues different OTP token "types" depending on whether the
+      // email already exists: a brand-new email gets a 'signup'/'email' token,
+      // an existing user gets a 'magiclink'/'recovery' token. The verify must
+      // use the matching type, so try the likely types in order until one
+      // returns a session. (Verifying with the wrong type returns otp_expired,
+      // which is why existing-user logins previously failed to register.)
+      const types = ['email', 'magiclink', 'recovery', 'signup'];
+      let d: { access_token?: string; refresh_token?: string; msg?: string; error_description?: string } | null = null;
+      let lastErr = '';
+      for (const type of types) {
+        const res = await fetch(SUPABASE_URL + '/auth/v1/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+          body: JSON.stringify({ type, email, token: otp }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok && body.access_token) { d = body; break; }
+        lastErr = body.msg || body.error_description || '';
+      }
+      if (d && d.access_token) {
         let uid = '1';
         try { uid = JSON.parse(atob(d.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).sub || '1'; } catch { /* ignore */ }
         if (d.refresh_token) { try { localStorage.setItem('supabase-refresh-token', d.refresh_token); } catch { /* ignore */ } }
@@ -63,7 +74,7 @@ export default function LoginPage() {
         signIn({ id: uid, email, name: email.split('@')[0], hasPaymentMethodOnFile: false }, d.access_token);
         router.push('/app');
       } else {
-        setError(d.msg || d.error_description || 'Invalid code');
+        setError(lastErr || 'Invalid or expired code');
       }
     } catch { setError('Network error — please try again'); } finally { setLoading(false); }
   };
