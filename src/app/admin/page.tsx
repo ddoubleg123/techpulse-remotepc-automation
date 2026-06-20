@@ -52,9 +52,12 @@ interface LoginActivityRow {
   id: string;
   email: string | null;
   last_sign_in_at: string | null;
+  last_active: string | null;
   provider: string | null;
   signed_up_at: string | null;
+  active_sessions: number | null;
   logged_in_today: boolean;
+  active_today: boolean;
 }
 
 // Admin-only login activity from auth.users (via SECURITY DEFINER RPC).
@@ -114,7 +117,7 @@ export default function AdminDashboard() {
   });
   const [recentTickets, setRecentTickets] = useState<AdminTicket[]>([]);
   const [recentUsers, setRecentUsers] = useState<AdminUserRow[]>([]);
-  const [loginsToday, setLoginsToday] = useState<number | null>(null);
+  const [activeToday, setActiveToday] = useState<number | null>(null);
   const [recentLogins, setRecentLogins] = useState<LoginActivityRow[]>([]);
 
   useEffect(() => {
@@ -135,8 +138,15 @@ export default function AdminDashboard() {
       setCounts({ users, subs, openTickets, shops });
       setRecentTickets(tickets);
       setRecentUsers(newUsers);
-      setLoginsToday(loginActivity.filter((r) => r.logged_in_today).length);
-      setRecentLogins(loginActivity.filter((r) => r.last_sign_in_at).slice(0, 6));
+      // "Active today" counts users with a login OR session activity today —
+      // captures people using the app even if they logged in earlier.
+      setActiveToday(loginActivity.filter((r) => r.active_today).length);
+      // Recent activity ordered by most recent of (last_active, last_sign_in_at).
+      setRecentLogins(
+        loginActivity
+          .filter((r) => r.last_active || r.last_sign_in_at)
+          .slice(0, 8)
+      );
     })();
     return () => { cancelled = true; };
   }, [token]);
@@ -144,7 +154,7 @@ export default function AdminDashboard() {
   const fmt = (n: number | null) => (n === null ? '—' : n.toLocaleString());
   const stats = [
     { name: 'Total Users', value: fmt(counts.users), icon: Users, color: 'bg-blue-500' },
-    { name: 'Logins Today', value: fmt(loginsToday), icon: Activity, color: 'bg-teal-500' },
+    { name: 'Active Today', value: fmt(activeToday), icon: Activity, color: 'bg-teal-500' },
     { name: 'Subscriptions', value: fmt(counts.subs), icon: UserCheck, color: 'bg-green-500' },
     { name: 'Open Tickets', value: fmt(counts.openTickets), icon: Ticket, color: 'bg-yellow-500' },
     { name: 'Shops', value: fmt(counts.shops), icon: DollarSign, color: 'bg-purple-500' },
@@ -281,37 +291,44 @@ export default function AdminDashboard() {
         </Card>
       </div>
 
-      {/* Recent Logins — sourced from auth.users (true sign-in activity) */}
+      {/* Recent Activity — sourced from auth.users + auth.sessions. Shows the
+          most recently active users (login or live session), not just fresh logins. */}
       <Card className="mt-6">
-        <CardHeader>
-          <h3 className="text-lg font-semibold text-gray-900">Recent Logins</h3>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
+          <span className="text-xs text-gray-400">last login &amp; last active</span>
         </CardHeader>
         <CardContent className="p-0">
           <div className="divide-y divide-gray-100">
             {recentLogins.length === 0 && (
-              <div className="p-4 text-sm text-gray-500">No login activity.</div>
+              <div className="p-4 text-sm text-gray-500">No activity yet.</div>
             )}
-            {recentLogins.map((r) => (
-              <div key={r.id} className="p-4 hover:bg-gray-50 flex items-center gap-3">
-                <Avatar name={r.email || 'User'} size="md" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900 truncate">{r.email || '—'}</p>
-                  <p className="text-sm text-gray-500">
-                    {r.provider === 'google' ? 'Google' : r.provider === 'email' ? 'Email OTP' : (r.provider || 'unknown')}
-                  </p>
-                </div>
-                <div className="text-right">
-                  {r.logged_in_today && (
-                    <Badge variant="success">Today</Badge>
-                  )}
-                  {r.last_sign_in_at && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      {formatRelativeTime(new Date(r.last_sign_in_at))}
+            {recentLogins.map((r) => {
+              const lastActive = r.last_active || r.last_sign_in_at;
+              return (
+                <div key={r.id} className="p-4 hover:bg-gray-50 flex items-center gap-3">
+                  <Avatar name={r.email || 'User'} size="md" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{r.email || '—'}</p>
+                    <p className="text-sm text-gray-500">
+                      {r.provider === 'google' ? 'Google' : r.provider === 'email' ? 'Email OTP' : (r.provider || 'unknown')}
+                      {r.last_sign_in_at ? ` · last login ${formatRelativeTime(new Date(r.last_sign_in_at))}` : ''}
                     </p>
-                  )}
+                  </div>
+                  <div className="text-right">
+                    {r.active_today && <Badge variant="success">Active today</Badge>}
+                    {lastActive && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        active {formatRelativeTime(new Date(lastActive))}
+                      </p>
+                    )}
+                    {(r.active_sessions ?? 0) > 0 && (
+                      <p className="text-[10px] text-gray-400">{r.active_sessions} active session{r.active_sessions === 1 ? '' : 's'}</p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>

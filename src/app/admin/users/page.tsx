@@ -18,8 +18,10 @@ interface Row {
   onboarding_completed: boolean | null;
   created_at: string | null;
   last_sign_in_at?: string | null;
+  last_active?: string | null;
   provider?: string | null;
   logged_in_today?: boolean;
+  active_today?: boolean;
 }
 
 const roleCls: Record<string, string> = {
@@ -58,12 +60,12 @@ export default function AdminUsersPage() {
       else {
         const userRows: Row[] = await res.json();
         // Merge login activity (from auth.users) by id.
-        let logins: Record<string, { last_sign_in_at: string | null; provider: string | null; logged_in_today: boolean }> = {};
+        let logins: Record<string, { last_sign_in_at: string | null; last_active: string | null; provider: string | null; logged_in_today: boolean; active_today: boolean }> = {};
         if (loginRes.ok) {
           const la = await loginRes.json();
           if (Array.isArray(la)) {
-            logins = Object.fromEntries(la.map((r: { id: string; last_sign_in_at: string | null; provider: string | null; logged_in_today: boolean }) =>
-              [r.id, { last_sign_in_at: r.last_sign_in_at, provider: r.provider, logged_in_today: r.logged_in_today }]));
+            logins = Object.fromEntries(la.map((r: { id: string; last_sign_in_at: string | null; last_active: string | null; provider: string | null; logged_in_today: boolean; active_today: boolean }) =>
+              [r.id, { last_sign_in_at: r.last_sign_in_at, last_active: r.last_active, provider: r.provider, logged_in_today: r.logged_in_today, active_today: r.active_today }]));
           }
         }
         setRows(userRows.map((u) => ({ ...u, ...(logins[u.id] || {}) })));
@@ -201,20 +203,21 @@ export default function AdminUsersPage() {
                   <span className={`px-2 py-1 rounded text-xs font-medium ${roleCls[r.role || ''] || 'bg-gray-100 text-gray-700'}`}>
                     {r.role || 'user'}
                   </span>
-                  {/* Last login (from auth.users) */}
-                  <div className="w-28 text-right shrink-0">
-                    {r.last_sign_in_at ? (
+                  {/* Activity (from auth.users + auth.sessions) */}
+                  <div className="w-32 text-right shrink-0">
+                    {(r.last_active || r.last_sign_in_at) ? (
                       <>
                         <div className="flex items-center justify-end gap-1">
-                          {r.logged_in_today && <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">Today</span>}
-                          <span className="text-xs text-gray-600">{formatRelativeTime(new Date(r.last_sign_in_at))}</span>
+                          {r.active_today && <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">Active today</span>}
+                          <span className="text-xs text-gray-600">{formatRelativeTime(new Date((r.last_active || r.last_sign_in_at) as string))}</span>
                         </div>
                         <span className="text-[10px] text-gray-400">
                           {r.provider === 'google' ? 'Google' : r.provider === 'email' ? 'Email OTP' : (r.provider || '')}
+                          {r.last_sign_in_at ? ` · login ${formatRelativeTime(new Date(r.last_sign_in_at))}` : ''}
                         </span>
                       </>
                     ) : (
-                      <span className="text-xs text-gray-300">never</span>
+                      <span className="text-xs text-gray-300">never signed in</span>
                     )}
                   </div>
                   {r.created_at && (
