@@ -174,8 +174,14 @@ export default function AdminDashboard() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
-            <Link href="/admin/tickets">
+            <Link href="/admin/diagnostics">
               <Button>
+                <Activity className="w-4 h-4 mr-2" />
+                Customer Diagnostics
+              </Button>
+            </Link>
+            <Link href="/admin/tickets">
+              <Button variant="outline">
                 <Ticket className="w-4 h-4 mr-2" />
                 Manage Tickets
               </Button>

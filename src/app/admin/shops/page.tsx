@@ -57,12 +57,16 @@ export default function ShopsPage() {
 
   useEffect(() => { load(); }, [load, token]);
 
-  const filtered = rows.filter((r) =>
-    !q.trim() || `${r.shop_name || ''} ${r.city || ''} ${r.state || ''} ${r.owner_name || ''}`.toLowerCase().includes(q.toLowerCase().trim())
-  );
+  const [noAccountOnly, setNoAccountOnly] = useState(false);
+
+  const filtered = rows.filter((r) => {
+    if (noAccountOnly && (r.member_count ?? 0) > 0) return false;
+    return !q.trim() || `${r.shop_name || ''} ${r.city || ''} ${r.state || ''} ${r.owner_name || ''}`.toLowerCase().includes(q.toLowerCase().trim());
+  });
 
   const active = rows.filter((r) => r.is_active).length;
   const paid = rows.filter((r) => ['active', 'past_due'].includes((r.sub_status || '').toLowerCase())).length;
+  const noAccount = rows.filter((r) => (r.member_count ?? 0) === 0).length;
 
   return (
     <div className="p-6">
@@ -79,6 +83,12 @@ export default function ShopsPage() {
           <span className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 font-medium">{rows.length} shops</span>
           <span className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 font-medium">{active} active</span>
           <span className="px-3 py-1.5 rounded-lg bg-green-100 text-green-700 font-medium">{paid} paid</span>
+          <button
+            onClick={() => setNoAccountOnly((v) => !v)}
+            className={`px-3 py-1.5 rounded-lg font-medium border ${noAccountOnly ? 'bg-amber-500 text-white border-amber-500' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}`}
+            title="Shops with no logged-in user account — prospects to convert">
+            {noAccount} without account{noAccountOnly ? ' (filtering)' : ''}
+          </button>
         </div>
 
         <div className="relative mb-4">
