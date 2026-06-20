@@ -127,7 +127,7 @@ export default function AdminDashboard() {
     (async () => {
       const [users, subs, openTickets, shops, tickets, newUsers, loginActivity] = await Promise.all([
         fetchCount('users', t),
-        fetchCount('subscriptions', t),
+        fetchCount('subscriptions', t, 'status=in.(active,past_due)'),
         fetchCount('support_tickets', t, 'status=eq.open'),
         fetchCount('shops', t),
         fetchRows<AdminTicket>('support_tickets?select=id,ticket_number,shop_name,complaint,status,priority,created_at&order=created_at.desc&limit=5', t),
@@ -160,7 +160,7 @@ export default function AdminDashboard() {
   const stats = [
     { name: 'Total Users', value: fmt(counts.users), icon: Users, color: 'bg-blue-500', href: '/admin/users', sub: 'all accounts' },
     { name: 'Active Users', value: fmt(activeUsers30d), icon: Activity, color: 'bg-teal-500', href: '/admin/active-users?days=30', sub: 'last 30 days' },
-    { name: 'Subscriptions', value: fmt(counts.subs), icon: UserCheck, color: 'bg-green-500', href: '/admin/subscriptions', sub: 'billing status' },
+    { name: 'Paying Customers', value: fmt(counts.subs), icon: UserCheck, color: 'bg-green-500', href: '/admin/subscriptions', sub: 'active subscriptions' },
     { name: 'Open Tickets', value: fmt(counts.openTickets), icon: Ticket, color: 'bg-yellow-500', href: '/admin/tickets', sub: 'support queue' },
     { name: 'Shops', value: fmt(counts.shops), icon: DollarSign, color: 'bg-purple-500', href: '/admin/shops', sub: 'all shops' },
   ];

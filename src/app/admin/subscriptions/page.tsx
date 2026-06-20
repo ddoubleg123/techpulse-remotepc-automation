@@ -79,9 +79,9 @@ export default function SubscriptionsPage() {
         )}
 
         <div className="flex items-center gap-3 mb-4 text-sm flex-wrap">
-          <span className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 font-medium">{rows.length} total</span>
-          <span className="px-3 py-1.5 rounded-lg bg-green-100 text-green-700 font-medium">{paid} paid</span>
-          <span className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 font-medium">{trial} on trial</span>
+          <span className="px-3 py-1.5 rounded-lg bg-green-100 text-green-700 font-medium">{paid} paying</span>
+          <span className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 font-medium">{trial} on trial (not paying)</span>
+          <span className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 font-medium">{rows.length} records total</span>
         </div>
 
         <div className="relative mb-4">
