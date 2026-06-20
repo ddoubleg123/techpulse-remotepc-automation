@@ -12,6 +12,7 @@ interface Sub {
   id: string;
   shop_id: string | null;
   shop_name: string | null;
+  contact_email: string | null;
   status: string | null;
   plan_type: string | null;
   current_period_end: string | null;
@@ -55,7 +56,7 @@ export default function SubscriptionsPage() {
   useEffect(() => { load(); }, [load, token]);
 
   const filtered = rows.filter((r) =>
-    !q.trim() || `${r.shop_name || ''} ${r.status || ''} ${r.plan_type || ''}`.toLowerCase().includes(q.toLowerCase().trim())
+    !q.trim() || `${r.shop_name || ''} ${r.contact_email || ''} ${r.status || ''} ${r.plan_type || ''}`.toLowerCase().includes(q.toLowerCase().trim())
   );
 
   const paid = rows.filter((r) => ['active', 'past_due'].includes((r.status || '').toLowerCase())).length;
@@ -70,7 +71,12 @@ export default function SubscriptionsPage() {
             <RefreshCw className={`w-4 h-4 text-gray-600 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Live from Stripe-synced subscription records</p>
+        <p className="text-sm text-gray-500 mb-4">Subscription records by shop · status reflects billing state</p>
+        {rows.length > 0 && rows.every((r) => !r.has_stripe) && (
+          <div className="p-3 mb-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+            None of these are linked to Stripe yet — they were seeded as trial records (all created at once on Jun 3). Real Stripe subscriptions will populate the Stripe link and renewal date once billing goes live through the connector.
+          </div>
+        )}
 
         <div className="flex items-center gap-3 mb-4 text-sm flex-wrap">
           <span className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 font-medium">{rows.length} total</span>
@@ -95,6 +101,7 @@ export default function SubscriptionsPage() {
               <div key={r.id} className="p-4 flex items-center gap-4 hover:bg-gray-50">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900 truncate">{r.shop_name || 'Unknown shop'}</p>
+                  <p className="text-sm text-gray-500 truncate">{r.contact_email || 'no email on file'}</p>
                   <p className="text-xs text-gray-400">
                     {r.plan_type || 'no plan'}
                     {r.created_at ? ` · started ${formatRelativeTime(new Date(r.created_at))}` : ''}
