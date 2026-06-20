@@ -108,16 +108,40 @@ function OnboardingGate() {
       return;
     }
 
-    fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(sub)}&select=onboarding_completed,shop_id`, {
+    fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(sub)}&select=onboarding_completed,shop_id,first_name,last_name,name,full_name,business_name,address,business_address,phone,photo_url`, {
       headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
     })
       .then(r => r.ok ? r.json() : null)
       .then(rows => {
         if (cancelled) return;
         const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
-        // Gate if we can read the row and it shows no shop / not completed.
-        // If the read fails (row null), do NOT gate — avoid locking users out on a transient error.
-        if (row) setNeedsOnboarding(!row.onboarding_completed || !row.shop_id);
+        // Gate if the account is missing ANY required info. Everything but email
+        // is collected/confirmed in onboarding. If the read fails (row null), do
+        // NOT gate — avoid locking users out on a transient error.
+        if (row) {
+          // Make the known values available to the modal so it pre-fills and the
+          // user only completes the gaps.
+          useAuthStore.setState((state: any) => ({
+            user: state.user ? {
+              ...state.user,
+              first_name: row.first_name ?? state.user.first_name,
+              last_name: row.last_name ?? state.user.last_name,
+              name: row.name ?? row.full_name ?? state.user.name,
+              business_name: row.business_name ?? state.user.business_name,
+              address: row.address ?? row.business_address ?? state.user.address,
+              phone: row.phone ?? state.user.phone,
+            } : state.user,
+          }));
+          const hasName = !!(row.first_name || row.name || row.full_name);
+          const incomplete =
+            !row.onboarding_completed ||
+            !row.shop_id ||
+            !hasName ||
+            !row.business_name ||
+            !row.address ||
+            !row.phone;
+          setNeedsOnboarding(incomplete);
+        }
         setLoaded(true);
       })
       .catch(() => { if (!cancelled) setLoaded(true); });

@@ -26,12 +26,15 @@ export default function OnboardingModal() {
   const user = useAuthStore((s: any) => s.user);
   const token = useAuthStore((s: any) => s.token);
   const [step, setStep] = useState(1);
+  // Pre-fill from whatever we already have on the account, so users with
+  // partial data only fill the gaps. Everything but email is editable.
+  const initialName: string = user?.name || user?.full_name || '';
   const [formData, setFormData] = useState<FormData>({
-    firstName: '',
-    lastName: '',
-    businessName: '',
-    address: '',
-    phone: '',
+    firstName: user?.first_name || initialName.split(' ')[0] || '',
+    lastName: user?.last_name || initialName.split(' ').slice(1).join(' ') || '',
+    businessName: user?.business_name || user?.shop_name || '',
+    address: user?.address || user?.business_address || '',
+    phone: user?.phone || '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -254,6 +257,17 @@ export default function OnboardingModal() {
             <h2 className="text-2xl font-bold mb-1">About you</h2>
             <p className="text-gray-600 mb-6">Tell us a bit about yourself</p>
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={user?.email || ''}
+                  disabled
+                  readOnly
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
+                />
+                <p className="text-xs text-gray-400 mt-1">Your account email can&apos;t be changed here.</p>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">First name</label>
                 <input
