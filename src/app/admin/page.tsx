@@ -117,7 +117,7 @@ export default function AdminDashboard() {
   });
   const [recentTickets, setRecentTickets] = useState<AdminTicket[]>([]);
   const [recentUsers, setRecentUsers] = useState<AdminUserRow[]>([]);
-  const [activeToday, setActiveToday] = useState<number | null>(null);
+  const [activeUsers30d, setActiveUsers30d] = useState<number | null>(null);
   const [recentLogins, setRecentLogins] = useState<LoginActivityRow[]>([]);
 
   useEffect(() => {
@@ -138,9 +138,14 @@ export default function AdminDashboard() {
       setCounts({ users, subs, openTickets, shops });
       setRecentTickets(tickets);
       setRecentUsers(newUsers);
-      // "Active today" counts users with a login OR session activity today —
-      // captures people using the app even if they logged in earlier.
-      setActiveToday(loginActivity.filter((r) => r.active_today).length);
+      // "Active Users" = signed in (or session-active) within the last 30 days.
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      setActiveUsers30d(
+        loginActivity.filter((r) => {
+          const t = r.last_active || r.last_sign_in_at;
+          return t && new Date(t).getTime() >= cutoff;
+        }).length
+      );
       // Recent activity ordered by most recent of (last_active, last_sign_in_at).
       setRecentLogins(
         loginActivity
@@ -153,11 +158,11 @@ export default function AdminDashboard() {
 
   const fmt = (n: number | null) => (n === null ? '—' : n.toLocaleString());
   const stats = [
-    { name: 'Total Users', value: fmt(counts.users), icon: Users, color: 'bg-blue-500' },
-    { name: 'Active Today', value: fmt(activeToday), icon: Activity, color: 'bg-teal-500' },
-    { name: 'Subscriptions', value: fmt(counts.subs), icon: UserCheck, color: 'bg-green-500' },
-    { name: 'Open Tickets', value: fmt(counts.openTickets), icon: Ticket, color: 'bg-yellow-500' },
-    { name: 'Shops', value: fmt(counts.shops), icon: DollarSign, color: 'bg-purple-500' },
+    { name: 'Total Users', value: fmt(counts.users), icon: Users, color: 'bg-blue-500', href: '/admin/users' },
+    { name: 'Active Users', value: fmt(activeUsers30d), icon: Activity, color: 'bg-teal-500', href: '/admin/active-users?days=30', sub: 'last 30 days' },
+    { name: 'Subscriptions', value: fmt(counts.subs), icon: UserCheck, color: 'bg-green-500', href: '/admin/active-users?days=30' },
+    { name: 'Open Tickets', value: fmt(counts.openTickets), icon: Ticket, color: 'bg-yellow-500', href: '/admin/tickets' },
+    { name: 'Shops', value: fmt(counts.shops), icon: DollarSign, color: 'bg-purple-500', href: undefined },
   ];
 
   return (
@@ -193,21 +198,27 @@ export default function AdminDashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
-        {stats.map((stat) => (
-          <Card key={stat.name}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500">{stat.name}</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-1">{stat.value}</p>
+        {stats.map((stat) => {
+          const inner = (
+            <Card className={stat.href ? 'cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300' : ''}>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500">{stat.name}</p>
+                    <p className="text-3xl font-bold text-gray-900 mt-1">{stat.value}</p>
+                    {stat.sub && <p className="text-[11px] text-gray-400 mt-0.5">{stat.sub}</p>}
+                  </div>
+                  <div className={`p-3 rounded-xl ${stat.color} text-white`}>
+                    <stat.icon className="w-6 h-6" />
+                  </div>
                 </div>
-                <div className={`p-3 rounded-xl ${stat.color} text-white`}>
-                  <stat.icon className="w-6 h-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+          return stat.href
+            ? <Link key={stat.name} href={stat.href} className="block">{inner}</Link>
+            : <div key={stat.name}>{inner}</div>;
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

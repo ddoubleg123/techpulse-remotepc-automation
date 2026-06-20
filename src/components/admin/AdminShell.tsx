@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Zap, Users, Ticket, LogOut, BarChart3 } from 'lucide-react';
+import { Zap, Users, Ticket, LogOut, BarChart3, Activity } from 'lucide-react';
 import { Avatar } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 
 const NAV = [
   { icon: BarChart3, label: 'Dashboard', href: '/admin' },
   { icon: Users, label: 'Users', href: '/admin/users' },
+  { icon: Activity, label: 'Active Users', href: '/admin/active-users' },
   { icon: Ticket, label: 'Tickets', href: '/admin/tickets' },
 ];
 
