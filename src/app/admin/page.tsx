@@ -158,11 +158,11 @@ export default function AdminDashboard() {
 
   const fmt = (n: number | null) => (n === null ? '—' : n.toLocaleString());
   const stats = [
-    { name: 'Total Users', value: fmt(counts.users), icon: Users, color: 'bg-blue-500', href: '/admin/users' },
+    { name: 'Total Users', value: fmt(counts.users), icon: Users, color: 'bg-blue-500', href: '/admin/users', sub: 'all accounts' },
     { name: 'Active Users', value: fmt(activeUsers30d), icon: Activity, color: 'bg-teal-500', href: '/admin/active-users?days=30', sub: 'last 30 days' },
-    { name: 'Subscriptions', value: fmt(counts.subs), icon: UserCheck, color: 'bg-green-500', href: '/admin/active-users?days=30' },
-    { name: 'Open Tickets', value: fmt(counts.openTickets), icon: Ticket, color: 'bg-yellow-500', href: '/admin/tickets' },
-    { name: 'Shops', value: fmt(counts.shops), icon: DollarSign, color: 'bg-purple-500', href: undefined },
+    { name: 'Subscriptions', value: fmt(counts.subs), icon: UserCheck, color: 'bg-green-500', href: '/admin/subscriptions', sub: 'billing status' },
+    { name: 'Open Tickets', value: fmt(counts.openTickets), icon: Ticket, color: 'bg-yellow-500', href: '/admin/tickets', sub: 'support queue' },
+    { name: 'Shops', value: fmt(counts.shops), icon: DollarSign, color: 'bg-purple-500', href: '/admin/shops', sub: 'all shops' },
   ];
 
   return (
@@ -197,18 +197,18 @@ export default function AdminDashboard() {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6 items-stretch">
         {stats.map((stat) => {
           const inner = (
-            <Card className={stat.href ? 'cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300' : ''}>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
+            <Card className={`h-full ${stat.href ? 'cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300' : ''}`}>
+              <CardContent className="p-6 h-full">
+                <div className="flex items-start justify-between h-full">
+                  <div className="flex flex-col">
                     <p className="text-sm text-gray-500">{stat.name}</p>
                     <p className="text-3xl font-bold text-gray-900 mt-1">{stat.value}</p>
-                    {stat.sub && <p className="text-[11px] text-gray-400 mt-0.5">{stat.sub}</p>}
+                    <p className="text-[11px] text-gray-400 mt-0.5">{stat.sub}</p>
                   </div>
-                  <div className={`p-3 rounded-xl ${stat.color} text-white`}>
+                  <div className={`p-3 rounded-xl ${stat.color} text-white shrink-0`}>
                     <stat.icon className="w-6 h-6" />
                   </div>
                 </div>
@@ -216,8 +216,8 @@ export default function AdminDashboard() {
             </Card>
           );
           return stat.href
-            ? <Link key={stat.name} href={stat.href} className="block">{inner}</Link>
-            : <div key={stat.name}>{inner}</div>;
+            ? <Link key={stat.name} href={stat.href} className="block h-full">{inner}</Link>
+            : <div key={stat.name} className="h-full">{inner}</div>;
         })}
       </div>
 
