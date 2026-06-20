@@ -4,49 +4,46 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { RefreshCw, Search, FileText, MessageSquare, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
-import { formatRelativeTime } from '@/lib/utils';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-interface Diag {
+interface Activity {
   id: string;
   occurred_on: string | null;
+  customer_id: string | null;
+  user_email: string | null;
   shop_id: string | null;
   shop_name: string | null;
-  technician_name: string | null;
-  year: number | null;
-  make: string | null;
-  model: string | null;
-  engine: string | null;
+  vehicle_year: number | null;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  vehicle_engine: string | null;
   vin: string | null;
+  mileage: number | null;
   dtc_codes: string[] | null;
   complaint: string | null;
-  diagnosis_outcome: string | null;
-  has_scan: boolean;
+  status: string | null;
   has_chat: boolean;
-  msg_count: number;
-  source: string | null;
   created_at: string | null;
 }
 
-interface DiagDetail {
+interface CaseDetail {
   id: string;
-  shop_name: string | null;
-  technician_name: string | null;
   occurred_on: string | null;
-  year: number | null; make: string | null; model: string | null; engine: string | null; vin: string | null;
+  user_email: string | null;
+  shop_name: string | null;
+  vehicle_year: number | null; vehicle_make: string | null; vehicle_model: string | null;
+  vehicle_engine: string | null; vin: string | null; mileage: number | null;
   dtc_codes: string[] | null;
   complaint: string | null;
-  symptoms: string | null;
-  diagnostic_findings: string | null;
-  diagnosis: string | null;
-  repair_recommendation: string | null;
-  conclusion: string | null;
-  source_file: string | null;
-  full_content: string | null;
-  diagnosis_pdf_url: string | null;
-  messages: { role: string; content: string }[] | null;
+  initial_diagnosis: string | null;
+  final_diagnosis: string | null;
+  repair_performed: string | null;
+  parts_replaced: string | null;
+  status: string | null;
+  diagnostic_data: unknown;
+  conversation_log: string | null;
 }
 
 const RANGES = [
@@ -57,8 +54,23 @@ const RANGES = [
   { label: 'All time', days: 0 },
 ];
 
-function vehicleLabel(d: { year: number | null; make: string | null; model: string | null }) {
-  return [d.year, d.make, d.model].filter(Boolean).join(' ') || 'Unknown vehicle';
+function vehicleLabel(d: { vehicle_year: number | null; vehicle_make: string | null; vehicle_model: string | null }) {
+  return [d.vehicle_year, d.vehicle_make, d.vehicle_model].filter(Boolean).join(' ') || 'Unknown vehicle';
+}
+
+function statusChip(s: string | null): { label: string; cls: string } {
+  const v = (s || '').toLowerCase();
+  if (v === 'completed') return { label: 'Completed', cls: 'bg-green-100 text-green-700' };
+  if (v === 'in_progress') return { label: 'In progress', cls: 'bg-amber-100 text-amber-700' };
+  if (v) return { label: v, cls: 'bg-gray-100 text-gray-700' };
+  return { label: '—', cls: 'bg-gray-100 text-gray-500' };
+}
+
+function customerLabel(a: Activity): string {
+  if (a.shop_name && a.user_email) return `${a.shop_name} · ${a.user_email}`;
+  if (a.shop_name) return a.shop_name;
+  if (a.user_email) return a.user_email;
+  return 'Unidentified customer';
 }
 
 function DiagnosticsInner() {
@@ -70,18 +82,17 @@ function DiagnosticsInner() {
   const fromParam = searchParams.get('from') || '';
   const toParam = searchParams.get('to') || '';
 
-  const [rows, setRows] = useState<Diag[]>([]);
+  const [rows, setRows] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
-  const [openShops, setOpenShops] = useState<Record<string, boolean>>({});
-  const [detail, setDetail] = useState<DiagDetail | null>(null);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [detail, setDetail] = useState<CaseDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // Resolve the active window: explicit from/to wins, else days preset.
   const computeRange = useCallback((): { from: string | null; to: string | null } => {
     if (fromParam || toParam) return { from: fromParam || null, to: toParam || null };
-    if (!days || days <= 0) return { from: null, to: null }; // all time
+    if (!days || days <= 0) return { from: null, to: null };
     const to = new Date();
     const from = new Date(Date.now() - days * 86400000);
     return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
@@ -93,12 +104,12 @@ function DiagnosticsInner() {
       const t = useAuthStore.getState().token;
       if (!t || !SUPABASE_ANON_KEY) { setLoading(false); return; }
       const { from, to } = computeRange();
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_diagnostics`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_customer_activity`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ p_from: from, p_to: to, p_customers_only: true }),
+        body: JSON.stringify({ p_from: from, p_to: to }),
       });
-      if (!res.ok) { setErr('Could not load diagnostics.'); setRows([]); }
+      if (!res.ok) { setErr('Could not load customer activity.'); setRows([]); }
       else { const d = await res.json(); setRows(Array.isArray(d) ? d : []); }
     } catch { setErr('Network error.'); setRows([]); }
     finally { setLoading(false); }
@@ -110,7 +121,7 @@ function DiagnosticsInner() {
     setDetailLoading(true); setDetail(null);
     try {
       const t = useAuthStore.getState().token;
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_diagnostic_detail`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_customer_case_detail`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({ p_id: id }),
@@ -129,22 +140,21 @@ function DiagnosticsInner() {
     router.push(`/admin/diagnostics?${p.toString()}`);
   };
 
-  // Filter + group by shop, then vehicle.
   const filtered = rows.filter((r) => {
     if (!q.trim()) return true;
-    const hay = `${r.shop_name || ''} ${vehicleLabel(r)} ${r.vin || ''} ${(r.dtc_codes || []).join(' ')} ${r.complaint || ''}`.toLowerCase();
+    const hay = `${customerLabel(r)} ${vehicleLabel(r)} ${r.vin || ''} ${(r.dtc_codes || []).join(' ')} ${r.complaint || ''}`.toLowerCase();
     return hay.includes(q.toLowerCase().trim());
   });
 
-  const byShop = filtered.reduce<Record<string, Diag[]>>((acc, r) => {
-    const k = r.shop_name || 'Unassigned';
+  // Group by customer (shop + email).
+  const groups = filtered.reduce<Record<string, Activity[]>>((acc, r) => {
+    const k = customerLabel(r);
     (acc[k] ||= []).push(r);
     return acc;
   }, {});
-  const shopNames = Object.keys(byShop).sort();
+  const groupNames = Object.keys(groups).sort();
 
-  const totalScans = rows.filter((r) => r.has_scan).length;
-  const totalChats = rows.filter((r) => r.has_chat).length;
+  const withChat = rows.filter((r) => r.has_chat).length;
 
   return (
     <div className="p-6">
@@ -155,9 +165,8 @@ function DiagnosticsInner() {
             <RefreshCw className={`w-4 h-4 text-gray-600 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Diagnostics run for customer shops · grouped by shop and vehicle</p>
+        <p className="text-sm text-gray-500 mb-4">What customers actually submit — their diagnostic sessions, grouped by customer and vehicle</p>
 
-        {/* Range selector */}
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           {RANGES.map((r) => {
             const active = !fromParam && !toParam && days === r.days;
@@ -185,61 +194,57 @@ function DiagnosticsInner() {
           </button>
         </div>
 
-        {/* Summary */}
         <div className="flex items-center gap-3 mb-4 text-sm flex-wrap">
           <span className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 font-medium">{rows.length} diagnostics</span>
-          <span className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 font-medium">{shopNames.length} shops</span>
-          <span className="px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 font-medium">{totalScans} with scan</span>
-          <span className="px-3 py-1.5 rounded-lg bg-teal-100 text-teal-700 font-medium">{totalChats} with chat</span>
+          <span className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 font-medium">{groupNames.length} customers</span>
+          <span className="px-3 py-1.5 rounded-lg bg-teal-100 text-teal-700 font-medium">{withChat} with chat</span>
         </div>
 
-        {/* Search */}
         <div className="relative mb-4">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by shop, vehicle, VIN, DTC, complaint..."
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by customer, vehicle, VIN, DTC, complaint..."
             className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm" />
         </div>
 
         {err && <div className="p-3 mb-4 rounded-lg bg-red-50 text-red-700 text-sm">{err}</div>}
 
         {loading && rows.length === 0 && <div className="p-6 text-sm text-gray-500">Loading…</div>}
-        {!loading && shopNames.length === 0 && <div className="p-6 text-sm text-gray-500 bg-white rounded-xl border border-gray-200">No customer diagnostics in this period.</div>}
+        {!loading && groupNames.length === 0 && <div className="p-6 text-sm text-gray-500 bg-white rounded-xl border border-gray-200">No customer diagnostics in this period.</div>}
 
-        {/* Grouped by shop */}
         <div className="space-y-3">
-          {shopNames.map((shop) => {
-            const items = byShop[shop];
-            const isOpen = openShops[shop] ?? true;
+          {groupNames.map((name) => {
+            const items = groups[name];
+            const isOpen = openGroups[name] ?? true;
             return (
-              <div key={shop} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <button onClick={() => setOpenShops((s) => ({ ...s, [shop]: !isOpen }))}
+              <div key={name} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <button onClick={() => setOpenGroups((s) => ({ ...s, [name]: !isOpen }))}
                   className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left">
-                  <div className="flex items-center gap-2">
-                    {isOpen ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                    <span className="font-semibold text-gray-900">{shop}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isOpen ? <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />}
+                    <span className="font-semibold text-gray-900 truncate">{name}</span>
                   </div>
-                  <span className="text-xs text-gray-500">{items.length} diagnostic{items.length === 1 ? '' : 's'}</span>
+                  <span className="text-xs text-gray-500 shrink-0">{items.length} diagnostic{items.length === 1 ? '' : 's'}</span>
                 </button>
                 {isOpen && (
                   <div className="divide-y divide-gray-100 border-t border-gray-100">
-                    {items.map((r) => (
-                      <button key={r.id} onClick={() => openDetail(r.id)}
-                        className="w-full p-4 pl-10 flex items-center gap-3 hover:bg-blue-50/40 text-left">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 truncate">{vehicleLabel(r)}{r.engine ? ` · ${r.engine}` : ''}</p>
-                          <p className="text-xs text-gray-500 truncate">
-                            {(r.dtc_codes && r.dtc_codes.length) ? r.dtc_codes.join(', ') + ' · ' : ''}
-                            {r.complaint || 'No complaint recorded'}
-                          </p>
-                          <p className="text-[10px] text-gray-400">
-                            {r.occurred_on || ''}{r.technician_name ? ` · ${r.technician_name}` : ''}{r.source ? ` · ${r.source}` : ''}
-                          </p>
-                        </div>
-                        {r.has_scan && <span className="flex items-center gap-1 text-[11px] text-purple-600 shrink-0"><FileText className="w-3.5 h-3.5" />scan</span>}
-                        {r.has_chat && <span className="flex items-center gap-1 text-[11px] text-teal-600 shrink-0"><MessageSquare className="w-3.5 h-3.5" />{r.msg_count}</span>}
-                        {r.diagnosis_outcome && <span className="text-[11px] text-gray-500 shrink-0 w-20 text-right truncate">{r.diagnosis_outcome}</span>}
-                      </button>
-                    ))}
+                    {items.map((r) => {
+                      const c = statusChip(r.status);
+                      return (
+                        <button key={r.id} onClick={() => openDetail(r.id)}
+                          className="w-full p-4 pl-10 flex items-center gap-3 hover:bg-blue-50/40 text-left">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 truncate">{vehicleLabel(r)}{r.vehicle_engine ? ` · ${r.vehicle_engine}` : ''}</p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {(r.dtc_codes && r.dtc_codes.length) ? r.dtc_codes.join(', ') + ' · ' : ''}
+                              {r.complaint || 'No complaint recorded'}
+                            </p>
+                            <p className="text-[10px] text-gray-400">{r.occurred_on || ''}</p>
+                          </div>
+                          {r.has_chat && <span className="flex items-center gap-1 text-[11px] text-teal-600 shrink-0"><MessageSquare className="w-3.5 h-3.5" />chat</span>}
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium shrink-0 w-24 text-center ${c.cls}`}>{c.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -248,7 +253,6 @@ function DiagnosticsInner() {
         </div>
       </div>
 
-      {/* Detail drawer */}
       {(detail || detailLoading) && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={() => { setDetail(null); }}>
           <div className="w-full max-w-2xl h-full bg-white shadow-xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -260,11 +264,11 @@ function DiagnosticsInner() {
             {detail && (
               <div className="p-5 space-y-5">
                 <div>
-                  <p className="text-lg font-semibold text-gray-900">{vehicleLabel(detail)}{detail.engine ? ` · ${detail.engine}` : ''}</p>
+                  <p className="text-lg font-semibold text-gray-900">{vehicleLabel(detail)}{detail.vehicle_engine ? ` · ${detail.vehicle_engine}` : ''}</p>
                   <p className="text-sm text-gray-500">
-                    {detail.shop_name || 'Unassigned'}{detail.technician_name ? ` · ${detail.technician_name}` : ''}{detail.occurred_on ? ` · ${detail.occurred_on}` : ''}
+                    {detail.shop_name || 'No shop'}{detail.user_email ? ` · ${detail.user_email}` : ''}{detail.occurred_on ? ` · ${detail.occurred_on}` : ''}
                   </p>
-                  {detail.vin && <p className="text-xs text-gray-400 mt-0.5">VIN: {detail.vin}</p>}
+                  {detail.vin && <p className="text-xs text-gray-400 mt-0.5">VIN: {detail.vin}{detail.mileage ? ` · ${detail.mileage.toLocaleString()} mi` : ''}</p>}
                   {detail.dtc_codes && detail.dtc_codes.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">
                       {detail.dtc_codes.map((c, i) => <span key={i} className="px-2 py-0.5 rounded bg-gray-100 text-xs text-gray-700">{c}</span>)}
@@ -273,44 +277,25 @@ function DiagnosticsInner() {
                 </div>
 
                 {detail.complaint && <Section title="Complaint" body={detail.complaint} />}
-                {detail.symptoms && <Section title="Symptoms" body={detail.symptoms} />}
+                {detail.initial_diagnosis && <Section title="Initial diagnosis" body={detail.initial_diagnosis} />}
+                {detail.final_diagnosis && <Section title="Final diagnosis" body={detail.final_diagnosis} />}
+                {detail.repair_performed && <Section title="Repair performed" body={detail.repair_performed} />}
+                {detail.parts_replaced && <Section title="Parts replaced" body={detail.parts_replaced} />}
 
-                {/* Scan / uploaded content */}
-                {(detail.source_file || detail.full_content) && (
+                {/* Scan / submitted data */}
+                {detail.diagnostic_data != null && (
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-1"><FileText className="w-4 h-4 text-purple-600" />Scan / uploaded data</h3>
-                    {detail.source_file && <p className="text-xs text-gray-400 mb-1">Source: {detail.source_file}</p>}
-                    {detail.full_content && (
-                      <pre className="text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 whitespace-pre-wrap max-h-72 overflow-y-auto text-gray-700">{detail.full_content}</pre>
-                    )}
+                    <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-1"><FileText className="w-4 h-4 text-purple-600" />Submitted scan data</h3>
+                    <pre className="text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 whitespace-pre-wrap max-h-72 overflow-y-auto text-gray-700">{JSON.stringify(detail.diagnostic_data, null, 2)}</pre>
                   </div>
                 )}
-
-                {detail.diagnostic_findings && <Section title="Findings" body={detail.diagnostic_findings} />}
-                {detail.diagnosis && <Section title="Diagnosis" body={detail.diagnosis} />}
-                {detail.repair_recommendation && <Section title="Repair recommendation" body={detail.repair_recommendation} />}
-                {detail.conclusion && <Section title="Conclusion" body={detail.conclusion} />}
 
                 {/* Chat history */}
-                {detail.messages && Array.isArray(detail.messages) && detail.messages.length > 0 && (
+                {detail.conversation_log && detail.conversation_log.trim() !== '' && (
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-1"><MessageSquare className="w-4 h-4 text-teal-600" />Chat history</h3>
-                    <div className="space-y-2">
-                      {detail.messages.map((m, i) => (
-                        <div key={i} className={`p-3 rounded-lg text-sm ${m.role === 'user' ? 'bg-blue-50 text-gray-800' : 'bg-gray-100 text-gray-700'}`}>
-                          <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">{m.role === 'user' ? 'Technician' : 'Synth'}</p>
-                          <p className="whitespace-pre-wrap">{m.content}</p>
-                        </div>
-                      ))}
-                    </div>
+                    <pre className="text-sm bg-gray-50 border border-gray-200 rounded-lg p-3 whitespace-pre-wrap max-h-[28rem] overflow-y-auto text-gray-700">{detail.conversation_log}</pre>
                   </div>
-                )}
-
-                {detail.diagnosis_pdf_url && (
-                  <a href={detail.diagnosis_pdf_url} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
-                    <FileText className="w-4 h-4" />View diagnosis PDF
-                  </a>
                 )}
               </div>
             )}
