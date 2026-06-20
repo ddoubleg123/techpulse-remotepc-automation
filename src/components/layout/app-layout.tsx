@@ -108,7 +108,7 @@ function OnboardingGate() {
       return;
     }
 
-    fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(sub)}&select=onboarding_completed,shop_id,first_name,last_name,name,full_name,business_name,address,business_address,phone,photo_url`, {
+    fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(sub)}&select=role,onboarding_completed,shop_id,first_name,last_name,name,full_name,business_name,address,business_address,phone,photo_url`, {
       headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
     })
       .then(r => r.ok ? r.json() : null)
@@ -119,6 +119,14 @@ function OnboardingGate() {
         // is collected/confirmed in onboarding. If the read fails (row null), do
         // NOT gate — avoid locking users out on a transient error.
         if (row) {
+          // Admins and developers are internal accounts, not shop customers —
+          // they never go through customer onboarding.
+          const role = (row.role || '').toLowerCase();
+          if (role === 'admin' || role === 'developer') {
+            setNeedsOnboarding(false);
+            setLoaded(true);
+            return;
+          }
           // Make the known values available to the modal so it pre-fills and the
           // user only completes the gaps.
           useAuthStore.setState((state: any) => ({
