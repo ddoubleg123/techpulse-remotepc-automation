@@ -13,11 +13,19 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
+  const [resendIn, setResendIn] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   // Already logged in -> go to app
   useEffect(() => { if (user) router.push('/app'); }, [user, router]);
+
+  // Resend cooldown ticker
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
 
   // Google sign-in uses Supabase OAuth (implicit flow). The access_token comes
   // back as a hash fragment and is handled by AppLayout, which then routes here.
@@ -35,10 +43,31 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
         body: JSON.stringify({ email, create_user: true }),
       });
-      if (res.ok) { setOtpSent(true); }
+      if (res.ok) { setOtpSent(true); setResendIn(30); }
       else {
         const d = await res.json().catch(() => ({}));
         setError(d.msg || d.error_description || 'Failed to send code');
+      }
+    } catch { setError('Network error — please try again'); } finally { setLoading(false); }
+  };
+
+  const handleResend = async () => {
+    if (resendIn > 0 || loading) return;
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch(SUPABASE_URL + '/auth/v1/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ email, create_user: true }),
+      });
+      if (res.ok) { setResendIn(30); }
+      else {
+        const d = await res.json().catch(() => ({}));
+        // Surface rate-limit wait time if Supabase returns one.
+        const m = (d.msg || '').match(/after (\d+) seconds/);
+        if (m) setResendIn(parseInt(m[1], 10));
+        setError(d.msg || d.error_description || 'Could not resend code');
       }
     } catch { setError('Network error — please try again'); } finally { setLoading(false); }
   };
@@ -119,8 +148,11 @@ export default function LoginPage() {
           </>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 12 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 4 }}>
               OTP sent to <strong style={{ color: 'var(--text-1)' }}>{email}</strong>
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12 }}>
+              It can take a minute to arrive — check your spam folder if you don&apos;t see it.
             </p>
             <input type="text" placeholder="6-digit OTP" value={otp} maxLength={6}
               onChange={e => { setOtp(e.target.value); setError(''); }}
@@ -129,6 +161,10 @@ export default function LoginPage() {
             <button onClick={handleVerifyOtp} disabled={loading}
               style={{ ...primaryBtn, marginBottom: 10, opacity: loading ? 0.7 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}>
               {loading ? 'Verifying...' : 'Sign In'}
+            </button>
+            <button onClick={handleResend} disabled={resendIn > 0 || loading}
+              style={{ width: '100%', padding: '10px', borderRadius: 12, marginBottom: 10, background: 'transparent', border: 'none', color: resendIn > 0 ? 'var(--text-3)' : 'var(--accent, #0077ff)', fontSize: 13, fontWeight: 600, cursor: resendIn > 0 || loading ? 'not-allowed' : 'pointer' }}>
+              {resendIn > 0 ? `Resend code in ${resendIn}s` : "Didn't get it? Resend code"}
             </button>
             <button onClick={() => { setOtpSent(false); setOtp(''); setError(''); }}
               style={{ width: '100%', padding: '10px', borderRadius: 12, marginBottom: 20, background: 'transparent', border: '1px solid var(--border-input)', color: 'var(--text-2)', fontSize: 13, cursor: 'pointer' }}>
