@@ -148,12 +148,16 @@ export default function LoginPage() {
           </>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 4 }}>
-              OTP sent to <strong style={{ color: 'var(--text-1)' }}>{email}</strong>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 12 }}>
+              We sent a 6-digit code to <strong style={{ color: 'var(--text-1)' }}>{email}</strong>
             </p>
-            <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12 }}>
-              It can take a minute to arrive — check your spam folder if you don&apos;t see it.
-            </p>
+            <div style={{ display: 'flex', gap: 8, padding: '10px 12px', marginBottom: 16, borderRadius: 10, background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              <span style={{ fontSize: 15, lineHeight: '20px' }}>📬</span>
+              <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-2)', margin: 0 }}>
+                <strong style={{ color: 'var(--text-1)' }}>Don&apos;t see it? Check your spam/junk folder.</strong>{' '}
+                If it&apos;s there, mark it &ldquo;Not spam&rdquo; so future codes reach your inbox. It can take a minute to arrive.
+              </p>
+            </div>
             <input type="text" placeholder="6-digit OTP" value={otp} maxLength={6}
               onChange={e => { setOtp(e.target.value); setError(''); }}
               onKeyDown={e => e.key === 'Enter' && handleVerifyOtp()}

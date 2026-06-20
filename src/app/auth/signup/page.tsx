@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Zap, Mail, Phone, User } from 'lucide-react';
@@ -21,6 +21,14 @@ export default function SignupPage() {
   const [referralCode, setReferralCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resendIn, setResendIn] = useState(0);
+
+  // Resend cooldown ticker
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
 
   const handleCreateAccount = async () => {
     if (!name || !email) { setError('Please enter your name and email'); return; }
@@ -34,10 +42,30 @@ export default function SignupPage() {
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
         body: JSON.stringify({ email, create_user: true, data: { full_name: name, phone } }),
       });
-      if (res.ok) { setStep('verify'); }
+      if (res.ok) { setStep('verify'); setResendIn(30); }
       else {
         const d = await res.json().catch(() => ({}));
         setError(d.msg || d.error_description || 'Could not send verification code');
+      }
+    } catch { setError('Network error — please try again'); } finally { setIsLoading(false); }
+  };
+
+  const handleResend = async () => {
+    if (resendIn > 0 || isLoading) return;
+    setError('');
+    setIsLoading(true);
+    try {
+      const res = await fetch(SUPABASE_URL + '/auth/v1/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ email, create_user: true, data: { full_name: name, phone } }),
+      });
+      if (res.ok) { setResendIn(30); }
+      else {
+        const d = await res.json().catch(() => ({}));
+        const m = (d.msg || '').match(/after (\d+) seconds/);
+        if (m) setResendIn(parseInt(m[1], 10));
+        setError(d.msg || d.error_description || 'Could not resend code');
       }
     } catch { setError('Network error — please try again'); } finally { setIsLoading(false); }
   };
@@ -208,6 +236,13 @@ export default function SignupPage() {
                 <p className="text-sm text-gray-500 mt-2">
                   We sent a code to {email}
                 </p>
+                <div className="flex gap-2 mt-3 p-3 rounded-lg" style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                  <span className="text-base leading-5">📬</span>
+                  <p className="text-xs leading-relaxed text-gray-600 m-0">
+                    <strong className="text-gray-900">Don&apos;t see it? Check your spam/junk folder.</strong>{' '}
+                    If it&apos;s there, mark it &ldquo;Not spam&rdquo; so future codes reach your inbox.
+                  </p>
+                </div>
                 <Button
                   className="w-full mt-4"
                   onClick={handleVerifyOTP}
@@ -217,8 +252,15 @@ export default function SignupPage() {
                   Verify & Continue
                 </Button>
                 <button
+                  onClick={handleResend}
+                  disabled={resendIn > 0 || isLoading}
+                  className={`w-full mt-2 text-sm font-medium ${resendIn > 0 ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:underline'}`}
+                >
+                  {resendIn > 0 ? `Resend code in ${resendIn}s` : "Didn't get it? Resend code"}
+                </button>
+                <button
                   onClick={() => setStep('info')}
-                  className="w-full mt-2 text-sm text-blue-600 hover:underline"
+                  className="w-full mt-2 text-sm text-gray-500 hover:underline"
                 >
                   Go back
                 </button>
