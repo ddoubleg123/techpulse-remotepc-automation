@@ -125,17 +125,26 @@ export default function AdminDashboard() {
     if (!t || !SUPABASE_ANON_KEY) return;
     let cancelled = false;
     (async () => {
-      const [users, subs, openTickets, shops, tickets, newUsers, loginActivity] = await Promise.all([
-        fetchCount('users', t),
-        fetchCount('subscriptions', t, 'status=in.(active,past_due)'),
-        fetchCount('support_tickets', t, 'status=eq.open'),
-        fetchCount('shops', t),
+      const [dashCounts, tickets, newUsers, loginActivity] = await Promise.all([
+        (async () => {
+          try {
+            const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_dashboard_counts`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+              body: '{}',
+            });
+            if (!r.ok) return [];
+            const j = await r.json();
+            return Array.isArray(j) ? j : [];
+          } catch { return []; }
+        })(),
         fetchRows<AdminTicket>('support_tickets?select=id,ticket_number,shop_name,complaint,status,priority,created_at&order=created_at.desc&limit=5', t),
         fetchRows<AdminUserRow>('users?select=id,email,name,role,created_at&order=created_at.desc&limit=5', t),
         fetchLoginActivity(t),
       ]);
       if (cancelled) return;
-      setCounts({ users, subs, openTickets, shops });
+      const dc = (Array.isArray(dashCounts) && dashCounts[0] ? dashCounts[0] : { users_total: 0, shops_total: 0, paying_customers: 0, open_tickets: 0 }) as { users_total: number; shops_total: number; paying_customers: number; open_tickets: number };
+      setCounts({ users: dc.users_total, subs: dc.paying_customers, openTickets: dc.open_tickets, shops: dc.shops_total });
       setRecentTickets(tickets);
       setRecentUsers(newUsers);
       // "Active Users" = signed in (or session-active) within the last 30 days.
