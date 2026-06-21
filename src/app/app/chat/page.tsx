@@ -1431,6 +1431,48 @@ function ChatPageInner() {
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [sessionId, setSessionId] = useState(() => getOrCreateSessionUnid());
 
+  // === Funnel tracking ===
+  // Upsert a chat_sessions row keyed on session_id as the customer moves through
+  // the flow, so we can measure started -> finished. Written at step 1 (vehicle)
+  // and updated on each transition. Keyed on user_id (owner RLS policy), so it
+  // persists with or without a shop. Fire-and-forget; never blocks the UI.
+  const recordStep = useCallback(async (
+    lastStep: 'vehicle' | 'codes' | 'diagnose' | 'report',
+    extra?: { vehicle?: Vehicle; codes?: DtcCode[]; messages?: Message[] }
+  ) => {
+    try {
+      if (!SUPABASE_ANON_KEY || isDemoUser) return;
+      const _tok = useAuthStore.getState().token || '';
+      if (!_tok) return;
+      let _selfId = '';
+      try { _selfId = JSON.parse(atob(_tok.split('.')[1] || '')).sub || ''; } catch { return; }
+      if (!_selfId) return;
+      const _u = user as { email?: string } | null;
+      const _v = extra?.vehicle || vehicle;
+      const _label = [_v.year, _v.make, _v.model].filter(Boolean).join(' ') || 'Diagnostic';
+      const _codesArr = (extra?.codes || codes || []).map((c) => (c && c.code) || '').filter(Boolean);
+      await fetch(SUPABASE_URL + '/rest/v1/chat_sessions?on_conflict=session_id', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + _tok,
+          apikey: SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=minimal',
+        },
+        body: JSON.stringify({
+          user_id: _selfId,
+          user_email: (_u && _u.email) || '',
+          session_id: sessionId,
+          title: _label + (_codesArr.length ? ' — ' + _codesArr.join(', ') : ''),
+          dtc_codes: _codesArr,
+          vehicle_context: _v,
+          messages: extra?.messages || chatMessages || [],
+          last_step: lastStep,
+        }),
+      });
+    } catch { /* funnel write is best-effort */ }
+  }, [sessionId, isDemoUser, user, vehicle, codes, chatMessages]);
+
   // === Rehydrate a past session from ?session=<id> (shop-wide history switcher) ===
   // Loads vehicle + messages from chat_sessions and drops the user into the chat step
   // to review/continue. We land on 'chat' (not 'report') because the stored session has
@@ -1623,9 +1665,9 @@ function ChatPageInner() {
   return (
     <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-page)' }}>
       <StepBar step={step} />
-      {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); setStep('codes'); }} />}
-      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); setStep('chat'); }} onBack={() => setStep('vin')} />}
-      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} initialMessages={chatMessages} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); setStep('report'); }} onBack={() => setStep('codes')} />}
+      {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); recordStep('vehicle', { vehicle: v }); setStep('codes'); }} />}
+      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); recordStep('codes', { codes: c }); setStep('chat'); }} onBack={() => setStep('vin')} />}
+      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} initialMessages={chatMessages} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); recordStep('report', { messages: msgs, vehicle: updated || vehicle }); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep
         onRestart={restart}
