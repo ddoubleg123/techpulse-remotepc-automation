@@ -294,7 +294,7 @@ export default function OnboardingModal() {
             {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
             <button
               onClick={submitStep1}
-              disabled={loading || !formData.firstName || !formData.lastName}
+              disabled={loading || !formData.firstName.trim() || !formData.lastName.trim()}
               className="w-full mt-6 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
             >
               {loading ? 'Saving…' : 'Continue'}
@@ -421,7 +421,7 @@ export default function OnboardingModal() {
               </button>
               <button
                 onClick={submitStep3}
-                disabled={loading || !formData.businessName || !formData.address || !formData.phone}
+                disabled={loading || !formData.businessName.trim() || !formData.address.trim() || !formData.phone.trim()}
                 className="flex-1 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
               >
                 {loading ? 'Saving…' : 'Complete Setup'}

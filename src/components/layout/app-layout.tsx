@@ -140,14 +140,21 @@ function OnboardingGate() {
               phone: row.phone ?? state.user.phone,
             } : state.user,
           }));
-          const hasName = !!(row.first_name || row.name || row.full_name);
+          // Account is complete only when every required field is present AND
+          // non-blank. Mirrors public.account_is_complete() so the gate, the DB,
+          // and any future client agree on one definition.
+          const nonBlank = (v: any) => typeof v === 'string' && v.trim() !== '';
+          const hasName = nonBlank(row.first_name) || nonBlank(row.name) || nonBlank(row.full_name);
+          const hasBusiness = nonBlank(row.business_name);
+          const hasAddress = nonBlank(row.address) || nonBlank(row.business_address);
+          const hasPhone = nonBlank(row.phone);
           const incomplete =
             !row.onboarding_completed ||
             !row.shop_id ||
             !hasName ||
-            !row.business_name ||
-            !row.address ||
-            !row.phone;
+            !hasBusiness ||
+            !hasAddress ||
+            !hasPhone;
           setNeedsOnboarding(incomplete);
         }
         setLoaded(true);
