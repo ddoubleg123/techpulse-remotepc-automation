@@ -1474,16 +1474,24 @@ function ChatPageInner() {
       // Resolve shop_id once (preferred shop key). Used by both the case-study
       // insert (#2) and the chat_sessions upsert (#3).
       let _shopId: string | null = (_u as any)?.shop_id || null;
+      let _selfId = '';
       try {
-        if (!_shopId) {
-          const _tok0 = useAuthStore.getState().token || '';
-          const _sub0 = JSON.parse(atob(_tok0.split('.')[1] || '')).sub || '';
-          if (_sub0) {
-            const _pr0 = await fetch(
-              SUPABASE_URL + '/rest/v1/user_profiles?id=eq.' + encodeURIComponent(_sub0) + '&select=shop_id',
+        const _tok0 = useAuthStore.getState().token || '';
+        _selfId = JSON.parse(atob(_tok0.split('.')[1] || '')).sub || '';
+        if (!_shopId && _selfId) {
+          // Onboarding writes shop_id to `users`; older flow used `user_profiles`.
+          // Check both so we attach the shop when it exists.
+          const _pr0 = await fetch(
+            SUPABASE_URL + '/rest/v1/users?id=eq.' + encodeURIComponent(_selfId) + '&select=shop_id',
+            { headers: { Authorization: 'Bearer ' + (useAuthStore.getState().token || SUPABASE_ANON_KEY), apikey: SUPABASE_ANON_KEY } }
+          );
+          if (_pr0.ok) { const _r0 = await _pr0.json(); _shopId = (_r0 && _r0[0] && _r0[0].shop_id) || null; }
+          if (!_shopId) {
+            const _pr1 = await fetch(
+              SUPABASE_URL + '/rest/v1/user_profiles?id=eq.' + encodeURIComponent(_selfId) + '&select=shop_id',
               { headers: { Authorization: 'Bearer ' + (useAuthStore.getState().token || SUPABASE_ANON_KEY), apikey: SUPABASE_ANON_KEY } }
             );
-            if (_pr0.ok) { const _r0 = await _pr0.json(); _shopId = (_r0 && _r0[0] && _r0[0].shop_id) || null; }
+            if (_pr1.ok) { const _r1 = await _pr1.json(); _shopId = (_r1 && _r1[0] && _r1[0].shop_id) || null; }
           }
         }
       } catch { /* best effort */ }
@@ -1555,29 +1563,26 @@ function ChatPageInner() {
           conclusion: '',
           shop_name: _shopName || '',
           shop_id: _shopId,                // Prefer FK; shop_name kept for back-compat
+          created_by: _selfId,             // Owner — lets RLS persist even without a shop
           full_content: null,              // Gate: built on promotion only
           embedding: null,                 // Gate: generated on promotion only
         }),
-      }).then((r) => {
-        if (!r.ok) console.error('[report] case_studies insert failed', r.status);
-      }).catch((e) => console.error('[report] case_studies insert error', e));
+      }).then(async (r) => {
+        if (!r.ok) {
+          const _b = await r.text().catch(() => '');
+          console.error('[report] case_studies insert failed', r.status, _b);
+        }
+      }).catch((e) => { console.error('[report] case_studies insert error', e); });
 
-      // 3) Upsert a diagnostic session row for shop-wide history (Recent Diagnostics).
-      //    shop_id is resolved from the user's profile (auth sub == user_profiles.id),
-      //    then the session is upserted on session_id so re-entry/refresh updates in place.
+      // 3) Upsert a diagnostic session row for history (Recent Diagnostics).
+      //    Keyed on the user (user_id), so it persists even before a shop is
+      //    assigned; shop_id is included when known for shop-wide history.
       try {
-          const _sub = (() => {
-            try {
-              const _t = useAuthStore.getState().token || '';
-              return JSON.parse(atob(_t.split('.')[1] || '')).sub || '';
-            } catch { return ''; }
-          })();
-          // Reuse the shop_id resolved above; only fetch email here.
-          if (!_sub || !_shopId) return; // not attached to a shop -> no shop-wide history
+          if (!_selfId) return;
           let _email = (_u && _u.email) || '';
           try {
             const _emRes = await fetch(
-              SUPABASE_URL + '/rest/v1/user_profiles?id=eq.' + encodeURIComponent(_sub) + '&select=email',
+              SUPABASE_URL + '/rest/v1/users?id=eq.' + encodeURIComponent(_selfId) + '&select=email',
               { headers: { 'Authorization': 'Bearer ' + _userToken, 'apikey': SUPABASE_ANON_KEY } }
             );
             if (_emRes.ok) { const _er = await _emRes.json(); _email = (_er && _er[0] && _er[0].email) || _email; }
@@ -1591,7 +1596,7 @@ function ChatPageInner() {
               'Prefer': 'resolution=merge-duplicates,return=minimal',
             },
             body: JSON.stringify({
-              user_id: _sub,
+              user_id: _selfId,
               user_email: _email,
               shop_id: _shopId,
               session_id: _unid,
@@ -1602,7 +1607,7 @@ function ChatPageInner() {
               last_step: 'report',
             }),
           });
-          if (!_csRes.ok) console.error('[report] chat_sessions upsert failed', _csRes.status);
+          if (!_csRes.ok) console.error('[report] chat_sessions upsert failed', _csRes.status, await _csRes.text().catch(() => ''));
       } catch (e) { console.error('[report] chat_sessions upsert error', e); }
     } catch { /* never let persistence errors break the report flow */ }
     })();
