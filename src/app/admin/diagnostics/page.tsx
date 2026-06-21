@@ -242,7 +242,12 @@ function DiagnosticsInner() {
                               {(r.dtc_codes && r.dtc_codes.length) ? r.dtc_codes.join(', ') + ' · ' : ''}
                               {r.complaint || 'No complaint recorded'}
                             </p>
-                            <p className="text-[10px] text-gray-400">{r.occurred_on || ''}</p>
+                            <p className="text-[10px] text-gray-400">
+                              {r.shop_name || 'No shop'}
+                              {' · '}
+                              {r.user_email || 'demo / unattributed'}
+                              {r.occurred_on ? ` · ${r.occurred_on}` : ''}
+                            </p>
                           </div>
                           {r.has_chat && <span className="flex items-center gap-1 text-[11px] text-teal-600 shrink-0"><MessageSquare className="w-3.5 h-3.5" />chat</span>}
                           <span className={`px-2 py-0.5 rounded text-xs font-medium shrink-0 w-24 text-center ${c.cls}`}>{c.label}</span>
