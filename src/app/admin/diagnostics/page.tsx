@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { RefreshCw, Search, FileText, MessageSquare, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
+import FunnelPanel from '@/components/admin/FunnelPanel';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -83,7 +84,6 @@ function DiagnosticsInner() {
   const toParam = searchParams.get('to') || '';
 
   const [rows, setRows] = useState<Activity[]>([]);
-  const [funnel, setFunnel] = useState<{ started: number; reached_codes: number; reached_diagnose: number; finished: number; abandoned: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
@@ -112,15 +112,6 @@ function DiagnosticsInner() {
       });
       if (!res.ok) { setErr('Could not load customer activity.'); setRows([]); }
       else { const d = await res.json(); setRows(Array.isArray(d) ? d : []); }
-      // Funnel (started vs finished) for the same window.
-      try {
-        const fr = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_diagnostic_funnel`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ p_from: from, p_to: to }),
-        });
-        if (fr.ok) { const fd = await fr.json(); setFunnel(Array.isArray(fd) && fd[0] ? fd[0] : null); }
-      } catch { /* funnel is best-effort */ }
     } catch { setErr('Network error.'); setRows([]); }
     finally { setLoading(false); }
   }, [computeRange]);
@@ -204,27 +195,8 @@ function DiagnosticsInner() {
           </button>
         </div>
 
-        {/* Funnel: started -> finished */}
-        {funnel && funnel.started > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <div className="rounded-xl border border-gray-200 bg-white p-3">
-              <p className="text-2xl font-bold text-gray-900">{funnel.started}</p>
-              <p className="text-xs text-gray-500">Started</p>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-3">
-              <p className="text-2xl font-bold text-gray-900">{funnel.finished}</p>
-              <p className="text-xs text-gray-500">Finished (got report)</p>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-3">
-              <p className="text-2xl font-bold text-amber-600">{funnel.abandoned}</p>
-              <p className="text-xs text-gray-500">Abandoned</p>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-3">
-              <p className="text-2xl font-bold text-gray-900">{funnel.started ? Math.round((funnel.finished / funnel.started) * 100) : 0}%</p>
-              <p className="text-xs text-gray-500">Completion rate</p>
-            </div>
-          </div>
-        )}
+        {/* Funnel: drill-down (all customers -> shop -> mechanic) */}
+        <FunnelPanel from={computeRange().from} to={computeRange().to} />
 
         <div className="flex items-center gap-3 mb-4 text-sm flex-wrap">
           <span className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 font-medium">{rows.length} diagnostics</span>
