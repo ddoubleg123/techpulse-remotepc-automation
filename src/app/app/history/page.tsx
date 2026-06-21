@@ -9,8 +9,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Suspense } from 'react';
-import { History, Send, Car, MessageSquare, Plus } from 'lucide-react';
-import { listSessions, loadSession, type SessionSummary, type SessionDetail } from '@/lib/sessionHistory';
+import { History, Send, Car, MessageSquare, Plus, Search as SearchIcon, X, FileText } from 'lucide-react';
+import { listSessions, loadSession, searchSessions, getSessionReport, type SessionSummary, type SessionDetail, type SessionReport } from '@/lib/sessionHistory';
 
 const SYNTH_API = 'https://techpulse-api.onrender.com';
 const API_TOKEN = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
@@ -45,6 +45,9 @@ function HistoryList({
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [query, setQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SessionSummary[] | null>(null);
+  const [searching, setSearching] = useState(false);
 
   const load = useCallback(async (before?: string) => {
     setLoading(true);
@@ -60,6 +63,22 @@ function HistoryList({
 
   useEffect(() => { load(); }, [load]);
 
+  // Debounced server-side search across the whole shop's sessions.
+  useEffect(() => {
+    const term = query.trim();
+    if (!term) { setSearchResults(null); setSearching(false); return; }
+    setSearching(true);
+    const t = setTimeout(async () => {
+      const res = await searchSessions(term, { limit: 50 });
+      setSearchResults(res);
+      setSearching(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // What the list shows: search results when searching, else the paged list.
+  const displayed = searchResults !== null ? searchResults : items;
+
   return (
     <div style={{
       width: 300, flexShrink: 0, display: 'flex', flexDirection: 'column',
@@ -73,14 +92,52 @@ function HistoryList({
         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)' }}>Auto History</span>
       </div>
 
+      {/* Search across the shop's cars */}
+      <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-card)' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+          borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border-input)',
+        }}>
+          <SearchIcon size={14} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search make, model, DTC…"
+            style={{
+              border: 'none', outline: 'none', background: 'transparent',
+              fontSize: 13, color: 'var(--text-1)', width: '100%',
+            }}
+          />
+          {query && (
+            <button
+              onClick={() => setQuery('')}
+              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-3)', padding: 0, lineHeight: 0 }}
+              aria-label="Clear search"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px 16px' }}>
-        {loaded && items.length === 0 && (
+        {searching && (
+          <div style={{ padding: '16px 14px', color: 'var(--text-3)', fontSize: 13 }}>Searching…</div>
+        )}
+
+        {!searching && searchResults !== null && searchResults.length === 0 && (
+          <div style={{ padding: '24px 14px', color: 'var(--text-3)', fontSize: 13, lineHeight: 1.5 }}>
+            No diagnostics match “{query}”.
+          </div>
+        )}
+
+        {!searching && searchResults === null && loaded && items.length === 0 && (
           <div style={{ padding: '24px 14px', color: 'var(--text-3)', fontSize: 13, lineHeight: 1.5 }}>
             No past diagnostics yet. Finish a diagnostic in <strong style={{ color: 'var(--text-2)' }}>Diagnostic Chat</strong> and it will show up here.
           </div>
         )}
 
-        {items.map((s) => {
+        {displayed.map((s) => {
           const active = s.session_id === selectedId;
           return (
             <button
@@ -113,7 +170,7 @@ function HistoryList({
           );
         })}
 
-        {!done && items.length > 0 && (
+        {searchResults === null && !done && items.length > 0 && (
           <button
             onClick={() => load(items[items.length - 1]?.created_at)}
             disabled={loading}
@@ -139,6 +196,7 @@ function AutoHistoryInner() {
   const [selected, setSelected] = useState<SessionSummary | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [report, setReport] = useState<SessionReport | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -148,15 +206,16 @@ function AutoHistoryInner() {
     setSelected(s);
     setDetail(null);
     setMessages([]);
+    setReport(null);
     setLoadingDetail(true);
     try {
       const d = await loadSession(s.session_id);
       setDetail(d);
       setMessages(normalizeMessages(d?.messages));
+      getSessionReport(s.session_id).then(setReport);
     } finally {
       setLoadingDetail(false);
     }
-    // reflect selection in the URL so the view is shareable / refresh-safe
     router.replace(`/app/history?session=${encodeURIComponent(s.session_id)}`);
   }, [router]);
 
@@ -170,6 +229,7 @@ function AutoHistoryInner() {
         if (d) {
           setDetail(d);
           setMessages(normalizeMessages(d.messages));
+          getSessionReport(initialId).then(setReport);
           setSelected({
             session_id: d.session_id, title: d.title, dtc_codes: d.dtc_codes,
             created_at: d.created_at, last_step: d.last_step, user_email: d.user_email,
@@ -260,7 +320,7 @@ function AutoHistoryInner() {
               }}>
                 <Car size={17} style={{ color: 'var(--accent)' }} />
               </div>
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {detail ? vehicleLabel(detail.vehicle_context) : (selected.title || 'Diagnostic')}
                 </div>
@@ -269,6 +329,22 @@ function AutoHistoryInner() {
                   {new Date(selected.created_at).toLocaleString()}
                 </div>
               </div>
+
+              {report && (report.diagnosis_pdf_url || report.before_after_pdf_url || report.estimate_pdf_url) && (
+                <a
+                  href={(report.diagnosis_pdf_url || report.before_after_pdf_url || report.estimate_pdf_url) as string}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                    padding: '8px 14px', borderRadius: 8, textDecoration: 'none',
+                    background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 600,
+                  }}
+                >
+                  <FileText size={14} />
+                  View Report
+                </a>
+              )}
             </div>
 
             {/* Conversation */}

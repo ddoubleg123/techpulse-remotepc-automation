@@ -88,6 +88,81 @@ export async function listSessions(
   }
 }
 
+/**
+ * Search the shop's sessions by vehicle (title), DTC code, or date text.
+ * Server-side (covers ALL the shop's sessions, not just the loaded page).
+ * Matches the title (year/make/model live there) and the dtc_codes array.
+ */
+export async function searchSessions(
+  q: string,
+  opts: { limit?: number } = {}
+): Promise<SessionSummary[]> {
+  const shopId = await getShopId();
+  if (!shopId) return [];
+  const term = q.trim();
+  if (!term) return [];
+  const limit = opts.limit ?? 50;
+  // ilike on title OR a containment match on the dtc_codes text[] array.
+  // PostgREST: cs(title.ilike.*term*,dtc_codes.cs.{TERM}) — but array contains
+  // needs an exact element, so we OR title ilike with a cast-to-text ilike on
+  // the array via a computed filter. Simpler + robust: match title OR user_email,
+  // and also try the DTC as an array element when it looks like a code.
+  const esc = term.replace(/([%,()])/g, '\\$1');
+  const ors = [`title.ilike.*${esc}*`, `user_email.ilike.*${esc}*`];
+  // If it looks like a DTC code, also match the array element exactly.
+  if (/^[PBCU][0-9A-Za-z-]{2,}$/i.test(term)) {
+    ors.push(`dtc_codes.cs.{${term.toUpperCase()}}`);
+  }
+  const params = new URLSearchParams();
+  params.set('shop_id', `eq.${shopId}`);
+  params.set('select', 'session_id,title,dtc_codes,created_at,last_step,user_email');
+  params.set('or', `(${ors.join(',')})`);
+  params.set('order', 'created_at.desc');
+  params.set('limit', String(limit));
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/chat_sessions?${params.toString()}`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) return [];
+    return (await res.json()) as SessionSummary[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Look up the generated report for a session, if any. Reports live on
+ * diagnostic_case_studies (linked by unid = session_id) where the PDF urls are.
+ * Returns the best available PDF url + outcome, or null if no report exists.
+ */
+export interface SessionReport {
+  diagnosis_pdf_url: string | null;
+  before_after_pdf_url: string | null;
+  estimate_pdf_url: string | null;
+  diagnosis_outcome: string | null;
+}
+export async function getSessionReport(sessionId: string): Promise<SessionReport | null> {
+  if (!sessionId) return null;
+  const params = new URLSearchParams();
+  params.set('unid', `eq.${sessionId}`);
+  params.set('select', 'diagnosis_pdf_url,before_after_pdf_url,estimate_pdf_url,diagnosis_outcome');
+  params.set('limit', '1');
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/diagnostic_case_studies?${params.toString()}`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    const r = rows && rows[0];
+    if (!r) return null;
+    // Only return if there's actually a report artifact.
+    if (!r.diagnosis_pdf_url && !r.before_after_pdf_url && !r.estimate_pdf_url) return null;
+    return r as SessionReport;
+  } catch {
+    return null;
+  }
+}
+
 /** Load one full session (vehicle_context + messages) for rehydration. */
 export async function loadSession(sessionId: string): Promise<SessionDetail | null> {
   const shopId = await getShopId();
