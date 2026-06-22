@@ -320,6 +320,7 @@ function VinStep({ onNext, initialVehicle }: { onNext: (vehicle: Vehicle, upload
   const [pdfHandoffError, setPdfHandoffError] = useState('');
   const [isPreparingPdf, setIsPreparingPdf] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
+  const [lookupError, setLookupError] = useState('');
   const [vehicle, setVehicle] = useState<Vehicle>(initialVehicle || { year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
   const [showManual, setShowManual] = useState(!!initialVehicle);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -422,12 +423,51 @@ function VinStep({ onNext, initialVehicle }: { onNext: (vehicle: Vehicle, upload
   };
 
   const handleVinLookup = async () => {
-    if (vin.length < 10) return;
+    const code = vin.trim().toUpperCase();
+    if (code.length < 11) return;
     setLookingUp(true);
-    await new Promise(r => setTimeout(r, 600));
-    setVehicle(v => ({ ...v, vin }));
-    setLookingUp(false);
-    setShowManual(true);
+    setLookupError('');
+    try {
+      const res = await fetch('https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/' + encodeURIComponent(code) + '?format=json');
+      if (!res.ok) throw new Error('decode http ' + res.status);
+      const data = await res.json();
+      const rows: Array<{ Variable: string; Value: string | null }> = data?.Results || [];
+      const get = (name: string) => (rows.find(r => r.Variable === name)?.Value || '').trim();
+      const year = get('Model Year');
+      const make = get('Make');
+      const model = get('Model');
+      const disp = get('Displacement (L)');
+      const fuel = get('Fuel Type - Primary');
+      const cyl = get('Engine Number of Cylinders');
+      // Build a readable engine string from whatever decoded.
+      const engine = [disp ? disp + 'L' : '', cyl ? cyl + '-cyl' : '', fuel].filter(Boolean).join(' ');
+
+      if (!year && !make && !model) {
+        // Nothing usable decoded — let them proceed manually rather than block.
+        setLookupError('Could not decode this VIN. Check it, or enter the vehicle details manually below.');
+        setVehicle(v => ({ ...v, vin: code }));
+        setShowManual(true);
+        return;
+      }
+      // Title-case make (NHTSA returns it uppercase).
+      const makeTC = make ? make.charAt(0) + make.slice(1).toLowerCase() : '';
+      setVehicle(v => ({
+        ...v,
+        vin: code,
+        year: year || v.year,
+        make: makeTC || v.make,
+        model: model || v.model,
+        engine: engine || v.engine,
+      }));
+      setShowManual(true);
+    } catch {
+      // NHTSA unreachable — don't block the tech; accept VIN and show manual entry.
+      setLookupError('VIN lookup is temporarily unavailable. Enter the vehicle details manually below.');
+      setVehicle(v => ({ ...v, vin: code }));
+      setShowManual(true);
+    } finally {
+      setLookingUp(false);
+    }
   };
 
   const canProceed = !!uploadedFile || vin.length >= 10 || (vehicle.year && vehicle.make && vehicle.model && vehicle.engine);
@@ -467,6 +507,7 @@ function VinStep({ onNext, initialVehicle }: { onNext: (vehicle: Vehicle, upload
           </button>
           </div>
           {cameraError && <p style={{ color:'#ef4444', fontSize:12, marginTop:4 }}>{cameraError}</p>}
+          {lookupError && <p style={{ color:'#f59e0b', fontSize:12, marginTop:8 }}>{lookupError}</p>}
           {showCamera && (
             <div style={{ marginTop:12, borderRadius:12, overflow:'hidden', border:'1px solid var(--border-card)', position:'relative' }}>
               <video ref={videoRef} autoPlay playsInline muted style={{ width:'100%', display:'block', borderRadius:12 }} />
