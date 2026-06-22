@@ -436,7 +436,9 @@ function VinStep({ onNext, initialVehicle }: { onNext: (vehicle: Vehicle, upload
       const year = get('Model Year');
       const make = get('Make');
       const model = get('Model');
-      const disp = get('Displacement (L)');
+      const dispRaw = get('Displacement (L)');
+      const dispNum = parseFloat(dispRaw);
+      const disp = isNaN(dispNum) ? '' : dispNum.toFixed(1);
       const fuel = get('Fuel Type - Primary');
       const cyl = get('Engine Number of Cylinders');
       // Build a readable engine string from whatever decoded.
