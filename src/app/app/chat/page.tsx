@@ -131,12 +131,35 @@ function scrubInternalMarkers(content: string): string {
 }
 
 interface Message { id: string; role: 'user' | 'synth'; content: string; ts: number; }
+
+// Extract the structured report JSON from a <<REPORT_FINAL:{...}>> marker if
+// present in the stream. Synth's synthesis output (findings, root_cause,
+// recommendation, critical_findings, cost_savings) rides in this marker.
+// Returns null if no parseable marker is found.
+function parseReportFinal(raw: string): Record<string, unknown> | null {
+  if (!raw) return null;
+  const m = raw.match(/<<\s*REPORT_FINAL\s*:\s*([\s\S]*?)>>/i);
+  if (!m) return null;
+  let body = m[1].trim();
+  // Tolerate a trailing partial / code fences.
+  body = body.replace(/^```(?:json)?/i, '').replace(/```$/,'').trim();
+  try { return JSON.parse(body); } catch { /* fallthrough */ }
+  // Try to salvage the first {...} object if there's trailing junk.
+  const obj = body.match(/\{[\s\S]*\}/);
+  if (obj) { try { return JSON.parse(obj[0]); } catch { return null; } }
+  return null;
+}
+
 // Synth is the only source of truth for the report. The PDF is the body.
 // No client-side fields except what arrives in the SSE final chunk.
 interface SynthReport {
   pdf_base64: string;
   pdf_filename: string;
   confidence: number;
+  // Structured synthesis fields parsed from the <<REPORT_FINAL:{...}>> marker,
+  // saved to diagnostic_reports on completion. Optional — absent if Synth
+  // didn't emit a parseable marker (e.g. while the model-string issue persists).
+  synthesis?: Record<string, unknown> | null;
 }
 
 
@@ -743,6 +766,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [synthConfidence, setSynthConfidence] = useState<number>(0);
   const [pdfBase64Report, setPdfBase64Report] = useState<string>('');
   const [pdfFilenameReport, setPdfFilenameReport] = useState<string>('');
+  const [reportSynthesis, setReportSynthesis] = useState<Record<string, unknown> | null>(null);
   const [chatAttachment, setChatAttachment] = useState<{name:string;base64:string}|null>(null);
   const [showVinGate, setShowVinGate] = useState(false);
   const [vinGateInput, setVinGateInput] = useState('');
@@ -907,6 +931,10 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         catch { if (payload) sseContent += payload; }
       }
       const reply = sseContent || (()=>{ try { return JSON.parse(rawText).response || JSON.parse(rawText).message || ''; } catch { return rawText.trim(); } })();
+      // Capture the structured synthesis JSON from the REPORT_FINAL marker (if any)
+      // before it's scrubbed for display. Saved to diagnostic_reports on completion.
+      const _rf = parseReportFinal(rawText) || parseReportFinal(reply);
+      if (_rf) setReportSynthesis(_rf);
       const cleanReply = scrubInternalMarkers(reply);
       setMessages(prev => [...prev, { id: Date.now()+'s', role: 'synth', content: cleanReply, ts: Date.now() }]);
       setApiStatus('ok');
@@ -949,7 +977,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
             disabled={!reportReady || !pdfBase64Report}
             onClick={() => {
               if (!reportReady || !pdfBase64Report) return;
-              const synthReport: SynthReport = { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence };
+              const synthReport: SynthReport = { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence, synthesis: reportSynthesis };
               if (vehicle.vin) { onReport(synthReport, messages); }
               else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }
             }}
@@ -1039,7 +1067,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
           ) : (
             <button
               onClick={() => {
-                const synthReport: SynthReport = { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence };
+                const synthReport: SynthReport = { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence, synthesis: reportSynthesis };
                 if (vehicle.vin) { onReport(synthReport, messages); }
                 else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }
               }}
@@ -1615,6 +1643,61 @@ function ChatPageInner() {
           console.error('[report] case_studies insert failed', r.status, _b);
         }
       }).catch((e) => { console.error('[report] case_studies insert error', e); });
+
+      // 2b) Save the structured synthesis fields to diagnostic_reports (Mike's
+      //     decision: synthesis-prompt path). Upsert on session_id. Only fires
+      //     when Synth emitted a parseable REPORT_FINAL marker; degrades to a
+      //     no-op otherwise (e.g. while the model-string 404 persists), so it
+      //     never blocks the case-study write or the PDF.
+      try {
+        const _syn = (synthReport && synthReport.synthesis) ? synthReport.synthesis as Record<string, any> : null;
+        if (_syn) {
+          const _num = (v: any) => {
+            if (typeof v === 'number') return v;
+            if (typeof v === 'string') { const n = parseFloat(v.replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : n; }
+            return null;
+          };
+          const _str = (v: any) => {
+            if (v == null) return null;
+            if (typeof v === 'string') return v;
+            if (Array.isArray(v)) return v.map((x) => typeof x === 'string' ? x : JSON.stringify(x)).join('\n');
+            return JSON.stringify(v);
+          };
+          fetch(SUPABASE_URL + '/rest/v1/diagnostic_reports?on_conflict=session_id', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + _userToken,
+              'apikey': SUPABASE_ANON_KEY,
+              'Content-Type': 'application/json',
+              'Prefer': 'resolution=merge-duplicates,return=minimal',
+            },
+            body: JSON.stringify({
+              session_id: _unid,
+              shop_id: _shopId,
+              vehicle_info: _vehicleLabel,
+              vehicle_year: vehicle.year || null,
+              vehicle_make: vehicle.make || null,
+              vehicle_model: vehicle.model || null,
+              dtc_codes: _codesArr,
+              symptoms: symptoms || null,
+              // Structured synthesis fields (Mike's named keys), tolerant of
+              // either his exact names or close variants in the JSON.
+              findings: _str(_syn.findings),
+              root_cause: _str(_syn.root_cause ?? _syn.rootCause),
+              recommendation: _str(_syn.recommendation ?? _syn.resolution),
+              critical_findings: _str(_syn.critical_findings ?? _syn.criticalFindings),
+              cost_savings: _num(_syn.cost_savings ?? _syn.costSavings ?? _syn.cost_saved),
+              diagnosis: _str(_syn.diagnosis) ?? _diagnosisText,
+              status: 'generated',
+            }),
+          }).then(async (r) => {
+            if (!r.ok) {
+              const _b = await r.text().catch(() => '');
+              console.error('[report] diagnostic_reports save failed', r.status, _b);
+            }
+          }).catch((e) => console.error('[report] diagnostic_reports save error', e));
+        }
+      } catch (e) { console.error('[report] synthesis save error', e); }
 
       // 3) Upsert a diagnostic session row for history (Recent Diagnostics).
       //    Keyed on the user (user_id), so it persists even before a shop is
