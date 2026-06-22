@@ -163,6 +163,44 @@ export async function getSessionReport(sessionId: string): Promise<SessionReport
   }
 }
 
+/**
+ * Persist an updated messages array back to a session so follow-up chat in the
+ * History view is saved (each chat stays "live" across navigations/refreshes).
+ * Upserts on session_id; owner/shop RLS allows the writer to update their row.
+ */
+export async function saveSessionMessages(
+  sessionId: string,
+  messages: unknown[]
+): Promise<boolean> {
+  if (!sessionId) return false;
+  const sub = subFromToken();
+  if (!sub) return false;
+  const shopId = await getShopId();
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/chat_sessions?on_conflict=session_id`,
+      {
+        method: 'POST',
+        headers: {
+          ...authHeaders(),
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=minimal',
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          user_id: sub,
+          shop_id: shopId,
+          messages,
+          last_step: 'report',
+        }),
+      }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Load one full session (vehicle_context + messages) for rehydration. */
 export async function loadSession(sessionId: string): Promise<SessionDetail | null> {
   const shopId = await getShopId();

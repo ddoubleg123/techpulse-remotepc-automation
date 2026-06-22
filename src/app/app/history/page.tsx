@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Suspense } from 'react';
 import { History, Send, Car, MessageSquare, Plus, Search as SearchIcon, X, FileText } from 'lucide-react';
-import { listSessions, loadSession, searchSessions, getSessionReport, type SessionSummary, type SessionDetail, type SessionReport } from '@/lib/sessionHistory';
+import { listSessions, loadSession, searchSessions, getSessionReport, saveSessionMessages, type SessionSummary, type SessionDetail, type SessionReport } from '@/lib/sessionHistory';
 
 const SYNTH_API = 'https://techpulse-api.onrender.com';
 const API_TOKEN = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
@@ -245,12 +245,22 @@ function AutoHistoryInner() {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
+  // Persist messages using the standard user/assistant roles so the saved
+  // conversation is consistent with the rest of the system (chat flow, admin views).
+  const toStored = (m: Msg) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content });
+
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text || sending || !detail) return;
     setInput('');
-    setMessages((prev) => [...prev, { role: 'user', content: text }]);
+    const userMsg: Msg = { role: 'user', content: text };
+    // Build the conversation including the new user message so we can persist
+    // the exact array (setMessages is async / functional, not readable here).
+    const withUser = [...messages, userMsg];
+    setMessages(withUser);
     setSending(true);
+    // Save the user's message immediately so it persists even if Synth fails.
+    saveSessionMessages(detail.session_id, withUser.map(toStored));
     try {
       const res = await fetch(SYNTH_API + '/api/diagnostic/stream', {
         method: 'POST',
@@ -282,13 +292,17 @@ function AutoHistoryInner() {
           content += p.token ?? p.text ?? p.response ?? p.message ?? '';
         } catch { if (payload) content += payload; }
       }
-      setMessages((prev) => [...prev, { role: 'synth', content: content || 'No response.' }]);
+      const synthMsg: Msg = { role: 'synth', content: content || 'No response.' };
+      const withSynth = [...withUser, synthMsg];
+      setMessages(withSynth);
+      // Persist the full exchange (only if Synth actually replied).
+      if (content) saveSessionMessages(detail.session_id, withSynth.map(toStored));
     } catch {
       setMessages((prev) => [...prev, { role: 'synth', content: 'Could not reach Synth. Check your connection and try again.' }]);
     } finally {
       setSending(false);
     }
-  }, [input, sending, detail]);
+  }, [input, sending, detail, messages]);
 
   return (
     <div style={{ flex: 1, display: 'flex', minHeight: 0, background: 'var(--bg-page)' }}>
