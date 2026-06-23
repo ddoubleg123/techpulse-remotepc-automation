@@ -8,6 +8,7 @@ import DemoBanner from '@/components/DemoBanner';
 import OnboardingModal from '@/components/onboarding/OnboardingModal';
 import { isDemoUser } from '@/lib/demoUsers';
 import { captureReferralCode } from '@/lib/referralCapture';
+import { track } from '@/lib/track';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -227,6 +228,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               localStorage.setItem('supabase-refresh-token', refreshToken);
             }
             signIn({ id, email, name: email.split('@')[0], hasPaymentMethodOnFile: false }, accessToken);
+            track({ event_type: 'login', payload: { method: 'google' } });
             setAuthCookie(accessToken);
             if (refreshToken) scheduleRefresh(accessToken, refreshToken);
             window.history.replaceState({}, '', window.location.pathname);
@@ -244,6 +246,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const email = params.get('email');
     if (token && email) {
       signIn({ id: '1', email, name: email.split('@')[0], hasPaymentMethodOnFile: false }, token);
+      track({ event_type: 'login', payload: { method: 'otp' } });
       setAuthCookie(token);
       window.history.replaceState({}, '', window.location.pathname);
       return () => { if (refreshTimer) clearTimeout(refreshTimer); };

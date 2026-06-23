@@ -7,6 +7,7 @@ import { getOrCreateSessionUnid } from '@/lib/unid';
 import { useSearchParams } from 'next/navigation';
 import { loadSession } from '@/lib/sessionHistory';
 import { isValidPdfBase64 } from '@/lib/upload-classifier';
+import { track } from '@/lib/track';
 import { ConfirmFixModal } from '@/components/billing/ConfirmFixModal';
 import { UnconfirmFixModal } from '@/components/billing/UnconfirmFixModal';
 import {
@@ -937,6 +938,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       const controller = new AbortController();
       const abortTimer = setTimeout(() => controller.abort(), 60000);
       const warmTimer = setTimeout(() => setWarmingUp(true), 5000);
+      track({ event_type: 'synth_message_sent', step: 'chat', session_id: sessionId, vehicle: [vehicle.year,vehicle.make,vehicle.model].filter(Boolean).join(' '), payload: { msg_len: text.length, has_attachment: !!attachBase64 } });
       const res = await fetch(SYNTH_API + '/api/diagnostic/stream', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + API_TOKEN },
@@ -1875,9 +1877,9 @@ function ChatPageInner() {
           </div>
         </div>
       )}
-      {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); recordStep('vehicle', { vehicle: v }); setStep('codes'); }} />}
-      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); recordStep('codes', { codes: c }); checkGateThenStart(() => setStep('chat')); }} onBack={() => setStep('vin')} />}
-      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} initialMessages={chatMessages} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); recordStep('report', { messages: msgs, vehicle: updated || vehicle }); setStep('report'); }} onBack={() => setStep('codes')} />}
+      {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); recordStep('vehicle', { vehicle: v }); track({ event_type: 'scan_started', step: 'vin', session_id: sessionId, vehicle: [v.year,v.make,v.model].filter(Boolean).join(' '), payload: { has_pdf: !!b64 } }); if (b64) track({ event_type: 'pdf_uploaded', step: 'vin', session_id: sessionId, payload: { file: fn } }); setStep('codes'); }} />}
+      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); recordStep('codes', { codes: c }); track({ event_type: 'codes_entered', step: 'codes', session_id: sessionId, dtc_codes: (c||[]).map(x => x?.code).filter(Boolean), payload: { symptom_len: (s||'').length } }); checkGateThenStart(() => setStep('chat')); }} onBack={() => setStep('vin')} />}
+      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} initialMessages={chatMessages} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); recordStep('report', { messages: msgs, vehicle: updated || vehicle }); track({ event_type: 'report_generated', step: 'report', session_id: sessionId, vehicle: [(updated||vehicle).year,(updated||vehicle).make,(updated||vehicle).model].filter(Boolean).join(' ') }); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep
         onRestart={restart}
