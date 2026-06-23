@@ -415,7 +415,7 @@ export default function LeadsPage() {
                   <th className="px-4 py-3 font-medium">Email</th>
                   <th className="px-4 py-3 font-medium">Owner</th>
                   <th className="px-4 py-3 font-medium">Rating</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 pr-6 py-3 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -446,8 +446,8 @@ export default function LeadsPage() {
                       <td className="px-4 py-3 text-gray-600">
                         {r.rating != null ? `${r.rating} (${r.review_count ?? 0})` : '—'}
                       </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${chip.cls}`}>
+                      <td className="px-4 pr-6 py-3">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs whitespace-nowrap ${chip.cls}`}>
                           {chip.label}
                         </span>
                       </td>
