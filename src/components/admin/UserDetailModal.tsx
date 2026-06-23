@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -42,6 +43,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function UserDetailModal({ userId, onClose }: { userId: string | null; onClose: () => void }) {
+  const router = useRouter();
   const [data, setData] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
@@ -128,6 +130,13 @@ export default function UserDetailModal({ userId, onClose }: { userId: string | 
                 <Field label="Joined" value={data.created_at ? new Date(data.created_at).toLocaleString() : null} />
                 <Field label="User ID" value={<span className="font-mono text-xs">{data.id}</span>} />
               </div>
+
+              <button
+                onClick={() => router.push(`/admin/users/${encodeURIComponent(data.id)}/activity?email=${encodeURIComponent(data.email || '')}&hours=168`)}
+                className="w-full mt-1 mb-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+              >
+                View full activity →
+              </button>
             </>
           )}
         </div>
