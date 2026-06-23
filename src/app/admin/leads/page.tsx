@@ -1,0 +1,361 @@
+'use client';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { RefreshCw, Search, Play, Mail, Download, Loader2 } from 'lucide-react';
+import { useAuthStore } from '@/stores/authStore';
+
+const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+const COUNTIES = [
+  'Fulton', 'Cobb', 'Cherokee', 'Forsyth', 'Gwinnett',
+  'DeKalb', 'Clayton', 'Fayette', 'Coweta', 'Douglas',
+];
+
+interface LeadShop {
+  id: string;
+  name: string | null;
+  address: string | null;
+  city: string | null;
+  county: string | null;
+  phone: string | null;
+  website: string | null;
+  email: string | null;
+  owner_name: string | null;
+  rating: number | null;
+  review_count: number | null;
+  enrichment_status: string | null;
+  created_at: string | null;
+}
+
+function enrichChip(s: string | null): { label: string; cls: string } {
+  const v = (s || '').toLowerCase();
+  if (v === 'done') return { label: 'Email found', cls: 'bg-green-100 text-green-700' };
+  if (v === 'no_email') return { label: 'No email', cls: 'bg-gray-100 text-gray-500' };
+  if (v === 'pending') return { label: 'Pending', cls: 'bg-amber-100 text-amber-700' };
+  if (v === 'failed') return { label: 'Failed', cls: 'bg-red-100 text-red-700' };
+  return { label: v || '—', cls: 'bg-gray-100 text-gray-500' };
+}
+
+export default function LeadsPage() {
+  const [rows, setRows] = useState<LeadShop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [q, setQ] = useState('');
+  const [countyFilter, setCountyFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  // pipeline run state
+  const [running, setRunning] = useState<string>(''); // which action is in flight
+  const [runMsg, setRunMsg] = useState('');
+  const [discoverCounty, setDiscoverCounty] = useState('Fulton');
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr('');
+    try {
+      const t = useAuthStore.getState().token;
+      if (!t || !SUPABASE_ANON_KEY) { setLoading(false); return; }
+      const headers = {
+        Authorization: `Bearer ${t}`,
+        apikey: SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+      };
+      // Pull up to 5000 rows, newest first. PostgREST caps at 1000 per request
+      // unless a Range header widens it.
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/lead_shops?select=*&order=created_at.desc`,
+        { headers: { ...headers, Range: '0-4999' } }
+      );
+      if (!res.ok) {
+        setErr(`Failed to load leads (HTTP ${res.status})`);
+        setRows([]);
+      } else {
+        setRows(await res.json());
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Load failed');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Trigger a pipeline action via the server-side proxy.
+  const runAction = useCallback(async (
+    action: 'discovery' | 'discovery_all' | 'enrichment',
+    extra?: { county?: string; limit?: number }
+  ) => {
+    setRunning(action); setRunMsg('');
+    try {
+      const res = await fetch('/api/leads/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...extra }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRunMsg(`⚠ ${data.error || 'Run failed'}`);
+      } else {
+        const r = data.result || {};
+        if (action === 'discovery') {
+          setRunMsg(`✓ ${extra?.county}: ${r.upserted ?? 0} shops saved (${r.unique_seen ?? 0} seen)`);
+        } else if (action === 'discovery_all') {
+          const total = Object.values(r as Record<string, { upserted?: number }>)
+            .reduce((sum, v) => sum + (v.upserted || 0), 0);
+          setRunMsg(`✓ All counties: ${total} shops saved`);
+        } else {
+          setRunMsg(`✓ Enriched ${r.enriched ?? 0} shops`);
+        }
+        await load(); // refresh the table with new rows
+      }
+    } catch (e) {
+      setRunMsg(`⚠ ${e instanceof Error ? e.message : 'Run failed'}`);
+    } finally {
+      setRunning('');
+    }
+  }, [load]);
+
+  // Derived stats
+  const stats = useMemo(() => {
+    const byCounty: Record<string, number> = {};
+    let withEmail = 0, pending = 0;
+    for (const r of rows) {
+      const c = r.county || '—';
+      byCounty[c] = (byCounty[c] || 0) + 1;
+      if (r.email) withEmail++;
+      if ((r.enrichment_status || '') === 'pending') pending++;
+    }
+    return { total: rows.length, byCounty, withEmail, pending };
+  }, [rows]);
+
+  // Filtered view
+  const filtered = useMemo(() => {
+    const ql = q.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (countyFilter !== 'all' && r.county !== countyFilter) return false;
+      if (statusFilter === 'has_email' && !r.email) return false;
+      if (statusFilter === 'no_email' && r.email) return false;
+      if (statusFilter === 'pending' && (r.enrichment_status || '') !== 'pending') return false;
+      if (ql) {
+        const hay = `${r.name || ''} ${r.city || ''} ${r.email || ''} ${r.owner_name || ''}`.toLowerCase();
+        if (!hay.includes(ql)) return false;
+      }
+      return true;
+    });
+  }, [rows, q, countyFilter, statusFilter]);
+
+  const exportCsv = useCallback(() => {
+    const cols = ['name', 'county', 'city', 'address', 'phone', 'email', 'owner_name', 'website', 'rating', 'review_count', 'enrichment_status'];
+    const esc = (v: unknown) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [cols.join(',')];
+    for (const r of filtered) {
+      lines.push(cols.map((c) => esc((r as unknown as Record<string, unknown>)[c])).join(','));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `techpulse-leads-${countyFilter}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [filtered, countyFilter]);
+
+  const busy = running !== '';
+
+  return (
+    <div className="p-6 max-w-[1400px] mx-auto">
+      <div className="flex items-center justify-between mb-2">
+        <h1 className="text-2xl font-bold text-gray-900">Lead Repository</h1>
+        <button
+          onClick={load}
+          className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-300 hover:bg-gray-50"
+        >
+          <RefreshCw className="w-4 h-4" /> Refresh
+        </button>
+      </div>
+      <p className="text-sm text-gray-500 mb-6">
+        Auto-repair shops across Fulton + 9 adjacent metro-Atlanta counties.
+      </p>
+
+      {/* Stats header */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <StatCard label="Total shops" value={stats.total} />
+        <StatCard label="With email" value={stats.withEmail} accent="text-green-600" />
+        <StatCard label="Enrichment pending" value={stats.pending} accent="text-amber-600" />
+        <StatCard label="Counties covered" value={Object.keys(stats.byCounty).filter((c) => c !== '—').length} />
+      </div>
+
+      {/* Pipeline controls */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+        <div className="text-sm font-semibold text-gray-700 mb-3">Pipeline</div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <select
+              value={discoverCounty}
+              onChange={(e) => setDiscoverCounty(e.target.value)}
+              disabled={busy}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
+            >
+              {COUNTIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button
+              onClick={() => runAction('discovery', { county: discoverCounty })}
+              disabled={busy}
+              className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {running === 'discovery' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+              Discover county
+            </button>
+          </div>
+
+          <button
+            onClick={() => runAction('discovery_all')}
+            disabled={busy}
+            className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+          >
+            {running === 'discovery_all' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+            Discover all 10 counties
+          </button>
+
+          <button
+            onClick={() => runAction('enrichment', { limit: 100 })}
+            disabled={busy}
+            className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {running === 'enrichment' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+            Enrich emails (100)
+          </button>
+
+          {runMsg && (
+            <span className={`text-sm ${runMsg.startsWith('✓') ? 'text-green-600' : 'text-red-600'}`}>
+              {runMsg}
+            </span>
+          )}
+        </div>
+        {busy && (
+          <p className="text-xs text-gray-400 mt-2">
+            Running… discovery can take a few minutes per county. Free-tier cold start adds ~30-60s on the first call.
+          </p>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search name, city, email, owner…"
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg"
+          />
+        </div>
+        <select
+          value={countyFilter}
+          onChange={(e) => setCountyFilter(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
+        >
+          <option value="all">All counties</option>
+          {COUNTIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
+        >
+          <option value="all">All statuses</option>
+          <option value="has_email">Has email</option>
+          <option value="no_email">No email</option>
+          <option value="pending">Enrichment pending</option>
+        </select>
+        <button
+          onClick={exportCsv}
+          disabled={filtered.length === 0}
+          className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+        >
+          <Download className="w-4 h-4" /> Export CSV ({filtered.length})
+        </button>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        {err && <div className="p-4 text-sm text-red-600">{err}</div>}
+        {loading ? (
+          <div className="p-8 text-center text-gray-400">
+            <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Loading leads…
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center text-gray-400">
+            No shops yet. Run discovery above to populate the repository.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-500 text-left">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Shop</th>
+                  <th className="px-4 py-3 font-medium">County / City</th>
+                  <th className="px-4 py-3 font-medium">Phone</th>
+                  <th className="px-4 py-3 font-medium">Email</th>
+                  <th className="px-4 py-3 font-medium">Owner</th>
+                  <th className="px-4 py-3 font-medium">Rating</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.map((r) => {
+                  const chip = enrichChip(r.enrichment_status);
+                  return (
+                    <tr key={r.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-gray-900">{r.name || '—'}</div>
+                        {r.website && (
+                          <a href={r.website} target="_blank" rel="noreferrer"
+                            className="text-xs text-blue-600 hover:underline">
+                            {r.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
+                          </a>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">
+                        <div>{r.county || '—'}</div>
+                        <div className="text-xs text-gray-400">{r.city || ''}</div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{r.phone || '—'}</td>
+                      <td className="px-4 py-3">
+                        {r.email
+                          ? <a href={`mailto:${r.email}`} className="text-blue-600 hover:underline">{r.email}</a>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{r.owner_name || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {r.rating != null ? `${r.rating} (${r.review_count ?? 0})` : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${chip.cls}`}>
+                          {chip.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <div className={`text-2xl font-bold ${accent || 'text-gray-900'}`}>{value}</div>
+      <div className="text-xs text-gray-500 mt-1">{label}</div>
+    </div>
+  );
+}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Zap, Users, Ticket, LogOut, BarChart3, Activity, UserCheck, Store, Stethoscope } from 'lucide-react';
+import { Zap, Users, Ticket, LogOut, BarChart3, Activity, UserCheck, Store, Stethoscope, Target } from 'lucide-react';
 import { Avatar } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -13,6 +13,7 @@ const NAV = [
   { icon: Stethoscope, label: 'Diagnostics', href: '/admin/diagnostics' },
   { icon: UserCheck, label: 'Subscriptions', href: '/admin/subscriptions' },
   { icon: Store, label: 'Shops', href: '/admin/shops' },
+  { icon: Target, label: 'Leads', href: '/admin/leads' },
   { icon: Ticket, label: 'Tickets', href: '/admin/tickets' },
 ];
 
