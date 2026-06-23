@@ -1781,6 +1781,65 @@ function ChatPageInner() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [synthReport]);
+  // === Free-scan trial gate ===
+  // Before starting a new scan (codes -> chat), check whether this shop has
+  // used up its free successful scans. Exempt shops (manually billed, comped,
+  // or paid) always pass. Demo users always pass. Only blocks NEW scans; never
+  // interrupts a session already in progress or a rehydrated past session.
+  const [gateBlocked, setGateBlocked] = useState(false);
+  const [gateChecking, setGateChecking] = useState(false);
+  const [gateInfo, setGateInfo] = useState<{ count: number; limit: number } | null>(null);
+
+  const resolveShopId = useCallback(async (): Promise<string | null> => {
+    try {
+      const _tok = useAuthStore.getState().token || '';
+      const _u = user as { shop_id?: string } | null;
+      let _shopId: string | null = (_u && _u.shop_id) || null;
+      if (_shopId) return _shopId;
+      let _selfId = '';
+      try { _selfId = JSON.parse(atob((_tok.split('.')[1]) || '')).sub || ''; } catch { return null; }
+      if (!_selfId || !SUPABASE_ANON_KEY) return null;
+      const _r = await fetch(
+        SUPABASE_URL + '/rest/v1/users?id=eq.' + encodeURIComponent(_selfId) + '&select=shop_id',
+        { headers: { Authorization: 'Bearer ' + (_tok || SUPABASE_ANON_KEY), apikey: SUPABASE_ANON_KEY } }
+      );
+      if (_r.ok) { const _j = await _r.json(); _shopId = (_j && _j[0] && _j[0].shop_id) || null; }
+      return _shopId;
+    } catch { return null; }
+  }, [user]);
+
+  // Returns true if the scan may proceed, false if blocked (paywall shown).
+  const checkGateThenStart = useCallback(async (onAllowed: () => void) => {
+    // Demo users bypass entirely.
+    if (isDemoUser) { onAllowed(); return; }
+    if (!SUPABASE_ANON_KEY) { onAllowed(); return; }  // can't check -> fail open
+    setGateChecking(true);
+    try {
+      const _shopId = await resolveShopId();
+      // No shop resolved -> can't attribute scans -> fail open (don't block real users).
+      if (!_shopId) { onAllowed(); return; }
+      const _tok = useAuthStore.getState().token || SUPABASE_ANON_KEY;
+      const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/shop_scan_gate_status', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + _tok, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_shop_id: _shopId }),
+      });
+      if (!res.ok) { onAllowed(); return; }  // gate error -> fail open
+      const j = await res.json();
+      const row = Array.isArray(j) ? j[0] : j;
+      if (row && row.blocked === true) {
+        setGateInfo({ count: row.scan_count ?? 0, limit: row.scan_limit ?? 3 });
+        setGateBlocked(true);
+        return;  // do NOT call onAllowed
+      }
+      onAllowed();
+    } catch {
+      onAllowed();  // any failure -> fail open, never trap a real user
+    } finally {
+      setGateChecking(false);
+    }
+  }, [isDemoUser, resolveShopId]);
+
   if (!user) return null;
   const restart = () => {
     setStep('vin'); setVehicle({ year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
@@ -1789,10 +1848,35 @@ function ChatPageInner() {
     localStorage.removeItem('synth-session-id');
   };
   return (
-    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-page)' }}>
+    <div style={{ position:'relative', flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-page)' }}>
       <StepBar step={step} />
+      {gateChecking && (
+        <div style={{ position:'absolute', top:0, left:0, right:0, bottom:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(255,255,255,0.6)', zIndex:40 }}>
+          <div style={{ fontSize:14, color:'var(--text-secondary, #555)' }}>Checking…</div>
+        </div>
+      )}
+      {gateBlocked && (
+        <div style={{ position:'absolute', top:0, left:0, right:0, bottom:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(15,23,42,0.55)', zIndex:50, padding:16 }}>
+          <div style={{ background:'#fff', borderRadius:16, maxWidth:440, width:'100%', padding:'28px 26px', boxShadow:'0 20px 60px rgba(0,0,0,0.25)', textAlign:'center' }}>
+            <div style={{ fontSize:22, fontWeight:700, color:'#0f172a', marginBottom:8 }}>You&apos;ve used your free diagnostics</div>
+            <p style={{ fontSize:14, lineHeight:1.5, color:'#475569', marginBottom:20 }}>
+              Your shop has completed all {gateInfo?.limit ?? 3} free diagnostic scans. Subscribe to keep running unlimited diagnostics with Synth.
+            </p>
+            <button
+              onClick={() => { window.location.href = '/app/billing'; }}
+              style={{ width:'100%', padding:'12px 16px', borderRadius:10, border:'none', background:'#2563eb', color:'#fff', fontWeight:600, fontSize:15, cursor:'pointer', marginBottom:10 }}>
+              Subscribe to continue
+            </button>
+            <button
+              onClick={() => { setGateBlocked(false); setStep('vin'); }}
+              style={{ width:'100%', padding:'10px 16px', borderRadius:10, border:'1px solid #e2e8f0', background:'#fff', color:'#475569', fontWeight:500, fontSize:14, cursor:'pointer' }}>
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
       {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); recordStep('vehicle', { vehicle: v }); setStep('codes'); }} />}
-      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); recordStep('codes', { codes: c }); setStep('chat'); }} onBack={() => setStep('vin')} />}
+      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); recordStep('codes', { codes: c }); checkGateThenStart(() => setStep('chat')); }} onBack={() => setStep('vin')} />}
       {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} initialMessages={chatMessages} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); recordStep('report', { messages: msgs, vehicle: updated || vehicle }); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep

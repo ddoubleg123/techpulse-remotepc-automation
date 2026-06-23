@@ -22,6 +22,14 @@ interface Shop {
   created_at: string | null;
 }
 
+interface GateRow {
+  shop_id: string;
+  exempt: boolean;
+  scan_count: number;
+  scan_limit: number;
+  blocked: boolean;
+}
+
 function subChip(s: string | null): { label: string; cls: string } {
   const v = (s || '').toLowerCase();
   if (v === 'active') return { label: 'Paid', cls: 'bg-green-100 text-green-700' };
@@ -35,6 +43,8 @@ function subChip(s: string | null): { label: string; cls: string } {
 export default function ShopsPage() {
   const token = useAuthStore((s) => s.token);
   const [rows, setRows] = useState<Shop[]>([]);
+  const [gate, setGate] = useState<Record<string, GateRow>>({});
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
@@ -44,18 +54,55 @@ export default function ShopsPage() {
     try {
       const t = useAuthStore.getState().token;
       if (!t || !SUPABASE_ANON_KEY) { setLoading(false); return; }
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_shops`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      if (!res.ok) { setErr('Could not load shops.'); setRows([]); }
-      else { const d = await res.json(); setRows(Array.isArray(d) ? d : []); }
+      const headers = { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' };
+      const [shopsRes, gateRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_shops`, { method: 'POST', headers, body: '{}' }),
+        fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_shop_gate_list`, { method: 'POST', headers, body: '{}' }),
+      ]);
+      if (!shopsRes.ok) { setErr('Could not load shops.'); setRows([]); }
+      else { const d = await shopsRes.json(); setRows(Array.isArray(d) ? d : []); }
+      if (gateRes.ok) {
+        const g = await gateRes.json();
+        const map: Record<string, GateRow> = {};
+        if (Array.isArray(g)) for (const row of g) map[row.shop_id] = row;
+        setGate(map);
+      }
     } catch { setErr('Network error.'); setRows([]); }
     finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load, token]);
+
+  const toggleExempt = useCallback(async (shopId: string, current: boolean) => {
+    const t = useAuthStore.getState().token;
+    if (!t || !SUPABASE_ANON_KEY) return;
+    const next = !current;
+    setGate((prev) => ({
+      ...prev,
+      [shopId]: {
+        ...prev[shopId],
+        exempt: next,
+        blocked: !next && (prev[shopId]?.scan_count ?? 0) >= (prev[shopId]?.scan_limit ?? 3),
+      },
+    }));
+    setSaving((p) => ({ ...p, [shopId]: true }));
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_set_shop_gate_exempt`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_shop_id: shopId, p_exempt: next }),
+      });
+      if (!res.ok) {
+        setGate((prev) => ({ ...prev, [shopId]: { ...prev[shopId], exempt: current } }));
+        setErr('Could not update that shop. Try again.');
+      }
+    } catch {
+      setGate((prev) => ({ ...prev, [shopId]: { ...prev[shopId], exempt: current } }));
+      setErr('Network error updating shop.');
+    } finally {
+      setSaving((p) => ({ ...p, [shopId]: false }));
+    }
+  }, []);
 
   const [noAccountOnly, setNoAccountOnly] = useState(false);
 
@@ -67,6 +114,7 @@ export default function ShopsPage() {
   const active = rows.filter((r) => r.is_active).length;
   const paid = rows.filter((r) => ['active', 'past_due'].includes((r.sub_status || '').toLowerCase())).length;
   const noAccount = rows.filter((r) => (r.member_count ?? 0) === 0).length;
+  const gated = Object.values(gate).filter((g) => !g.exempt).length;
 
   return (
     <div className="p-6">
@@ -77,12 +125,13 @@ export default function ShopsPage() {
             <RefreshCw className={`w-4 h-4 text-gray-600 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
-        <p className="text-sm text-gray-500 mb-4">All shops · with member count and billing status</p>
+        <p className="text-sm text-gray-500 mb-4">All shops · billing status and free-scan trial gate</p>
 
         <div className="flex items-center gap-3 mb-4 text-sm flex-wrap">
           <span className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 font-medium">{rows.length} shops</span>
           <span className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 font-medium">{active} active</span>
           <span className="px-3 py-1.5 rounded-lg bg-green-100 text-green-700 font-medium">{paid} paid</span>
+          <span className="px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 font-medium" title="Shops currently subject to the 3-free-scan trial gate (not exempt)">{gated} gated</span>
           <button
             onClick={() => setNoAccountOnly((v) => !v)}
             className={`px-3 py-1.5 rounded-lg font-medium border ${noAccountOnly ? 'bg-amber-500 text-white border-amber-500' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}`}
@@ -105,6 +154,10 @@ export default function ShopsPage() {
           {filtered.map((r) => {
             const c = subChip(r.sub_status);
             const loc = [r.city, r.state].filter(Boolean).join(', ');
+            const g = gate[r.id];
+            const exempt = g ? g.exempt : true;
+            const isSaving = !!saving[r.id];
+            const labelCls = exempt ? 'text-green-700' : 'text-purple-700';
             return (
               <div key={r.id} className="p-4 flex items-center gap-4 hover:bg-gray-50">
                 <div className="flex-1 min-w-0">
@@ -114,15 +167,34 @@ export default function ShopsPage() {
                     {r.created_at ? ` · added ${formatRelativeTime(new Date(r.created_at))}` : ''}
                   </p>
                 </div>
-                <span className="text-xs text-gray-500 shrink-0 w-20 text-center">
-                  {(r.member_count ?? 0)} member{r.member_count === 1 ? '' : 's'}
-                </span>
-                {!r.is_active && <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 shrink-0">Inactive</span>}
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {g && !exempt && (
+                    <span className={`text-xs font-medium w-16 text-center ${g.blocked ? 'text-red-600' : 'text-gray-500'}`}>
+                      {g.scan_count}/{g.scan_limit}{g.blocked ? ' · over' : ''}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => toggleExempt(r.id, exempt)}
+                    disabled={isSaving}
+                    title={exempt ? 'Exempt — NOT subject to the 3-free-scan limit. Click to enable the gate.' : 'Gated — must pay after 3 free scans. Click to exempt.'}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${exempt ? 'bg-green-500' : 'bg-purple-500'} ${isSaving ? 'opacity-50' : ''}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${exempt ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                  <span className={`text-xs font-medium w-16 text-center ${labelCls}`}>
+                    {exempt ? 'Exempt' : 'Gated'}
+                  </span>
+                </div>
+
                 <span className={`px-2 py-0.5 rounded text-xs font-medium shrink-0 w-20 text-center ${c.cls}`}>{c.label}</span>
               </div>
             );
           })}
         </div>
+
+        <p className="text-xs text-gray-400 mt-3">
+          <strong>Exempt</strong> = unlimited free scans (use for manually-billed or comped shops). <strong>Gated</strong> = blocked after 3 successful scans until they subscribe. Only scans run after the gate launch date count.
+        </p>
       </div>
     </div>
   );
