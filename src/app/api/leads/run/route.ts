@@ -19,7 +19,7 @@ import { requireAdmin } from '@/lib/requireAdmin';
 
 export const dynamic = 'force-dynamic';
 
-type Action = 'discovery' | 'discovery_all' | 'enrichment' | 'stats' | 'tiles' | 'tile';
+type Action = 'discovery' | 'discovery_all' | 'enrichment' | 'enrichment_pending' | 'stats' | 'tiles' | 'tile';
 
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin();
@@ -78,6 +78,9 @@ export async function POST(req: NextRequest) {
       path = '/run/enrichment';
       params.set('limit', String(limit || 50));
       break;
+    case 'enrichment_pending':
+      path = '/enrichment/pending';
+      break;
     case 'stats':
       path = '/stats';
       break;
@@ -93,7 +96,7 @@ export async function POST(req: NextRequest) {
   const controller = new AbortController();
   const timeoutMs =
     action === 'discovery_all' ? 280_000 :
-    action === 'tile' || action === 'tiles' || action === 'stats' ? 60_000 :
+    action === 'tile' || action === 'tiles' || action === 'stats' || action === 'enrichment_pending' ? 60_000 :
     180_000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 

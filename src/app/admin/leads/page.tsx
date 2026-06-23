@@ -174,6 +174,53 @@ export default function LeadsPage() {
     }
   }, [load, cancelRef]);
 
+  // Incremental enrichment: loop small batches until no shops remain pending,
+  // showing live progress. Same timeout-proof pattern as discovery.
+  const runEnrichmentIncremental = useCallback(async () => {
+    setRunning('enrichment'); setRunMsg(''); setProgress(null);
+    cancelRef.cancelled = false;
+    const call = async (payload: object) => {
+      const res = await fetch('/api/leads/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      return data.result;
+    };
+    const BATCH = 25;
+    try {
+      const start = await call({ action: 'enrichment_pending' });
+      const total: number = start.pending || 0;
+      if (total === 0) { setRunMsg('✓ Nothing left to enrich'); return; }
+      setProgress({ done: 0, total });
+      let processed = 0;
+      let foundEmails = 0;
+      // Hard cap iterations as a safety net against an endless loop.
+      const maxIters = Math.ceil(total / BATCH) + 2;
+      for (let n = 0; n < maxIters; n++) {
+        if (cancelRef.cancelled) { setRunMsg('Stopped.'); break; }
+        const r = await call({ action: 'enrichment', limit: BATCH });
+        const did = r.enriched || 0;
+        foundEmails += r.with_email || 0;
+        processed += did;
+        setProgress({ done: Math.min(processed, total), total });
+        await load();
+        if (did === 0) break; // nothing left pending
+      }
+      if (!cancelRef.cancelled) {
+        setRunMsg(`✓ Enriched ${processed} shops — ${foundEmails} emails found`);
+      }
+      await load();
+    } catch (e) {
+      setRunMsg(`⚠ ${e instanceof Error ? e.message : 'Enrichment failed'}`);
+    } finally {
+      setRunning('');
+      setProgress(null);
+    }
+  }, [load, cancelRef]);
+
   // Derived stats
   const stats = useMemo(() => {
     const byCounty: Record<string, number> = {};
@@ -291,12 +338,12 @@ export default function LeadsPage() {
           </button>
 
           <button
-            onClick={() => runAction('enrichment', { limit: 100 })}
+            onClick={() => runEnrichmentIncremental()}
             disabled={busy}
             className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
           >
             {running === 'enrichment' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-            Enrich emails (100)
+            Enrich emails
           </button>
 
           {runMsg && (
