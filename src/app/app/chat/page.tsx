@@ -1680,7 +1680,7 @@ function ChatPageInner() {
           shop_name: _shopName || '',
           shop_id: _shopId,                // Prefer FK; shop_name kept for back-compat
           created_by: _selfId,             // Owner — lets RLS persist even without a shop
-          full_content: null,              // Gate: built on promotion only
+          full_content: (isDemoUser ? null : (_diagnosisText && _diagnosisText.length > 50 ? _diagnosisText : null)), // Trial-gate count marker for live web scans. Stays out of Synth training/search (synth_guided=false, embedding=null); promotion is gated on embedding, not this field.
           embedding: null,                 // Gate: generated on promotion only
         }),
       }).then(async (r) => {
