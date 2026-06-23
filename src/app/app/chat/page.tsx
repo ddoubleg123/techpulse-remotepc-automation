@@ -1393,6 +1393,7 @@ function FeedbackStep({ onRestart, unid, vehicle, codes, complaint, diagnosis, m
 
   // Accurate/Partial -> Confirm modal; Inaccurate -> Unconfirm modal.
   const handleSubmit = () => {
+    track({ event_type: 'feedback_submitted', step: 'feedback', session_id: unid, vehicle: [vehicle.year,vehicle.make,vehicle.model].filter(Boolean).join(' '), dtc_codes: dtcStrings, payload: { accuracy: rating, repaired } });
     if (rating === 'inaccurate') { setUnconfirmOpen(true); return; }
     if (rating === 'accurate' || rating === 'partial') { setConfirmOpen(true); return; }
     // No rating (only reachable when repaired === false): just close out.
