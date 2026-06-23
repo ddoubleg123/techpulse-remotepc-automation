@@ -163,7 +163,7 @@ function ActiveUsersInner() {
           {filtered.map((u) => {
             const b = billing(u);
             return (
-              <div key={u.id} className="p-4 flex items-center gap-4 hover:bg-gray-50">
+              <div key={u.id} onClick={() => router.push(`/admin/users/${encodeURIComponent(u.id)}/activity?email=${encodeURIComponent(u.email || '')}&hours=168`)} className="p-4 flex items-center gap-4 hover:bg-gray-50 cursor-pointer">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900 truncate">{u.name || (u.email ? u.email.split('@')[0] : 'User')}</p>
                   <p className="text-sm text-gray-500 truncate">{u.email || '—'}</p>
