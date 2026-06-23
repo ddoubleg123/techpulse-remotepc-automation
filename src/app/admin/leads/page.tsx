@@ -55,6 +55,8 @@ export default function LeadsPage() {
   const [running, setRunning] = useState<string>(''); // which action is in flight
   const [runMsg, setRunMsg] = useState('');
   const [discoverCounty, setDiscoverCounty] = useState('Fulton');
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const cancelRef = useState<{ cancelled: boolean }>({ cancelled: false })[0];
 
   const load = useCallback(async () => {
     setLoading(true); setErr('');
@@ -124,6 +126,53 @@ export default function LeadsPage() {
       setRunning('');
     }
   }, [load]);
+
+  // Tile-driven discovery: fetch the county's tile list, then process one tile
+  // per request. Each call is fast (seconds), so nothing times out, and the
+  // progress bar advances live. Rows appear in the table as we refresh.
+  const runDiscoveryIncremental = useCallback(async (county: string) => {
+    setRunning('discovery'); setRunMsg(''); setProgress(null);
+    cancelRef.cancelled = false;
+    const call = async (payload: object) => {
+      const res = await fetch('/api/leads/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      return data.result;
+    };
+    try {
+      const tilesResult = await call({ action: 'tiles', county });
+      const total: number = tilesResult.count;
+      setProgress({ done: 0, total });
+      let upserted = 0;
+      for (let i = 0; i < total; i++) {
+        if (cancelRef.cancelled) { setRunMsg('Stopped.'); break; }
+        try {
+          const r = await call({ action: 'tile', county, i });
+          upserted += r.upserted || 0;
+        } catch (e) {
+          // One tile failing (e.g. transient Google hiccup) shouldn't abort the
+          // whole county — log and keep going.
+          console.error(`tile ${i} failed`, e);
+        }
+        setProgress({ done: i + 1, total });
+        // Refresh the table every few tiles so rows appear as we go.
+        if ((i + 1) % 5 === 0) await load();
+      }
+      if (!cancelRef.cancelled) {
+        setRunMsg(`✓ ${county}: ${upserted} shops saved across ${total} searches`);
+      }
+      await load();
+    } catch (e) {
+      setRunMsg(`⚠ ${e instanceof Error ? e.message : 'Discovery failed'}`);
+    } finally {
+      setRunning('');
+      setProgress(null);
+    }
+  }, [load, cancelRef]);
 
   // Derived stats
   const stats = useMemo(() => {
@@ -223,7 +272,7 @@ export default function LeadsPage() {
               {COUNTIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
             <button
-              onClick={() => runAction('discovery', { county: discoverCounty })}
+              onClick={() => runDiscoveryIncremental(discoverCounty)}
               disabled={busy}
               className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
             >
@@ -256,9 +305,23 @@ export default function LeadsPage() {
             </span>
           )}
         </div>
-        {busy && (
+        {progress && (
+          <div className="mt-3">
+            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+              <span>Searching… {progress.done} of {progress.total} area searches</span>
+              <span>{Math.round((progress.done / progress.total) * 100)}%</span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-600 transition-all"
+                style={{ width: `${(progress.done / progress.total) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+        {busy && !progress && (
           <p className="text-xs text-gray-400 mt-2">
-            Running… discovery can take a few minutes per county. Free-tier cold start adds ~30-60s on the first call.
+            Running… first call wakes the service (~30-60s cold start).
           </p>
         )}
       </div>

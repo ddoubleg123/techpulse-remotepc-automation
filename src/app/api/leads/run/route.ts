@@ -19,7 +19,7 @@ import { requireAdmin } from '@/lib/requireAdmin';
 
 export const dynamic = 'force-dynamic';
 
-type Action = 'discovery' | 'discovery_all' | 'enrichment' | 'stats';
+type Action = 'discovery' | 'discovery_all' | 'enrichment' | 'stats' | 'tiles' | 'tile';
 
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin();
@@ -36,14 +36,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: { action?: Action; county?: string; limit?: number };
+  let body: { action?: Action; county?: string; limit?: number; i?: number };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { action, county, limit } = body;
+  const { action, county, limit, i } = body;
 
   // Build the upstream URL for the requested action.
   let path = '';
@@ -55,6 +55,21 @@ export async function POST(req: NextRequest) {
       }
       path = '/run/discovery';
       params.set('county', county);
+      break;
+    case 'tiles':
+      if (!county) {
+        return NextResponse.json({ error: 'county required' }, { status: 400 });
+      }
+      path = '/discovery/tiles';
+      params.set('county', county);
+      break;
+    case 'tile':
+      if (!county || i == null) {
+        return NextResponse.json({ error: 'county and i required' }, { status: 400 });
+      }
+      path = '/discovery/tile';
+      params.set('county', county);
+      params.set('i', String(i));
       break;
     case 'discovery_all':
       path = '/run/discovery/all';
@@ -76,7 +91,10 @@ export async function POST(req: NextRequest) {
   // tier may also cold-start (30-60s). AbortController caps the wait so the
   // route can't hang forever.
   const controller = new AbortController();
-  const timeoutMs = action === 'discovery_all' ? 280_000 : 180_000;
+  const timeoutMs =
+    action === 'discovery_all' ? 280_000 :
+    action === 'tile' || action === 'tiles' || action === 'stats' ? 60_000 :
+    180_000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
