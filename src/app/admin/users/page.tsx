@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { formatRelativeTime } from '@/lib/utils';
+import UserDetailModal from '@/components/admin/UserDetailModal';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -38,6 +39,7 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -192,7 +194,7 @@ export default function AdminUsersPage() {
           ) : (
             <div className="divide-y divide-gray-100">
               {filtered.map((r) => (
-                <div key={r.id} className="flex items-center gap-4 p-4">
+                <div key={r.id} onClick={() => setSelectedUserId(r.id)} className="flex items-center gap-4 p-4 hover:bg-gray-50 cursor-pointer">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900 truncate">{r.name || (r.email ? r.email.split('@')[0] : 'User')}</p>
                     <p className="text-sm text-gray-500 truncate">{r.email || '—'}</p>
@@ -231,6 +233,7 @@ export default function AdminUsersPage() {
           )}
         </div>
       </div>
+      <UserDetailModal userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
     </div>
   );
 }

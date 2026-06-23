@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { RefreshCw, Search } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { formatRelativeTime } from '@/lib/utils';
+import UserDetailModal from '@/components/admin/UserDetailModal';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -61,6 +62,7 @@ function ActiveUsersInner() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErr('');
@@ -163,7 +165,7 @@ function ActiveUsersInner() {
           {filtered.map((u) => {
             const b = billing(u);
             return (
-              <div key={u.id} onClick={() => router.push(`/admin/users/${encodeURIComponent(u.id)}/activity?email=${encodeURIComponent(u.email || '')}&hours=168`)} className="p-4 flex items-center gap-4 hover:bg-gray-50 cursor-pointer">
+              <div key={u.id} onClick={() => setSelectedUserId(u.id)} className="p-4 flex items-center gap-4 hover:bg-gray-50 cursor-pointer">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900 truncate">{u.name || (u.email ? u.email.split('@')[0] : 'User')}</p>
                   <p className="text-sm text-gray-500 truncate">{u.email || '—'}</p>
@@ -196,6 +198,7 @@ function ActiveUsersInner() {
           })}
         </div>
       </div>
+      <UserDetailModal userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
     </div>
   );
 }

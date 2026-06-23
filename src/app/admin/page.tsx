@@ -16,6 +16,7 @@ import {
 import { Card, CardContent, CardHeader, Badge, Avatar, Button } from '@/components/ui';
 import { formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
+import UserDetailModal from '@/components/admin/UserDetailModal';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -117,6 +118,7 @@ export default function AdminDashboard() {
   });
   const [recentTickets, setRecentTickets] = useState<AdminTicket[]>([]);
   const [recentUsers, setRecentUsers] = useState<AdminUserRow[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [activeUsers30d, setActiveUsers30d] = useState<number | null>(null);
   const [recentLogins, setRecentLogins] = useState<LoginActivityRow[]>([]);
 
@@ -292,7 +294,7 @@ export default function AdminDashboard() {
                 <div className="p-4 text-sm text-gray-500">No users yet.</div>
               )}
               {recentUsers.map((u) => (
-                <div key={u.id} className="p-4 hover:bg-gray-50">
+                <div key={u.id} onClick={() => setSelectedUserId(u.id)} className="p-4 hover:bg-gray-50 cursor-pointer">
                   <div className="flex items-center gap-3">
                     <Avatar name={u.name || u.email || 'User'} size="md" />
                     <div className="flex-1 min-w-0">
@@ -358,6 +360,7 @@ export default function AdminDashboard() {
           </div>
         </CardContent>
       </Card>
+      <UserDetailModal userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
     </main>
   );
 }
