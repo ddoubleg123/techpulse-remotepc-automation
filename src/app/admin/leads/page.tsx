@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, Search, Play, Mail, Download, Loader2 } from 'lucide-react';
+import { RefreshCw, Search, Play, Mail, Download, Loader2, Table2, Map as MapIcon } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
+import LeadsMap from '@/components/admin/LeadsMap';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -18,12 +19,15 @@ interface LeadShop {
   address: string | null;
   city: string | null;
   county: string | null;
+  zip: string | null;
   phone: string | null;
   website: string | null;
   email: string | null;
   owner_name: string | null;
   rating: number | null;
   review_count: number | null;
+  latitude: number | null;
+  longitude: number | null;
   enrichment_status: string | null;
   created_at: string | null;
 }
@@ -44,6 +48,8 @@ export default function LeadsPage() {
   const [q, setQ] = useState('');
   const [countyFilter, setCountyFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [zipFilter, setZipFilter] = useState('all');
+  const [view, setView] = useState<'table' | 'map'>('table');
 
   // pipeline run state
   const [running, setRunning] = useState<string>(''); // which action is in flight
@@ -80,6 +86,9 @@ export default function LeadsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Reset zip when county changes — a zip from another county would zero results.
+  useEffect(() => { setZipFilter('all'); }, [countyFilter]);
 
   // Trigger a pipeline action via the server-side proxy.
   const runAction = useCallback(async (
@@ -129,24 +138,35 @@ export default function LeadsPage() {
     return { total: rows.length, byCounty, withEmail, pending };
   }, [rows]);
 
+  // Zip options, scoped to the selected county so the dropdown stays usable.
+  const zipOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      if (countyFilter !== 'all' && r.county !== countyFilter) continue;
+      if (r.zip) set.add(r.zip);
+    }
+    return Array.from(set).sort();
+  }, [rows, countyFilter]);
+
   // Filtered view
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
     return rows.filter((r) => {
       if (countyFilter !== 'all' && r.county !== countyFilter) return false;
+      if (zipFilter !== 'all' && r.zip !== zipFilter) return false;
       if (statusFilter === 'has_email' && !r.email) return false;
       if (statusFilter === 'no_email' && r.email) return false;
       if (statusFilter === 'pending' && (r.enrichment_status || '') !== 'pending') return false;
       if (ql) {
-        const hay = `${r.name || ''} ${r.city || ''} ${r.email || ''} ${r.owner_name || ''}`.toLowerCase();
+        const hay = `${r.name || ''} ${r.city || ''} ${r.zip || ''} ${r.email || ''} ${r.owner_name || ''}`.toLowerCase();
         if (!hay.includes(ql)) return false;
       }
       return true;
     });
-  }, [rows, q, countyFilter, statusFilter]);
+  }, [rows, q, countyFilter, zipFilter, statusFilter]);
 
   const exportCsv = useCallback(() => {
-    const cols = ['name', 'county', 'city', 'address', 'phone', 'email', 'owner_name', 'website', 'rating', 'review_count', 'enrichment_status'];
+    const cols = ['name', 'county', 'city', 'zip', 'address', 'phone', 'email', 'owner_name', 'website', 'rating', 'review_count', 'enrichment_status'];
     const esc = (v: unknown) => {
       const s = v == null ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -263,6 +283,15 @@ export default function LeadsPage() {
           {COUNTIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <select
+          value={zipFilter}
+          onChange={(e) => setZipFilter(e.target.value)}
+          disabled={zipOptions.length === 0}
+          className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50"
+        >
+          <option value="all">All zips</option>
+          {zipOptions.map((z) => <option key={z} value={z}>{z}</option>)}
+        </select>
+        <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
@@ -279,9 +308,29 @@ export default function LeadsPage() {
         >
           <Download className="w-4 h-4" /> Export CSV ({filtered.length})
         </button>
+        <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+          <button
+            onClick={() => setView('table')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm ${view === 'table' ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-50'}`}
+          >
+            <Table2 className="w-4 h-4" /> Table
+          </button>
+          <button
+            onClick={() => setView('map')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm ${view === 'map' ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-50'}`}
+          >
+            <MapIcon className="w-4 h-4" /> Map
+          </button>
+        </div>
       </div>
 
+      {/* Map view */}
+      {view === 'map' && !loading && (
+        <LeadsMap shops={filtered} />
+      )}
+
       {/* Table */}
+      {view === 'table' && (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         {err && <div className="p-4 text-sm text-red-600">{err}</div>}
         {loading ? (
@@ -322,7 +371,7 @@ export default function LeadsPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-600">
                         <div>{r.county || '—'}</div>
-                        <div className="text-xs text-gray-400">{r.city || ''}</div>
+                        <div className="text-xs text-gray-400">{[r.city, r.zip].filter(Boolean).join(' · ')}</div>
                       </td>
                       <td className="px-4 py-3 text-gray-600">{r.phone || '—'}</td>
                       <td className="px-4 py-3">
@@ -347,6 +396,7 @@ export default function LeadsPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
