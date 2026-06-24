@@ -52,6 +52,7 @@ export default function LeadsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [zipFilter, setZipFilter] = useState('all');
   const [view, setView] = useState<'table' | 'map'>('table');
+  const [mapExpanded, setMapExpanded] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('review_count');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -324,6 +325,9 @@ export default function LeadsPage() {
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
+      {/* Collapsible header region — hidden when the map is expanded to give
+          it more vertical room (sidebar + filters stay visible). */}
+      <div className={view === 'map' && mapExpanded ? 'hidden' : ''}>
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-bold text-gray-900">Lead Repository</h1>
         <button
@@ -412,6 +416,7 @@ export default function LeadsPage() {
           </p>
         )}
       </div>
+      </div>{/* end collapsible header region */}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -472,11 +477,22 @@ export default function LeadsPage() {
             <MapIcon className="w-4 h-4" /> Map
           </button>
         </div>
+        {view === 'map' && (
+          <button
+            onClick={() => setMapExpanded((v) => !v)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-gray-300 hover:bg-gray-50"
+            title={mapExpanded ? 'Show details above the map' : 'Hide details to enlarge the map'}
+          >
+            {mapExpanded
+              ? <><ChevronDown className="w-4 h-4" /> Show details</>
+              : <><ChevronUp className="w-4 h-4" /> Expand map</>}
+          </button>
+        )}
       </div>
 
       {/* Map view */}
       {view === 'map' && !loading && (
-        <LeadsMap shops={filtered} />
+        <LeadsMap shops={filtered} expanded={mapExpanded} />
       )}
 
       {/* Table */}

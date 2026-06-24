@@ -61,7 +61,7 @@ function pinColor(s: MapShop): string {
   return '#9ca3af';                      // gray
 }
 
-export default function LeadsMap({ shops }: { shops: MapShop[] }) {
+export default function LeadsMap({ shops, expanded = false }: { shops: MapShop[]; expanded?: boolean }) {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapObj = useRef<any>(null);
@@ -160,6 +160,19 @@ export default function LeadsMap({ shops }: { shops: MapShop[] }) {
     if (status === 'ready') draw();
   }, [status, draw]);
 
+  // When the container height changes (expand/collapse), tell Google Maps to
+  // resize so it repaints tiles into the new area and re-centers on the shops.
+  useEffect(() => {
+    if (status !== 'ready' || !mapObj.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g = (window as any).google;
+    const t = setTimeout(() => {
+      g.maps.event.trigger(mapObj.current, 'resize');
+      draw();
+    }, 60); // let the CSS height transition settle first
+    return () => clearTimeout(t);
+  }, [expanded, status, draw]);
+
   if (status === 'error') {
     return (
       <div className="bg-white border border-gray-200 rounded-xl p-8 text-center text-red-600 text-sm">
@@ -179,7 +192,10 @@ export default function LeadsMap({ shops }: { shops: MapShop[] }) {
           <span className="flex items-center gap-1"><Dot c="#9ca3af" /> No email</span>
         </span>
       </div>
-      <div ref={mapRef} style={{ height: 560, width: '100%' }} />
+      <div
+        ref={mapRef}
+        style={{ height: expanded ? 'calc(100vh - 220px)' : 560, width: '100%' }}
+      />
       {status === 'loading' && (
         <div className="p-3 text-center text-xs text-gray-400">Loading map…</div>
       )}
