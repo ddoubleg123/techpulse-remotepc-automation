@@ -1502,7 +1502,15 @@ function ChatPageInner() {
   const [symptoms, setSymptoms] = useState('');
   const [synthReport, setSynthReport] = useState<SynthReport|null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
-  const [sessionId, setSessionId] = useState(() => getOrCreateSessionUnid());
+  const [sessionId, setSessionId] = useState('');
+  // getOrCreateSessionUnid() touches localStorage and mints a TECH-... id, which
+  // differs between server render and first client paint -> React #418 hydration
+  // mismatch. Defer it to post-mount so SSR and first client render agree. The
+  // generator itself is unchanged; we only move WHEN it runs.
+  useEffect(() => {
+    setSessionId((prev) => prev || getOrCreateSessionUnid());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // === Funnel tracking ===
   // Upsert a chat_sessions row keyed on session_id as the customer moves through

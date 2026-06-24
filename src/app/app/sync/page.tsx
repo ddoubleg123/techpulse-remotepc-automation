@@ -15,7 +15,7 @@ export default function SyncPage() {
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ margin: '0 0 6px', fontSize: 24, fontWeight: 800, color: navy }}>TechPulse Connector</h1>
         <p style={{ margin: 0, fontSize: 14, color: '#666' }}>
-          Install the Connector on your Windows shop PC. It automatically finds scanner files from your diagnostic tools and sends them directly to TechPulse — no manual uploads needed.
+          Install the Connector on your Windows shop PC. It watches the folders where your diagnostic tools save scan exports and sends those files to TechPulse automatically — no manual uploads needed.
         </p>
       </div>
 
@@ -52,9 +52,9 @@ export default function SyncPage() {
         <h2 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 700, color: navy }}>How to install</h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {[
-            { n: '1', title: 'Download the installer', desc: 'Click the Download Connector button above. Your browser may warn about .exe files — click Keep or Allow to proceed.' },
-            { n: '2', title: 'Run the setup', desc: 'Double-click TechPulseConnectorSetup-v4-WithAPI.exe. If Windows shows a SmartScreen warning, click More info then Run anyway.' },
-            { n: '3', title: 'It finds files automatically', desc: 'The Connector scans your PC for scanner data files from your diagnostic tools and syncs them to TechPulse. No configuration needed.' },
+            { n: '1', title: 'Download the installer', desc: 'Click the Download Connector button above to download the official TechPulse Connector for Windows.' },
+            { n: '2', title: 'Run the setup', desc: 'Double-click TechPulseConnectorSetup-v4-WithAPI.exe to launch the installer, then follow the on-screen prompts.' },
+            { n: '3', title: 'It finds your scanner exports', desc: 'Once installed, the Connector watches the folders where your diagnostic tools save scan exports and syncs those files to your TechPulse account. No manual uploads needed.' },
           ].map(step => (
             <div key={step.n} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
               <div style={{ width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(135deg, ${navy}, ${teal})`, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{step.n}</div>
@@ -72,10 +72,10 @@ export default function SyncPage() {
         <h2 style={{ margin: '0 0 14px', fontSize: 16, fontWeight: 700, color: navy }}>What the Connector does</h2>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           {[
-            { icon: '🔍', label: 'Finds scan files automatically', desc: 'Locates scanner data on your PC without manual searching' },
-            { icon: '📤', label: 'Sends to TechPulse', desc: 'Uploads directly to Synth for AI diagnosis' },
-            { icon: '🔄', label: 'Stays in sync', desc: 'Monitors for new files as you scan vehicles' },
-            { icon: '🔒', label: 'Secure', desc: 'Files go directly from your PC to your TechPulse account only' },
+            { icon: '📁', label: 'Reads scanner exports only', desc: 'Accesses the folders where your diagnostic tools save scan files — not the rest of your PC' },
+            { icon: '📤', label: 'Sends to TechPulse', desc: 'Uploads those scan files to Synth for AI diagnosis' },
+            { icon: '🔄', label: 'Stays in sync', desc: 'Watches those folders for new scan exports as you work' },
+            { icon: '🔒', label: 'Your account only', desc: 'Files go directly from your PC to your TechPulse account over an encrypted connection' },
           ].map(item => (
             <div key={item.label} style={{ background: '#F8F9FA', borderRadius: 12, padding: '14px 16px' }}>
               <div style={{ fontSize: 22, marginBottom: 6 }}>{item.icon}</div>
