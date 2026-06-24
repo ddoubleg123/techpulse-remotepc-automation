@@ -1,16 +1,18 @@
 /**
- * TechPulse Synth API — confirm / unconfirm / save-case wrappers.
+ * TechPulse case confirm / save wrappers.
  *
- * Endpoints live at https://app.atrguide.com/api/ (per Mike, May 2026).
- * The Synth API handles all server-side AI synthesis (Haiku) and Supabase
- * writes — the web app just assembles the payload and POSTs.
+ * These now hit the web app's OWN same-origin API routes (/api/confirm-case,
+ * /api/save-case), which generate the embedding (OpenAI text-embedding-3-small)
+ * and write to diagnostic_case_studies. The old app.atrguide.com base is dead
+ * (503 since June 19) and has been removed. Repoint confirmed by Mike, June 24.
  */
 
-const SYNTH_API_BASE = 'https://app.atrguide.com/api';
+const SYNTH_API_BASE = '/api';
 
 // ---------- Payload types ----------
 
 export interface ConfirmCasePayload {
+  unid: string;
   year: number;
   make: string;
   model: string;

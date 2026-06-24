@@ -1,23 +1,27 @@
 // POST /api/confirm-case
-// Promotes a web diagnostic session toward Synth's training corpus.
+// Promotes a web diagnostic session to confirmed_correct in the training corpus.
 //
-// What this does (per Mike's gate design):
-//   - Marks the case diagnosis_outcome='confirmed_correct'
-//   - Builds full_content from vehicle/complaint/messages/diagnosis/fix
-//   - Generates a 1536-dim embedding via OpenAI text-embedding-3-small
-//   - Stamps confirmed_date
-//   - Writes a cheat-sheet row to synth_instructions (best-effort)
+// Contract (per Mike, June 24 2026): RICH payload from the modal —
+//   { unid, year, make, model, dtc_codes, complaint,
+//     what_fixed_it, lesson_learned, transcript_html }
+// Field mapping: what_fixed_it -> fix, lesson_learned -> technical_notes.
 //
-// What this DOES NOT do:
-//   - Set synth_guided=true. That's reserved for Mike's CONFIRM CORRECT
-//     command, which lets cases through the kb_gate.py q_cases filter.
+// What it does:
+//   1. Auth via CONFIRM_TOKEN bearer
+//   2. Locate the case by unid (must be source='web')
+//   3. PATCH: diagnosis_outcome='confirmed_correct', fix, technical_notes,
+//      full_content, embedding (OpenAI 1536), confirmed_date
+//   NEVER sets synth_guided — that is Mike's gate (CONFIRM CORRECT / kb_gate).
 //
-// Required env vars:
-//   CONFIRM_TOKEN              shared secret for Bearer auth
-//   OPENAI_API_KEY             for embedding generation
-//   SUPABASE_SERVICE_ROLE_KEY  for PATCH bypassing RLS
+// Embedding input = complaint + diagnosis + fix + conclusion (Mike's spec),
+// generated via src/lib/embedding.ts (OpenAI text-embedding-3-small).
+//
+// Env: CONFIRM_TOKEN, OPENAI_API_KEY, SUPABASE_SERVICE_ROLE_KEY.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { buildEmbeddingText, generateEmbedding } from '@/lib/embedding';
+
+export const dynamic = 'force-dynamic';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 
@@ -34,51 +38,55 @@ type CaseRow = {
   complaint: string | null;
   symptoms: string | null;
   diagnosis: string | null;
+  conclusion: string | null;
   fix: string | null;
   messages: Array<{ role: string; content: string }> | null;
-  // Extras consumed by writeCheatSheet:
-  title?: string | null;
-  key_pid_pattern?: string | null;
-  diagnostic_findings?: string | null;
-  pattern_signature?: string | null;
-  repair_type?: string | null;
-  shop_name?: string | null;
-  confirmed_date?: string | null;
 };
+
+interface ConfirmBody {
+  unid?: string;
+  year?: number;
+  make?: string;
+  model?: string;
+  dtc_codes?: string[];
+  complaint?: string;
+  what_fixed_it?: string;
+  lesson_learned?: string;
+  transcript_html?: string;
+}
 
 export async function POST(req: NextRequest) {
   const CONFIRM_TOKEN = process.env.CONFIRM_TOKEN || '';
-  const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+  const SYNTH_T1 = process.env.NEXT_PUBLIC_SYNTH_API_TOKEN || '';
   const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-  // 1. Auth
+  // 1. Auth — the modal sends the T1 Synth token (NEXT_PUBLIC_SYNTH_API_TOKEN).
+  //    Accept that, or a dedicated CONFIRM_TOKEN if configured. At least one
+  //    must be set and match.
   const auth = req.headers.get('authorization') || '';
   const token = auth.replace(/^Bearer\s+/i, '');
-  if (!CONFIRM_TOKEN || !token || token !== CONFIRM_TOKEN) {
+  const accepted = [CONFIRM_TOKEN, SYNTH_T1].filter(Boolean);
+  if (accepted.length === 0 || !token || !accepted.includes(token)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  // 2. Env checks
-  if (!OPENAI_API_KEY) {
-    return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 503 });
   }
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: 'SUPABASE_SERVICE_ROLE_KEY not configured' }, { status: 503 });
   }
 
-  // 3. Body
-  let body: { unid?: string; technicianNotes?: string };
+  // 2. Body
+  let body: ConfirmBody;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { unid, technicianNotes } = body;
+  const { unid, what_fixed_it, lesson_learned } = body;
   if (!unid || typeof unid !== 'string') {
     return NextResponse.json({ error: 'Missing or invalid unid' }, { status: 400 });
   }
 
-  // 4. Fetch the case
+  // 3. Fetch the existing case (need diagnosis + conclusion for the embedding,
+  //    and to confirm it is a web session).
   const fetchUrl = `${SUPABASE_URL}/rest/v1/diagnostic_case_studies?unid=eq.${encodeURIComponent(unid)}&select=*`;
   let caseRow: CaseRow;
   try {
@@ -110,8 +118,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 5. Build full_content
-  const fullContent = buildFullContent(caseRow, technicianNotes);
+  // 4. Apply the field mapping from the rich payload.
+  const fix = (what_fixed_it || caseRow.fix || '').trim();
+  const technicalNotes = (lesson_learned || '').trim();
+
+  // 5. Build full_content (human-readable case record for retrieval display).
+  const fullContent = buildFullContent(caseRow, fix, technicalNotes);
   if (!fullContent || fullContent.length < 20) {
     return NextResponse.json(
       { error: 'Case has insufficient content to confirm (need vehicle + complaint + diagnosis)' },
@@ -119,41 +131,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 6. Generate embedding
-  let embedding: number[];
-  try {
-    const embedRes = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-3-small',
-        input: fullContent.slice(0, 8000), // text-embedding-3-small handles 8191 tokens; ~8k chars is safe
-      }),
-    });
-    if (!embedRes.ok) {
-      const errText = await embedRes.text();
-      return NextResponse.json(
-        { error: `OpenAI embedding failed: ${errText.slice(0, 200)}` },
-        { status: 502 }
-      );
-    }
-    const data = await embedRes.json();
-    embedding = data?.data?.[0]?.embedding;
-    if (!Array.isArray(embedding) || embedding.length === 0) {
-      return NextResponse.json({ error: 'OpenAI returned no embedding' }, { status: 502 });
-    }
-  } catch (e) {
-    return NextResponse.json(
-      { error: `OpenAI call failed: ${e instanceof Error ? e.message : 'unknown'}` },
-      { status: 502 }
-    );
+  // 6. Embedding — Mike's formula: complaint + diagnosis + fix + conclusion.
+  const embedText = buildEmbeddingText({
+    complaint: caseRow.complaint,
+    diagnosis: caseRow.diagnosis,
+    fix,
+    conclusion: caseRow.conclusion,
+  });
+  const emb = await generateEmbedding(embedText);
+  if (!emb.ok) {
+    return NextResponse.json({ error: emb.error }, { status: emb.status });
   }
 
-  // 7. PATCH the case. Note: synth_guided is NOT set here; only Mike's
-  // CONFIRM CORRECT command on his side flips that gate.
+  // 7. PATCH the case. synth_guided is intentionally NOT included.
   const patchUrl = `${SUPABASE_URL}/rest/v1/diagnostic_case_studies?unid=eq.${encodeURIComponent(unid)}`;
   try {
     const res = await fetch(patchUrl, {
@@ -166,8 +156,10 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         diagnosis_outcome: 'confirmed_correct',
+        fix,
+        technical_notes: technicalNotes || null,
         full_content: fullContent,
-        embedding,
+        embedding: emb.embedding,
         confirmed_date: new Date().toISOString().slice(0, 10),
       }),
     });
@@ -185,25 +177,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 8. Write cheat sheet to synth_instructions (best-effort — promotion already
-  //    succeeded, so cheat-sheet failure must not poison the response).
-  const cheatSheet = await writeCheatSheet(
-    { ...caseRow, confirmed_date: new Date().toISOString().slice(0, 10) },
-    OPENAI_API_KEY,
-    SUPABASE_SERVICE_ROLE_KEY
-  );
-
   return NextResponse.json({
     ok: true,
     unid,
     fullContentLength: fullContent.length,
-    embeddingDims: embedding.length,
-    cheatSheet,
-    note: 'Shop confirmed. Awaiting Mike\'s CONFIRM CORRECT to set synth_guided=true.',
+    embeddingDims: emb.embedding.length,
+    note: "Confirmed correct. synth_guided left untouched (Mike's gate).",
   });
 }
 
-function buildFullContent(c: CaseRow, technicianNotes?: string): string {
+function buildFullContent(c: CaseRow, fix: string, technicianNotes?: string): string {
   const parts: string[] = [];
   const vehicle = [c.year, c.make, c.model, c.engine].filter(Boolean).join(' ');
   if (vehicle) parts.push(`Vehicle: ${vehicle}`);
@@ -213,146 +196,13 @@ function buildFullContent(c: CaseRow, technicianNotes?: string): string {
   if (c.symptoms) parts.push(`Symptoms: ${c.symptoms}`);
   if (Array.isArray(c.messages) && c.messages.length > 0) {
     const transcript = c.messages
-      .map(m => `${m.role === 'user' ? 'Tech' : 'Synth'}: ${m.content}`)
+      .map((m) => `${m.role === 'user' ? 'Tech' : 'Synth'}: ${m.content}`)
       .join('\n\n');
     if (transcript) parts.push(`Transcript:\n${transcript}`);
   }
   if (c.diagnosis) parts.push(`Diagnosis: ${c.diagnosis}`);
-  if (c.fix) parts.push(`Fix: ${c.fix}`);
+  if (fix) parts.push(`Fix: ${fix}`);
+  if (c.conclusion) parts.push(`Conclusion: ${c.conclusion}`);
   if (technicianNotes) parts.push(`Technician notes: ${technicianNotes}`);
   return parts.join('\n\n');
-}
-
-// Translation of Mike's cheat_sheet_writer.py into the Next.js API runtime.
-// Builds a 7-line cheat sheet, embeds it, upserts to synth_instructions.
-// Failures here MUST NOT abort the promotion — caller already PATCHed the case.
-type CheatSheetResult =
-  | { section: string; action: 'inserted' | 'updated' }
-  | { error: string };
-
-const NOT_MAP: Record<string, string> = {
-  sensor: 'Do not replace sensor before verifying wiring/power/ground',
-  wiring: 'Do not replace components before verifying circuit integrity',
-  mechanical: 'Do not overlook wear patterns and secondary damage',
-  software: 'Do not replace hardware before verifying software/calibration',
-  vacuum_leak: 'O2 sensors, injectors — lean trim is symptom not cause',
-  fuel_system: 'O2 sensors, MAF — verify fuel delivery before parts',
-  timing: 'Do not replace cam/crank sensors before verifying timing mechanically',
-};
-
-async function writeCheatSheet(
-  c: CaseRow,
-  openaiKey: string,
-  supaKey: string
-): Promise<CheatSheetResult> {
-  try {
-    const make = (c.make || 'UNKNOWN').toUpperCase().replace(/ /g, '_');
-    const dtcs = c.dtc_codes || [];
-    const primaryDtc =
-      dtcs.length > 0
-        ? dtcs[0].replace(/ /g, '').toUpperCase() + (dtcs.length > 1 ? '_MULTI' : '')
-        : 'SYMPTOM';
-    const engineMatch = (c.title || '').match(/(\d+\.\d+[LT]?\w*)/i);
-    const engine = engineMatch
-      ? engineMatch[1].toUpperCase()
-      : (c.repair_type || 'GENERAL').toUpperCase();
-    const sectionName = `CHEAT_${make}_${engine}_${primaryDtc}`;
-
-    const vehicleLine = `${c.year || ''} ${c.make || ''} ${c.model || ''} ${engine}`.trim();
-    const pidRaw = (c.key_pid_pattern || c.diagnostic_findings || 'See case study').slice(0, 120);
-    const patternRaw = c.pattern_signature || '';
-    const patternParts = patternRaw.includes(' | ') ? patternRaw.split(' | ') : [patternRaw];
-    const patternLine =
-      (patternParts[patternParts.length - 1] || '').slice(0, 120) ||
-      'See diagnostic_case_studies for full pattern';
-    const notLine = NOT_MAP[c.repair_type || ''] || 'See case study for exclusion list';
-    const fixLine = c.fix || (c.title?.split(' - ').pop()) || 'See case study';
-    const refLine = `${c.shop_name || 'Unknown Shop'} ${(c.confirmed_date || '').slice(0, 10)}`.trim();
-
-    const content = [
-      `Vehicle: ${vehicleLine}`,
-      `DTCs: ${dtcs.join(', ') || 'NONE'}`,
-      `PIDs: ${pidRaw}`,
-      `Pattern: ${patternLine}`,
-      `Fix: ${fixLine}`,
-      `Not: ${notLine}`,
-      `Ref: ${refLine}`,
-    ].join('\n');
-
-    // Embedding (same model as the parent case for vector compatibility)
-    const embRes = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${openaiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-3-small',
-        input: content.slice(0, 8000),
-      }),
-    });
-    if (!embRes.ok) return { error: `Cheat sheet embedding HTTP ${embRes.status}` };
-    const embData = await embRes.json();
-    const embedding = embData?.data?.[0]?.embedding;
-    if (!Array.isArray(embedding) || embedding.length === 0) {
-      return { error: 'No cheat sheet embedding returned' };
-    }
-
-    // The case ref to record on the cheat sheet row. Prefer the UUID id; fall
-    // back to unid only if id was not selected.
-    const caseRef = c.id || c.unid;
-
-    // Upsert by section. First check if an existing row uses this section name.
-    const checkUrl = `${SUPABASE_URL}/rest/v1/synth_instructions?section=eq.${encodeURIComponent(sectionName)}&select=id,case_study_refs`;
-    const checkRes = await fetch(checkUrl, {
-      headers: { Authorization: `Bearer ${supaKey}`, apikey: supaKey },
-    });
-    const existing: Array<{ id: string; case_study_refs?: string[] }> = checkRes.ok
-      ? await checkRes.json()
-      : [];
-
-    if (Array.isArray(existing) && existing.length > 0) {
-      const refs = Array.from(
-        new Set([...(existing[0].case_study_refs || []), caseRef].filter(Boolean))
-      );
-      const updRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/synth_instructions?id=eq.${existing[0].id}`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${supaKey}`,
-            apikey: supaKey,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal',
-          },
-          body: JSON.stringify({ content, embedding, case_study_refs: refs }),
-        }
-      );
-      if (!updRes.ok) return { error: `Update synth_instructions HTTP ${updRes.status}` };
-      return { section: sectionName, action: 'updated' };
-    } else {
-      const insRes = await fetch(`${SUPABASE_URL}/rest/v1/synth_instructions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${supaKey}`,
-          apikey: supaKey,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({
-          section: sectionName,
-          title: `Vehicle Cheat Sheet — ${sectionName.replace('CHEAT_', '').replace(/_/g, ' ')}`,
-          content,
-          instruction_type: 'cheat_sheet',
-          active: true,
-          embedding,
-          case_study_refs: caseRef ? [caseRef] : [],
-        }),
-      });
-      if (!insRes.ok) return { error: `Insert synth_instructions HTTP ${insRes.status}` };
-      return { section: sectionName, action: 'inserted' };
-    }
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : 'unknown' };
-  }
 }

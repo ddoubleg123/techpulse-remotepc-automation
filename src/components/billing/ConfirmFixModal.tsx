@@ -82,6 +82,7 @@ export function ConfirmFixModal({
       const conversation_text = transcriptToText(messages);
 
       const confirmPayload: ConfirmCasePayload = {
+        unid,
         year,
         make,
         model,
