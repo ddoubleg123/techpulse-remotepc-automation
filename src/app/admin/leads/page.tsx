@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, Search, Play, Mail, Download, Loader2, Table2, Map as MapIcon } from 'lucide-react';
+import { RefreshCw, Search, Play, Mail, Download, Loader2, Table2, Map as MapIcon, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import LeadsMap from '@/components/admin/LeadsMap';
 
@@ -32,6 +32,8 @@ interface LeadShop {
   created_at: string | null;
 }
 
+type SortKey = 'name' | 'county' | 'email' | 'rating' | 'review_count' | 'status';
+
 function enrichChip(s: string | null): { label: string; cls: string } {
   const v = (s || '').toLowerCase();
   if (v === 'done') return { label: 'Email found', cls: 'bg-green-100 text-green-700' };
@@ -50,6 +52,8 @@ export default function LeadsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [zipFilter, setZipFilter] = useState('all');
   const [view, setView] = useState<'table' | 'map'>('table');
+  const [sortKey, setSortKey] = useState<SortKey>('review_count');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // pipeline run state
   const [running, setRunning] = useState<string>(''); // which action is in flight
@@ -245,7 +249,7 @@ export default function LeadsPage() {
   }, [rows, countyFilter]);
 
   // Filtered view
-  const filtered = useMemo(() => {
+  const filteredUnsorted = useMemo(() => {
     const ql = q.trim().toLowerCase();
     return rows.filter((r) => {
       if (countyFilter !== 'all' && r.county !== countyFilter) return false;
@@ -260,6 +264,42 @@ export default function LeadsPage() {
       return true;
     });
   }, [rows, q, countyFilter, zipFilter, statusFilter]);
+
+  // Sorted view. Text keys sort case-insensitively; numeric keys numerically;
+  // "has email" sorts rows with an email first. Nulls always sort last.
+  const filtered = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const val = (r: LeadShop): string | number => {
+      switch (sortKey) {
+        case 'name': return (r.name || '').toLowerCase();
+        case 'county': return `${r.county || ''} ${r.city || ''}`.toLowerCase();
+        case 'email': return r.email ? 0 : 1; // has-email first when desc
+        case 'rating': return r.rating ?? -1;
+        case 'review_count': return r.review_count ?? -1;
+        case 'status': return (r.enrichment_status || '').toLowerCase();
+        default: return '';
+      }
+    };
+    return [...filteredUnsorted].sort((a, b) => {
+      const va = val(a), vb = val(b);
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+  }, [filteredUnsorted, sortKey, sortDir]);
+
+  // Toggle sort: click a column to sort by it; click again to flip direction.
+  const toggleSort = useCallback((key: SortKey) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prev;
+      }
+      // New column: text ascending, numeric/email descending by default.
+      setSortDir(key === 'name' || key === 'county' || key === 'status' ? 'asc' : 'desc');
+      return key;
+    });
+  }, []);
 
   const exportCsv = useCallback(() => {
     const cols = ['name', 'county', 'city', 'zip', 'address', 'phone', 'email', 'owner_name', 'website', 'rating', 'review_count', 'enrichment_status'];
@@ -456,13 +496,13 @@ export default function LeadsPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-gray-500 text-left">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Shop</th>
-                  <th className="px-4 py-3 font-medium">County / City</th>
+                  <SortableTh label="Shop" col="name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableTh label="County / City" col="county" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <th className="px-4 py-3 font-medium">Phone</th>
-                  <th className="px-4 py-3 font-medium">Email</th>
+                  <SortableTh label="Email" col="email" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <th className="px-4 py-3 font-medium">Owner</th>
-                  <th className="px-4 py-3 font-medium">Rating</th>
-                  <th className="px-4 pr-6 py-3 font-medium">Status</th>
+                  <SortableTh label="Rating" col="rating" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                  <SortableTh label="Status" col="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} extraClass="pr-6" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -508,6 +548,32 @@ export default function LeadsPage() {
       </div>
       )}
     </div>
+  );
+}
+
+function SortableTh({
+  label, col, sortKey, sortDir, onSort, extraClass = '',
+}: {
+  label: string;
+  col: SortKey;
+  sortKey: SortKey;
+  sortDir: 'asc' | 'desc';
+  onSort: (k: SortKey) => void;
+  extraClass?: string;
+}) {
+  const active = sortKey === col;
+  return (
+    <th className={`px-4 py-3 font-medium ${extraClass}`}>
+      <button
+        onClick={() => onSort(col)}
+        className={`flex items-center gap-1 hover:text-gray-900 ${active ? 'text-gray-900' : ''}`}
+      >
+        {label}
+        {active
+          ? (sortDir === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)
+          : <ChevronsUpDown className="w-3.5 h-3.5 text-gray-300" />}
+      </button>
+    </th>
   );
 }
 
