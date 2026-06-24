@@ -288,35 +288,38 @@ function buildCustomerReportHtml(params: {
   L.push('<!DOCTYPE html><html><head><meta charset="UTF-8">');
   L.push('<title>' + escapeHtmlForReport(vehicleLabel) + ' - TechPulse Diagnostic Report</title>');
   L.push('<style>');
-  L.push('@page{margin:24mm 18mm;} @media print{.no-print{display:none;}}');
-  L.push('body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;color:#1a1a1a;margin:0;padding:0;line-height:1.55;}');
-  L.push('.hd{background:linear-gradient(135deg,#1B3A6B,#2E75B6);color:#fff;padding:28px 32px;}');
-  L.push('.hd h1{margin:0;font-size:22px;font-weight:800;} .hd .sub{opacity:.85;font-size:13px;margin-top:4px;}');
-  L.push('.body{padding:24px 32px;}');
-  L.push('h2{font-size:15px;color:#1B3A6B;margin:22px 0 8px;border-bottom:2px solid #e3e8f0;padding-bottom:5px;}');
-  L.push('table{border-collapse:collapse;width:100%;} td{padding:4px 8px;font-size:13px;vertical-align:top;} td.l{color:#666;width:150px;}');
-  L.push('.box{border-radius:8px;padding:14px 16px;margin:6px 0;white-space:pre-wrap;font-size:13px;}');
-  L.push('.crit{background:#fdeaea;border-left:4px solid #d33;} .root{background:#fff8e1;border-left:4px solid #f0b400;}');
-  L.push('.rec{background:#eaf6ee;border-left:4px solid #2e9e54;} .find{background:#f4f6fa;border-left:4px solid #2E75B6;}');
-  L.push('.badge{display:inline-block;background:rgba(255,255,255,.2);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;margin-top:8px;}');
-  L.push('.footer{margin:28px 32px 0;padding-top:12px;border-top:1px solid #ddd;color:#888;font-size:11px;}');
+  L.push('@page{margin:0;} @media print{.no-print{display:none;} body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}');
+  L.push('*{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;}');
+  L.push('body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;color:#1a1a1a;margin:0;padding:0;line-height:1.5;}');
+  L.push('.hd{background:#1B3A6B;color:#fff;padding:24px 36px;display:flex;align-items:center;justify-content:space-between;}');
+  L.push('.hd h1{margin:0;font-size:24px;font-weight:800;letter-spacing:.3px;} .hd .sub{opacity:.85;font-size:13px;margin-top:3px;}');
+  L.push('.hd .date{font-size:13px;opacity:.85;text-align:right;}');
+  L.push('.body{padding:8px 36px 24px;}');
+  L.push('h2{font-size:15px;color:#1B3A6B;margin:22px 0 8px;text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid #1B3A6B;padding-bottom:5px;}');
+  L.push('.info{background:#f5f7fb;border-radius:8px;padding:14px 18px;margin-top:12px;}');
+  L.push('table.info-t{border-collapse:collapse;width:100%;} table.info-t td{padding:3px 8px;font-size:13px;vertical-align:top;} td.l{color:#555;width:170px;font-weight:600;}');
+  L.push('table.scan{border-collapse:collapse;width:100%;margin:8px 0;font-size:13px;} table.scan th{background:#1B3A6B;color:#fff;text-align:left;padding:8px 12px;font-size:12px;text-transform:uppercase;} table.scan td{padding:7px 12px;border-bottom:1px solid #eee;} table.scan tr:nth-child(even){background:#f8f9fb;}');
+  L.push('.st-fail{color:#d33;font-weight:700;} .st-warn{color:#e08600;font-weight:700;} .st-ok{color:#2e9e54;font-weight:700;}');
+  L.push('.box{border-radius:8px;padding:14px 18px;margin:6px 0;white-space:pre-wrap;font-size:13px;}');
+  L.push('.crit{background:#fdeaea;border-left:5px solid #d33;} .crit .ttl{color:#d33;font-weight:800;font-size:14px;margin-bottom:6px;text-transform:uppercase;}');
+  L.push('.root{background:#fff8e1;border-left:5px solid #f0b400;} .rec{background:#eaf6ee;border-left:5px solid #2e9e54;} .find{background:#f4f6fa;border-left:5px solid #2E75B6;}');
+  L.push('.badge{display:inline-block;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;margin-top:8px;}');
+  L.push('.footer{margin-top:28px;background:#1B3A6B;color:#fff;text-align:center;padding:10px;font-size:11px;}');
   L.push('ul{margin:4px 0;padding-left:22px;font-size:13px;}');
   L.push('</style></head><body>');
-  L.push('<div class="hd"><h1>TechPulse Diagnostic Report</h1>');
-  L.push('<div class="sub">' + escapeHtmlForReport(shopName || 'TechPulse') + ' &bull; ' + escapeHtmlForReport(now) + '</div>');
-  if (confidence > 0) L.push('<div class="badge">' + confidence + '% Confidence</div>');
-  L.push('</div><div class="body">');
-  L.push('<h2>Vehicle</h2><table>');
+  L.push('<div class="hd"><div><h1>' + escapeHtmlForReport((shopName || 'TechPulse').toUpperCase()) + '</h1><div class="sub">TechPulse Diagnostic Report</div>' + (confidence > 0 ? '<div class="badge">' + confidence + '% Confidence</div>' : '') + '</div>');
+  L.push('<div class="date">' + escapeHtmlForReport(now) + '</div></div>');
+  L.push('<div class="body">');
+  L.push('<h2>Vehicle Information</h2><div class="info"><table class="info-t">');
   L.push('<tr><td class="l">Year / Make / Model</td><td>' + escapeHtmlForReport(vehicleLabel) + '</td></tr>');
   L.push('<tr><td class="l">Engine</td><td>' + escapeHtmlForReport(vehicle.engine || '-') + '</td></tr>');
   L.push('<tr><td class="l">Mileage</td><td>' + escapeHtmlForReport(vehicle.mileage || '-') + '</td></tr>');
   L.push('<tr><td class="l">VIN</td><td>' + escapeHtmlForReport(vehicle.vin || '-') + '</td></tr>');
-  L.push('</table>');
+  L.push('<tr><td class="l">DTC</td><td>' + (codes && codes.length ? escapeHtmlForReport(codes.join(', ')) : 'None recorded') + '</td></tr>');
+  L.push('</table></div>');
   if (complaint) { L.push('<h2>Customer Concern</h2><p>' + escapeHtmlForReport(complaint) + '</p>'); }
-  L.push('<h2>DTC Codes</h2>');
-  L.push(codes && codes.length ? '<ul>' + codes.map(c => '<li>' + escapeHtmlForReport(c) + '</li>').join('') + '</ul>' : '<p style="color:#666;">None recorded.</p>');
-  if (critical) { L.push('<h2>Critical Findings</h2><div class="box crit">' + escapeHtmlForReport(critical) + '</div>'); }
-  if (rootCause) { L.push('<h2>Root Cause</h2><div class="box root">' + escapeHtmlForReport(rootCause) + '</div>'); }
+  if (critical) { L.push('<h2>Critical Finding</h2><div class="box crit"><div class="ttl">Critical Finding</div>' + escapeHtmlForReport(critical) + '</div>'); }
+  if (rootCause) { L.push('<h2>Root Cause Analysis</h2><div class="box root">' + escapeHtmlForReport(rootCause) + '</div>'); }
   if (findings) { L.push('<h2>Findings</h2><div class="box find">' + escapeHtmlForReport(findings) + '</div>'); }
   if (recommendation) { L.push('<h2>Recommended Actions</h2><div class="box rec">' + escapeHtmlForReport(recommendation) + '</div>'); }
   if (costSavings) { L.push('<h2>Cost Impact</h2><div class="box find">' + escapeHtmlForReport(costSavings) + '</div>'); }
@@ -1430,11 +1433,9 @@ function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
             no server PDF pipeline. Uses structured synthesis fields when present. */}
         <button
           onClick={() => {
-            // Prefer a real server-generated PDF when one exists; otherwise build
-            // the report client-side and use the browser's Save-as-PDF. This works
-            // today with no server PDF pipeline, and upgrades automatically when
-            // the Synth API starts returning pdf_base64.
-            if (synthReport.pdf_base64) { downloadPdf(); return; }
+            // The styled client report is the primary, well-formatted PDF (branded
+            // header, color-coded sections, scan-data table). Synth's raw pdf_base64
+            // is plain/unformatted, so we no longer prefer it for the customer report.
             const html = buildCustomerReportHtml({
               unid: typeof window !== 'undefined' ? (localStorage.getItem('synth-session-id') || 'TECHPULSE') : 'TECHPULSE',
               vehicle,
@@ -1443,7 +1444,7 @@ function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
               confidence: synthReport.confidence || 0,
               synthesis: synthReport.synthesis || null,
               diagnosisFallback: '',
-              shopName: '',
+              shopName: (useAuthStore.getState().user as { businessName?: string } | null)?.businessName || '',
             });
             printCustomerReport(html);
           }}
@@ -1455,6 +1456,16 @@ function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
           </svg>
           Download PDF Report
         </button>
+
+        {synthReport.pdf_base64 && (
+          <button
+            onClick={downloadPdf}
+            style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'8px 16px',
+              borderRadius:9, border:'1px solid var(--border-input)', background:'transparent',
+              color:'var(--text-2)', fontWeight:600, fontSize:12, cursor:'pointer', marginBottom:12, width:'100%' }}>
+            Download raw Synth PDF
+          </button>
+        )}
 
         {synthReport.pdf_base64 && (
           <ShareWithCustomer synthReport={synthReport} vehicle={vehicle} />
