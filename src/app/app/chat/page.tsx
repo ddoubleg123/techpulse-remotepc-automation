@@ -256,6 +256,94 @@ function buildDiagnosticHtmlReport(params: {
   return lines.join('\n');
 }
 
+// Build a clean, customer-facing report from the structured synthesis fields
+// (root cause, findings, recommendation, etc.) and print it via the browser's
+// native print dialog -> "Save as PDF". This produces a real vector PDF with no
+// server dependency, so the customer report works even when no server-side PDF
+// pipeline exists. Falls back to the diagnosis text when synthesis is absent.
+function buildCustomerReportHtml(params: {
+  unid: string;
+  vehicle: Vehicle;
+  codes: string[];
+  complaint: string;
+  confidence: number;
+  synthesis: Record<string, unknown> | null;
+  diagnosisFallback: string;
+  shopName: string;
+}): string {
+  const { unid, vehicle, codes, complaint, confidence, synthesis, diagnosisFallback, shopName } = params;
+  const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'Unknown Vehicle';
+  const now = new Date().toLocaleString();
+  const s = synthesis || {};
+  const val = (k: string, alt?: string): string => {
+    const v = (s[k] ?? (alt ? s[alt] : '')) as unknown;
+    return typeof v === 'string' ? v : (v ? String(v) : '');
+  };
+  const rootCause = val('root_cause', 'rootCause');
+  const findings = val('findings');
+  const recommendation = val('recommendation');
+  const critical = val('critical_findings', 'criticalFindings');
+  const costSavings = val('cost_savings', 'costSavings');
+  const L: string[] = [];
+  L.push('<!DOCTYPE html><html><head><meta charset="UTF-8">');
+  L.push('<title>' + escapeHtmlForReport(vehicleLabel) + ' - TechPulse Diagnostic Report</title>');
+  L.push('<style>');
+  L.push('@page{margin:24mm 18mm;} @media print{.no-print{display:none;}}');
+  L.push('body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;color:#1a1a1a;margin:0;padding:0;line-height:1.55;}');
+  L.push('.hd{background:linear-gradient(135deg,#1B3A6B,#2E75B6);color:#fff;padding:28px 32px;}');
+  L.push('.hd h1{margin:0;font-size:22px;font-weight:800;} .hd .sub{opacity:.85;font-size:13px;margin-top:4px;}');
+  L.push('.body{padding:24px 32px;}');
+  L.push('h2{font-size:15px;color:#1B3A6B;margin:22px 0 8px;border-bottom:2px solid #e3e8f0;padding-bottom:5px;}');
+  L.push('table{border-collapse:collapse;width:100%;} td{padding:4px 8px;font-size:13px;vertical-align:top;} td.l{color:#666;width:150px;}');
+  L.push('.box{border-radius:8px;padding:14px 16px;margin:6px 0;white-space:pre-wrap;font-size:13px;}');
+  L.push('.crit{background:#fdeaea;border-left:4px solid #d33;} .root{background:#fff8e1;border-left:4px solid #f0b400;}');
+  L.push('.rec{background:#eaf6ee;border-left:4px solid #2e9e54;} .find{background:#f4f6fa;border-left:4px solid #2E75B6;}');
+  L.push('.badge{display:inline-block;background:rgba(255,255,255,.2);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;margin-top:8px;}');
+  L.push('.footer{margin:28px 32px 0;padding-top:12px;border-top:1px solid #ddd;color:#888;font-size:11px;}');
+  L.push('ul{margin:4px 0;padding-left:22px;font-size:13px;}');
+  L.push('</style></head><body>');
+  L.push('<div class="hd"><h1>TechPulse Diagnostic Report</h1>');
+  L.push('<div class="sub">' + escapeHtmlForReport(shopName || 'TechPulse') + ' &bull; ' + escapeHtmlForReport(now) + '</div>');
+  if (confidence > 0) L.push('<div class="badge">' + confidence + '% Confidence</div>');
+  L.push('</div><div class="body">');
+  L.push('<h2>Vehicle</h2><table>');
+  L.push('<tr><td class="l">Year / Make / Model</td><td>' + escapeHtmlForReport(vehicleLabel) + '</td></tr>');
+  L.push('<tr><td class="l">Engine</td><td>' + escapeHtmlForReport(vehicle.engine || '-') + '</td></tr>');
+  L.push('<tr><td class="l">Mileage</td><td>' + escapeHtmlForReport(vehicle.mileage || '-') + '</td></tr>');
+  L.push('<tr><td class="l">VIN</td><td>' + escapeHtmlForReport(vehicle.vin || '-') + '</td></tr>');
+  L.push('</table>');
+  if (complaint) { L.push('<h2>Customer Concern</h2><p>' + escapeHtmlForReport(complaint) + '</p>'); }
+  L.push('<h2>DTC Codes</h2>');
+  L.push(codes && codes.length ? '<ul>' + codes.map(c => '<li>' + escapeHtmlForReport(c) + '</li>').join('') + '</ul>' : '<p style="color:#666;">None recorded.</p>');
+  if (critical) { L.push('<h2>Critical Findings</h2><div class="box crit">' + escapeHtmlForReport(critical) + '</div>'); }
+  if (rootCause) { L.push('<h2>Root Cause</h2><div class="box root">' + escapeHtmlForReport(rootCause) + '</div>'); }
+  if (findings) { L.push('<h2>Findings</h2><div class="box find">' + escapeHtmlForReport(findings) + '</div>'); }
+  if (recommendation) { L.push('<h2>Recommended Actions</h2><div class="box rec">' + escapeHtmlForReport(recommendation) + '</div>'); }
+  if (costSavings) { L.push('<h2>Cost Impact</h2><div class="box find">' + escapeHtmlForReport(costSavings) + '</div>'); }
+  // Fallback: if synthesis had no structured fields, show the diagnosis text so the report is never empty.
+  if (!rootCause && !findings && !recommendation && !critical && diagnosisFallback) {
+    L.push('<h2>Diagnostic Findings</h2><div class="box root">' + escapeHtmlForReport(diagnosisFallback) + '</div>');
+  }
+  L.push('</div><div class="footer">Generated by TechPulse &bull; ' + escapeHtmlForReport(unid) + ' &bull; AI-assisted diagnosis with technician oversight</div>');
+  L.push('</body></html>');
+  return L.join('\n');
+}
+
+// Open the customer report in a new window and trigger the browser's print
+// dialog, which offers "Save as PDF". No server, no library, vector output.
+function printCustomerReport(html: string) {
+  const w = window.open('', '_blank');
+  if (!w) return false;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  // Give the new window a tick to render before invoking print.
+  const fire = () => { try { w.focus(); w.print(); } catch { /* user can print manually */ } };
+  if (w.document.readyState === 'complete') setTimeout(fire, 300);
+  else w.onload = () => setTimeout(fire, 300);
+  return true;
+}
+
 
 // Accept any file - detect issues in JS rather than blocking at browser level
 function cleanFileContent(raw: string): string {
@@ -1338,18 +1426,35 @@ function ReportStep({ synthReport, vehicle, codes, onFeedback, onBack }:
           </div>
         )}
 
-        {synthReport.pdf_base64 && (
-          <button
-            onClick={downloadPdf}
-            style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'12px 20px',
-              borderRadius:11, border:'none', background:'linear-gradient(135deg,#1B4F8A,#2E75B6)',
-              color:'#fff', fontWeight:700, fontSize:14, cursor:'pointer', marginBottom:12, width:'100%' }}>
-            <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'>
-              <path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' y1='15' x2='12' y2='3'/>
-            </svg>
-            Download PDF Report
-          </button>
-        )}
+        {/* Always-available client-side report -> browser Save-as-PDF. Works with
+            no server PDF pipeline. Uses structured synthesis fields when present. */}
+        <button
+          onClick={() => {
+            // Prefer a real server-generated PDF when one exists; otherwise build
+            // the report client-side and use the browser's Save-as-PDF. This works
+            // today with no server PDF pipeline, and upgrades automatically when
+            // the Synth API starts returning pdf_base64.
+            if (synthReport.pdf_base64) { downloadPdf(); return; }
+            const html = buildCustomerReportHtml({
+              unid: typeof window !== 'undefined' ? (localStorage.getItem('synth-session-id') || 'TECHPULSE') : 'TECHPULSE',
+              vehicle,
+              codes: (codes || []).map((c) => c && c.code).filter(Boolean) as string[],
+              complaint: '',
+              confidence: synthReport.confidence || 0,
+              synthesis: synthReport.synthesis || null,
+              diagnosisFallback: '',
+              shopName: '',
+            });
+            printCustomerReport(html);
+          }}
+          style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'12px 20px',
+            borderRadius:11, border:'none', background:'linear-gradient(135deg,#1B4F8A,#2E75B6)',
+            color:'#fff', fontWeight:700, fontSize:14, cursor:'pointer', marginBottom:12, width:'100%' }}>
+          <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'>
+            <path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' y1='15' x2='12' y2='3'/>
+          </svg>
+          Download PDF Report
+        </button>
 
         {synthReport.pdf_base64 && (
           <ShareWithCustomer synthReport={synthReport} vehicle={vehicle} />
