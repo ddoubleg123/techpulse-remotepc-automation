@@ -1019,20 +1019,20 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}> Back</button>
           {!isDemo && <button
-            disabled={!reportReady || !pdfBase64Report}
+            disabled={!reportReady}
             onClick={() => {
-              if (!reportReady || !pdfBase64Report) return;
+              if (!reportReady) return;
               const synthReport: SynthReport = { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence, synthesis: reportSynthesis };
               if (vehicle.vin) { onReport(synthReport, messages); }
               else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }
             }}
             style={{
               padding: '6px 14px', borderRadius: 8,
-              background: (reportReady && pdfBase64Report) ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)',
+              background: reportReady ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)',
               border: 'none',
-              color: (reportReady && pdfBase64Report) ? '#fff' : 'var(--text-3)',
+              color: reportReady ? '#fff' : 'var(--text-3)',
               fontSize: 12, fontWeight: 700,
-              cursor: (reportReady && pdfBase64Report) ? 'pointer' : 'not-allowed',
+              cursor: reportReady ? 'pointer' : 'not-allowed',
               display: 'flex', alignItems: 'center', gap: 6,
             }}>
             <FileText size={13} /> View Report
@@ -1116,17 +1116,16 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
                 if (vehicle.vin) { onReport(synthReport, messages); }
                 else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }
               }}
-              disabled={!pdfBase64Report}
               style={{
                 width: '100%', padding: '13px', borderRadius: 12, border: 'none',
-                background: pdfBase64Report ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-input)',
-                boxShadow: pdfBase64Report ? '0 0 20px rgba(16,185,129,0.4)' : 'none',
-                color: pdfBase64Report ? '#fff' : 'var(--text-3)',
+                background: 'linear-gradient(135deg,#10b981,#059669)',
+                boxShadow: '0 0 20px rgba(16,185,129,0.4)',
+                color: '#fff',
                 fontWeight: 700, fontSize: 15,
-                cursor: pdfBase64Report ? 'pointer' : 'not-allowed',
+                cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               }}>
-              Synth has finished -- View Report
+              {pdfBase64Report ? 'Synth has finished -- View Report' : 'Synth has finished -- Continue'}
             </button>
           )}
         </div>
