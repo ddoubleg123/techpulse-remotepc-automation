@@ -564,7 +564,11 @@ function VinStep({ onNext, initialVehicle }: { onNext: (vehicle: Vehicle, upload
     }
   };
 
-  const canProceed = !!uploadedFile || vin.length >= 10 || (vehicle.year && vehicle.make && vehicle.model && vehicle.engine);
+  // VIN is optional. Proceed if the tech gives us anything to work with:
+  // an uploaded report, any VIN text, or any one vehicle detail. Codes/symptoms
+  // are gathered on the next step (which has its own gate), so we never require
+  // a full VIN or all four vehicle fields up front.
+  const canProceed = !!uploadedFile || vin.trim().length > 0 || !!(vehicle.year || vehicle.make || vehicle.model || vehicle.engine || vehicle.mileage);
   const inp: React.CSSProperties = { width:'100%', padding:'11px 14px', borderRadius:10, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-1)', fontSize:14, outline:'none', boxSizing:'border-box' };
 
   return (
@@ -572,7 +576,7 @@ function VinStep({ onNext, initialVehicle }: { onNext: (vehicle: Vehicle, upload
       <div style={{ width:'100%', maxWidth:580 }}>
         <div style={{ marginBottom:28 }}>
           <h2 style={{ fontSize:22, fontWeight:800, color:'var(--text-1)', margin:'0 0 6px' }}>New Diagnostic</h2>
-          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>Enter a VIN to look up the vehicle, or upload a scanner export to auto-populate codes.</p>
+          <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>Enter a VIN, add vehicle details, or upload a scanner export. A VIN is optional ------ you can continue with whatever you have.</p>
         </div>
 
         {/* VIN */}
