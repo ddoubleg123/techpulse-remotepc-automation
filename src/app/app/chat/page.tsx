@@ -849,9 +849,9 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack, initialC
   );
 }
 
-function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, sessionId, isDemo, initialMessages, onReport, onBack, onNewCar }:
+function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, sessionId, isDemo, initialMessages, onReport, onBack, onNewCar, onPersist }:
   { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; pdfBase64?: string; sessionId: string; isDemo?: boolean; initialMessages?: Message[];
-    onReport: (report: SynthReport, messages: Message[], updatedVehicle?: Vehicle) => void; onBack: () => void; onNewCar?: () => void }
+    onReport: (report: SynthReport, messages: Message[], updatedVehicle?: Vehicle) => void; onBack: () => void; onNewCar?: () => void; onPersist?: (messages: Message[]) => void }
 ) {
   const nl = String.fromCharCode(10);
   const hasPdfAttachment = Boolean(pdfBase64 && pdfBase64.length > 0);
@@ -1022,7 +1022,13 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     if (!text.trim() || loading) return;
     if (!isAuto) setHasManuallyEngaged(true);
     const userMsg: Message = { id: Date.now()+'u', role:'user', content: displayText || text, ts:Date.now() };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages(prev => {
+      const next = [...prev, userMsg];
+      // Persist on send so a started conversation appears in Auto History even
+      // if Synth never replies (network error, timeout, etc.).
+      if (!isDemo && onPersist) { try { onPersist(next); } catch { /* best-effort */ } }
+      return next;
+    });
     setInput('');
     // Demo users: return a canned Synth reply instead of calling the live API,
     // so a diagnostic response always appears. The demo report unlocks after the
@@ -1102,7 +1108,13 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       const _rf = parseReportFinal(rawText) || parseReportFinal(reply);
       if (_rf) setReportSynthesis(_rf);
       const cleanReply = scrubInternalMarkers(reply);
-      setMessages(prev => [...prev, { id: Date.now()+'s', role: 'synth', content: cleanReply, ts: Date.now() }]);
+      setMessages(prev => {
+        const next = [...prev, { id: Date.now()+'s', role: 'synth' as const, content: cleanReply, ts: Date.now() }];
+        // Persist the conversation so it appears in Auto History immediately,
+        // even before a report is generated.
+        if (!isDemo && onPersist) { try { onPersist(next); } catch { /* best-effort */ } }
+        return next;
+      });
       setApiStatus('ok');
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
@@ -1163,8 +1175,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
             onClick={() => {
               if (!reportReady) return;
               const synthReport: SynthReport = { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence, synthesis: reportSynthesis };
-              if (vehicle.vin) { onReport(synthReport, messages); }
-              else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }
+              // VIN is optional — generate the report regardless.
+              onReport(synthReport, messages);
             }}
             style={{
               padding: '6px 14px', borderRadius: 8,
@@ -1253,8 +1265,8 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
             <button
               onClick={() => {
                 const synthReport: SynthReport = { pdf_base64: pdfBase64Report, pdf_filename: pdfFilenameReport, confidence: synthConfidence, synthesis: reportSynthesis };
-                if (vehicle.vin) { onReport(synthReport, messages); }
-                else { setVinGateInput(''); setVinGateError(''); setShowVinGate(true); }
+                // VIN is optional — generate the report regardless.
+                onReport(synthReport, messages);
               }}
               style={{
                 width: '100%', padding: '13px', borderRadius: 12, border: 'none',
@@ -2075,7 +2087,7 @@ function ChatPageInner() {
       )}
       {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); recordStep('vehicle', { vehicle: v }); track({ event_type: 'scan_started', step: 'vin', session_id: sessionId, vehicle: [v.year,v.make,v.model].filter(Boolean).join(' '), payload: { has_pdf: !!b64 } }); if (b64) track({ event_type: 'pdf_uploaded', step: 'vin', session_id: sessionId, payload: { file: fn } }); setStep('codes'); }} />}
       {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); recordStep('codes', { codes: c }); track({ event_type: 'codes_entered', step: 'codes', session_id: sessionId, dtc_codes: (c||[]).map(x => x?.code).filter(Boolean), payload: { symptom_len: (s||'').length } }); checkGateThenStart(() => setStep('chat')); }} onBack={() => setStep('vin')} />}
-      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} initialMessages={chatMessages} onNewCar={restart} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); recordStep('report', { messages: msgs, vehicle: updated || vehicle }); track({ event_type: 'report_generated', step: 'report', session_id: sessionId, vehicle: [(updated||vehicle).year,(updated||vehicle).make,(updated||vehicle).model].filter(Boolean).join(' ') }); setStep('report'); }} onBack={() => setStep('codes')} />}
+      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} initialMessages={chatMessages} onNewCar={restart} onPersist={(msgs) => { setChatMessages(msgs); recordStep('diagnose', { messages: msgs }); }} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); recordStep('report', { messages: msgs, vehicle: updated || vehicle }); track({ event_type: 'report_generated', step: 'report', session_id: sessionId, vehicle: [(updated||vehicle).year,(updated||vehicle).make,(updated||vehicle).model].filter(Boolean).join(' ') }); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep
         onRestart={restart}
