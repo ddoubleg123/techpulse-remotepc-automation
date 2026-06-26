@@ -877,28 +877,6 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [messages, setMessages] = useState<Message[]>(initialMessages && initialMessages.length ? initialMessages : []);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  // === Pipeline status cycle ===
-  // While loading, surface what Synth is actually doing per /health pipeline
-  // (tsb+cases+patterns+baseline+confidence). Turns the buffered-response wait
-  // (~5-15s) into the moat story instead of dead air.
-  const PIPELINE_STAGES = [
-    'Cross-referencing TSB database\u2026',
-    'Searching 6,000+ diagnostic case studies\u2026',
-    'Matching scope patterns from 378-pattern library\u2026',
-    'Comparing against vehicle baseline\u2026',
-    'Building confidence score\u2026',
-  ];
-  const PIPELINE_STAGE_MS = 2800;
-  const [pipelineStage, setPipelineStage] = useState(0);
-  useEffect(() => {
-    if (!loading) { setPipelineStage(0); return; }
-    setPipelineStage(0);
-    const id = setInterval(() => {
-      setPipelineStage(p => (p + 1) % PIPELINE_STAGES.length);
-    }, PIPELINE_STAGE_MS);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]);
   // reportReady flips to true ONLY when Synth's SSE final chunk says ready_for_report:true.
   // Synth is the gate, not the user.
   const [reportReady, setReportReady] = useState(false);
@@ -1185,11 +1163,11 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
           </p>
         )}
             <div style={iconStyle}><Zap size={14} color='#fff' fill='#fff' /></div>
-            <div style={{ padding:'14px 18px', borderRadius:'16px 16px 16px 4px', background:'var(--bg-card)', border:'1px solid var(--border-card)', display:'flex', gap:10, alignItems:'center', minWidth:280 }}>
-              <div className="animate-pulse" style={{ width:7, height:7, borderRadius:'50%', background:'var(--accent)', boxShadow:'0 0 8px var(--accent)', flexShrink:0 }} />
-              <div key={pipelineStage} style={{ fontSize:13, color:'var(--text-2)', fontWeight:500, fontStyle:'italic' }}>
-                {PIPELINE_STAGES[pipelineStage]}
-              </div>
+            <div style={{ padding:'14px 18px', borderRadius:'16px 16px 16px 4px', background:'var(--bg-card)', border:'1px solid var(--border-card)', display:'flex', gap:5, alignItems:'center' }} aria-label="Synth is thinking">
+              <span className="tp-think-dot" style={{ width:7, height:7, borderRadius:'50%', background:'var(--accent)' }} />
+              <span className="tp-think-dot" style={{ width:7, height:7, borderRadius:'50%', background:'var(--accent)' }} />
+              <span className="tp-think-dot" style={{ width:7, height:7, borderRadius:'50%', background:'var(--accent)' }} />
+              <style>{`@keyframes tpThink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}.tp-think-dot{animation:tpThink 1.2s infinite ease-in-out}.tp-think-dot:nth-child(2){animation-delay:.18s}.tp-think-dot:nth-child(3){animation-delay:.36s}`}</style>
             </div>
           </div>
         )}
