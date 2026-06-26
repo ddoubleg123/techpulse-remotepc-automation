@@ -370,6 +370,60 @@ function isBinaryContent(content: string): boolean {
   return (nonPrintable / Math.max(content.length, 1)) > 0.15;
 }
 
+// Known makes for free-text detection (lowercase keys -> display value).
+const VEHICLE_MAKES: Record<string, string> = {
+  ford:'Ford', chevy:'Chevrolet', chevrolet:'Chevrolet', gmc:'GMC', dodge:'Dodge',
+  ram:'Ram', chrysler:'Chrysler', jeep:'Jeep', toyota:'Toyota', honda:'Honda',
+  nissan:'Nissan', hyundai:'Hyundai', kia:'Kia', bmw:'BMW', mercedes:'Mercedes-Benz',
+  'mercedes-benz':'Mercedes-Benz', volkswagen:'Volkswagen', vw:'Volkswagen', audi:'Audi',
+  subaru:'Subaru', mazda:'Mazda', lexus:'Lexus', acura:'Acura', infiniti:'Infiniti',
+  volvo:'Volvo', buick:'Buick', cadillac:'Cadillac', lincoln:'Lincoln',
+  mitsubishi:'Mitsubishi', isuzu:'Isuzu', porsche:'Porsche','land rover':'Land Rover',
+  landrover:'Land Rover', jaguar:'Jaguar', tesla:'Tesla', mini:'Mini', fiat:'Fiat',
+};
+
+// Extract whatever vehicle details we can from scanner/report text. Returns a
+// partial Vehicle; only fields we actually found are set. Never throws.
+function extractVehicleFromText(text: string): Partial<Vehicle> {
+  const out: Partial<Vehicle> = {};
+  if (!text) return out;
+  const lower = text.toLowerCase();
+
+  // Year: a 4-digit model year 1980–2026 (avoid matching arbitrary numbers when
+  // possible by preferring one adjacent to a make, else first plausible year).
+  const yearMatch = text.match(/\b(19[8-9]\d|20[0-2]\d)\b/);
+  if (yearMatch) out.year = yearMatch[1];
+
+  // Make: first known make appearing in the text.
+  for (const key of Object.keys(VEHICLE_MAKES)) {
+    const re = new RegExp('\\b' + key.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&') + '\\b', 'i');
+    if (re.test(lower)) { out.make = VEHICLE_MAKES[key]; break; }
+  }
+
+  // VIN: 17-char (no I/O/Q).
+  const vinMatch = text.match(/\b([A-HJ-NPR-Z0-9]{17})\b/);
+  if (vinMatch) out.vin = vinMatch[1].toUpperCase();
+
+  // Engine displacement: e.g. "3.5L", "2.0 L", "5.0 liter".
+  const dispMatch = text.match(/\b(\d\.\d)\s*(?:l\b|liter|litre)/i);
+  if (dispMatch) out.engine = dispMatch[1] + 'L';
+
+  // Mileage: "123,456 mi", "123456 miles", "Odometer: 98,000", "ODO 98000".
+  const mileMatch =
+    text.match(/(?:odometer|odo|mileage|miles)\D{0,8}(\d{1,3}(?:,\d{3})+|\d{4,7})/i) ||
+    text.match(/\b(\d{1,3}(?:,\d{3})+|\d{4,7})\s*(?:mi\b|miles\b|km\b)/i);
+  if (mileMatch) out.mileage = mileMatch[1].replace(/,/g, '');
+
+  // Model: look for "<Make> <Model>" pattern when we found a make.
+  if (out.make) {
+    const makeRe = new RegExp('\\b' + out.make.split(/[\s-]/)[0] + '\\s+([A-Za-z0-9][A-Za-z0-9\\-]{1,18})', 'i');
+    const m = text.match(makeRe);
+    if (m && !/^\d{4}$/.test(m[1])) out.model = m[1];
+  }
+
+  return out;
+}
+
 function StepBar({ step }: { step: Step }) {
   const steps: { id: Step; label: string }[] = [
     { id:'vin', label:'Vehicle' }, { id:'codes', label:'Codes' },
@@ -448,7 +502,23 @@ function VinStep({ onNext, initialVehicle }: { onNext: (vehicle: Vehicle, upload
       }
       const cleaned = cleanFileContent(raw);
       setUploadedContent(cleaned);
-      // Extract vehicle info from .pids XML attributes
+      // Pull whatever vehicle details we can from the scanner text and pre-fill
+      // (without overwriting anything the user already entered). This is what
+      // Step 2 shows back as the "we're on the right car" confirmation.
+      const ext = extractVehicleFromText(cleaned);
+      if (Object.keys(ext).length) {
+        setVehicle(v => ({
+          ...v,
+          year: v.year || ext.year || '',
+          make: v.make || ext.make || '',
+          model: v.model || ext.model || '',
+          engine: v.engine || ext.engine || '',
+          mileage: v.mileage || ext.mileage || '',
+          vin: v.vin || ext.vin || '',
+        }));
+        if (ext.vin && !vin) setVin(ext.vin);
+      }
+      // Extract vehicle info from .pids XML attributes (more authoritative than free text)
       const pidsMatch = cleaned.match(/pids-collection[^>]+year=["']([^"']+)["'][^>]+make=["']([^"']+)["'][^>]+model=["']([^"']+)["']/i)
         || cleaned.match(/pids-collection[^>]+make=["']([^"']+)["'][^>]+model=["']([^"']+)["']/i);
       if (pidsMatch) {
@@ -742,11 +812,13 @@ function VinStep({ onNext, initialVehicle }: { onNext: (vehicle: Vehicle, upload
   );
 }
 
-function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack, initialCodes, initialSymptoms }:
-  { vehicle: Vehicle; uploadedReport?: string; fileName?: string; onNext: (codes: DtcCode[], symptoms: string) => void; onBack: () => void; initialCodes?: DtcCode[]; initialSymptoms?: string }
+function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack, initialCodes, initialSymptoms, onVehicleEdit }:
+  { vehicle: Vehicle; uploadedReport?: string; fileName?: string; onNext: (codes: DtcCode[], symptoms: string) => void; onBack: () => void; initialCodes?: DtcCode[]; initialSymptoms?: string; onVehicleEdit?: (patch: Partial<Vehicle>) => void }
 ) {
   const [codes, setCodes] = useState<DtcCode[]>(initialCodes && initialCodes.length > 0 ? initialCodes : [{ code:'', description:'' }]);
   const [symptoms, setSymptoms] = useState(initialSymptoms || '');
+  const [editingVehicle, setEditingVehicle] = useState(false);
+  const hasVehicleInfo = Boolean(vehicle.year || vehicle.make || vehicle.model || vehicle.engine || vehicle.mileage || vehicle.vin);
   useEffect(() => {
     if (uploadedReport) {
       // OBD-II style: P/B/C/U + 4 hex chars (covers P0171 and manufacturer hex like P134F); not extracted from PDF placeholder text
@@ -769,15 +841,60 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack, initialC
   return (
     <div style={{ flex:1, overflowY:'auto', padding:'32px', display:'flex', flexDirection:'column', alignItems:'center' }}>
       <div style={{ width:'100%', maxWidth:560 }}>
-        <div style={{ padding:'12px 16px', borderRadius:12, background:'var(--bg-feed)', border:'1px solid var(--border-card)', marginBottom:24, display:'flex', alignItems:'center', gap:10 }}>
-          <Car size={15} color='var(--accent)' />
-          <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)' }}>
-            {vehicle.year && vehicle.make
-              ? `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.engine ? '  ' + vehicle.engine : ''}`
-              : vehicle.vin ? `VIN: ${vehicle.vin}` : 'Vehicle not specified'}
-          </span>
-          {uploadedReport && <span style={{ marginLeft:'auto', padding:'2px 8px', borderRadius:6, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.2)', fontSize:11, fontWeight:700, color:'#10b981' }}>{fileName || 'Report loaded'}</span>}
-        </div>
+        {/* Vehicle confirmation — the "we're on the right car" feedback loop.
+            Shows what we pulled from the VIN/upload; user can confirm or correct. */}
+        {!editingVehicle ? (
+          <div style={{ padding:'14px 16px', borderRadius:12, background: hasVehicleInfo ? 'rgba(16,185,129,0.07)' : 'var(--bg-feed)', border: `1px solid ${hasVehicleInfo ? 'rgba(16,185,129,0.3)' : 'var(--border-card)'}`, marginBottom:24 }}>
+            <div style={{ display:'flex', alignItems:'flex-start', gap:10 }}>
+              <div style={{ width:30, height:30, borderRadius:8, flexShrink:0, background: hasVehicleInfo ? 'rgba(16,185,129,0.15)' : 'var(--bg-input)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {hasVehicleInfo ? <CheckCircle size={16} color='#10b981' /> : <Car size={15} color='var(--text-3)' />}
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                {hasVehicleInfo ? (
+                  <>
+                    <div style={{ fontSize:11, fontWeight:700, color:'#10b981', letterSpacing:'0.04em', marginBottom:3 }}>
+                      {uploadedReport ? 'VEHICLE IDENTIFIED FROM YOUR SCAN' : 'VEHICLE IDENTIFIED'}
+                    </div>
+                    <div style={{ fontSize:15, fontWeight:700, color:'var(--text-1)' }}>
+                      {[vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'Vehicle on file'}
+                    </div>
+                    <div style={{ fontSize:12.5, color:'var(--text-2)', marginTop:3, display:'flex', flexWrap:'wrap', gap:'2px 12px' }}>
+                      {vehicle.engine && <span>Engine: <strong style={{ color:'var(--text-1)' }}>{vehicle.engine}</strong></span>}
+                      {vehicle.mileage && <span>Mileage: <strong style={{ color:'var(--text-1)' }}>{Number(vehicle.mileage).toLocaleString()} mi</strong></span>}
+                      {vehicle.vin && <span>VIN: <strong style={{ color:'var(--text-1)', fontFamily:'monospace' }}>{vehicle.vin}</strong></span>}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize:13, fontWeight:700, color:'var(--text-1)' }}>No vehicle details yet</div>
+                    <div style={{ fontSize:12.5, color:'var(--text-2)', marginTop:2 }}>Add the year, make, and model so Synth diagnoses the right car. Optional, but it improves accuracy.</div>
+                  </>
+                )}
+              </div>
+              {onVehicleEdit && (
+                <button onClick={() => setEditingVehicle(true)} style={{ flexShrink:0, padding:'5px 10px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+                  {hasVehicleInfo ? 'Edit' : 'Add details'}
+                </button>
+              )}
+            </div>
+            {uploadedReport && <div style={{ marginTop:8, fontSize:11, color:'var(--text-3)' }}>Source: {fileName || 'uploaded scan'}{hasVehicleInfo ? ' · please confirm this is correct' : ''}</div>}
+          </div>
+        ) : (
+          <div style={{ padding:'16px', borderRadius:12, background:'var(--bg-card)', border:'1px solid var(--border-card)', marginBottom:24 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--text-3)', letterSpacing:'0.05em', marginBottom:12 }}>CONFIRM VEHICLE DETAILS</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              {(['year','make','model','engine','mileage'] as const).map(f => (
+                <div key={f} style={f==='engine'||f==='mileage' ? {} : {}}>
+                  <label style={{ display:'block', fontSize:11, fontWeight:600, color:'var(--text-3)', marginBottom:5, textTransform:'uppercase' }}>{f}</label>
+                  <input value={(vehicle as Vehicle)[f]} onChange={e => onVehicleEdit && onVehicleEdit({ [f]: e.target.value } as Partial<Vehicle>)}
+                    placeholder={f==='year'?'2015':f==='make'?'Ford':f==='model'?'F-150':f==='engine'?'3.5L':'87500'}
+                    style={{ width:'100%', padding:'9px 11px', borderRadius:9, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-1)', fontSize:13, outline:'none', boxSizing:'border-box' }} />
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setEditingVehicle(false)} style={{ marginTop:12, padding:'8px 16px', borderRadius:9, background:'var(--accent)', border:'none', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer' }}>Done</button>
+          </div>
+        )}
         <div style={{ marginBottom:20 }}>
           <h2 style={{ fontSize:22, fontWeight:800, color:'var(--text-1)', margin:'0 0 6px' }}>DTC Codes</h2>
           <p style={{ fontSize:14, color:'var(--text-2)', margin:0 }}>
@@ -1158,6 +1275,13 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
             <div style={{ width:7, height:7, borderRadius:'50%', background: apiStatus==='error' ? '#ef4444' : '#34d399', boxShadow: apiStatus==='error' ? '0 0 6px rgba(239,68,68,0.8)' : '0 0 6px rgba(52,211,153,0.8)' }} />
             <span style={{ fontSize:13, fontWeight:700, color:'var(--text-1)' }}>Synth AI</span>
           </div>
+          {(vehicle.year || vehicle.make || vehicle.model || vehicle.mileage) && (
+            <span style={{ padding:'2px 9px', borderRadius:6, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.25)', fontSize:11, fontWeight:700, color:'#10b981', display:'inline-flex', alignItems:'center', gap:5 }}>
+              <Car size={12} />
+              {[vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || vehicle.vin || 'Vehicle'}
+              {vehicle.mileage && <span style={{ fontWeight:600, opacity:0.85 }}>· {Number(vehicle.mileage).toLocaleString()} mi</span>}
+            </span>
+          )}
           {codes.map((c,i) => <span key={i} style={{ padding:'2px 8px', borderRadius:6, background:'rgba(245,158,11,0.12)', border:'1px solid rgba(245,158,11,0.3)', fontSize:11, fontWeight:700, color:'#f59e0b' }}>{c.code}</span>)}
           {uploadedReport && <span style={{ padding:'2px 8px', borderRadius:6, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.2)', fontSize:11, fontWeight:700, color:'#10b981' }}>{fileName || 'Report'}</span>}
           {apiStatus==='placeholder' && <span style={{ padding:'2px 8px', borderRadius:6, background:'rgba(245,158,11,0.1)', border:'1px solid rgba(245,158,11,0.25)', fontSize:11, color:'#f59e0b' }}>Full engine deploying</span>}
@@ -2086,7 +2210,7 @@ function ChatPageInner() {
         </div>
       )}
       {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); recordStep('vehicle', { vehicle: v }); track({ event_type: 'scan_started', step: 'vin', session_id: sessionId, vehicle: [v.year,v.make,v.model].filter(Boolean).join(' '), payload: { has_pdf: !!b64 } }); if (b64) track({ event_type: 'pdf_uploaded', step: 'vin', session_id: sessionId, payload: { file: fn } }); setStep('codes'); }} />}
-      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); recordStep('codes', { codes: c }); track({ event_type: 'codes_entered', step: 'codes', session_id: sessionId, dtc_codes: (c||[]).map(x => x?.code).filter(Boolean), payload: { symptom_len: (s||'').length } }); checkGateThenStart(() => setStep('chat')); }} onBack={() => setStep('vin')} />}
+      {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onVehicleEdit={(patch) => setVehicle(v => ({ ...v, ...patch }))} onNext={(c,s) => { setCodes(c); setSymptoms(s); recordStep('codes', { codes: c }); track({ event_type: 'codes_entered', step: 'codes', session_id: sessionId, dtc_codes: (c||[]).map(x => x?.code).filter(Boolean), payload: { symptom_len: (s||'').length } }); checkGateThenStart(() => setStep('chat')); }} onBack={() => setStep('vin')} />}
       {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} initialMessages={chatMessages} onNewCar={restart} onPersist={(msgs) => { setChatMessages(msgs); recordStep('diagnose', { messages: msgs }); }} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); recordStep('report', { messages: msgs, vehicle: updated || vehicle }); track({ event_type: 'report_generated', step: 'report', session_id: sessionId, vehicle: [(updated||vehicle).year,(updated||vehicle).make,(updated||vehicle).model].filter(Boolean).join(' ') }); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep
