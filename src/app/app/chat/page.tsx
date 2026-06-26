@@ -884,17 +884,46 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [pdfBase64Report, setPdfBase64Report] = useState<string>('');
   const [pdfFilenameReport, setPdfFilenameReport] = useState<string>('');
   const [reportSynthesis, setReportSynthesis] = useState<Record<string, unknown> | null>(null);
-  const [chatAttachment, setChatAttachment] = useState<{name:string;base64:string}|null>(null);
+  const MAX_CHAT_ATTACHMENTS = 2;
+  const [chatAttachments, setChatAttachments] = useState<{name:string;base64:string}[]>([]);
+  const [chatAttachError, setChatAttachError] = useState('');
   const [chatDragOver, setChatDragOver] = useState(false);
-  // Shared by the paperclip picker and drag-and-drop: read a dropped/selected
-  // file to base64 and stage it exactly like a clicked attachment.
+  // Shared by the paperclip picker and drag-and-drop: read dropped/selected
+  // file(s) to base64 and stage them. Max 2 attachments per message; anything
+  // beyond that is rejected with a clear message.
   const ACCEPTED_CHAT_EXT = ['.pids','.pdf','.txt','.csv','.png','.jpg','.jpeg'];
-  const attachFileToChat = (f: File) => {
-    const name = (f.name || '').toLowerCase();
-    if (!ACCEPTED_CHAT_EXT.some(ext => name.endsWith(ext))) return;
-    const r = new FileReader();
-    r.onload = () => { const b64 = (r.result as string).split(',')[1] || ''; setChatAttachment({ name: f.name, base64: b64 }); };
-    r.readAsDataURL(f);
+  const attachFilesToChat = (files: File[]) => {
+    const accepted = files.filter(f => {
+      const name = (f.name || '').toLowerCase();
+      return ACCEPTED_CHAT_EXT.some(ext => name.endsWith(ext));
+    });
+    if (accepted.length === 0) return;
+    setChatAttachments(prev => {
+      const room = MAX_CHAT_ATTACHMENTS - prev.length;
+      if (room <= 0) {
+        setChatAttachError(`Only ${MAX_CHAT_ATTACHMENTS} attachments may be shared in one message. Remove one to add another.`);
+        return prev;
+      }
+      if (accepted.length > room) {
+        setChatAttachError(`Only ${MAX_CHAT_ATTACHMENTS} attachments may be shared in one message. The first ${room === 1 ? 'one was' : room + ' were'} added.`);
+      } else {
+        setChatAttachError('');
+      }
+      const toAdd = accepted.slice(0, room);
+      toAdd.forEach(f => {
+        const r = new FileReader();
+        r.onload = () => {
+          const b64 = (r.result as string).split(',')[1] || '';
+          setChatAttachments(cur => cur.length >= MAX_CHAT_ATTACHMENTS ? cur : [...cur, { name: f.name, base64: b64 }]);
+        };
+        r.readAsDataURL(f);
+      });
+      return prev;
+    });
+  };
+  const removeChatAttachment = (idx: number) => {
+    setChatAttachments(prev => prev.filter((_, i) => i !== idx));
+    setChatAttachError('');
   };
   const [showVinGate, setShowVinGate] = useState(false);
   const [vinGateInput, setVinGateInput] = useState('');
@@ -999,7 +1028,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     // so a diagnostic response always appears. The demo report unlocks after the
     // user's own first message (not the automatic intro message).
     if (isDemo) {
-      if (chatAttachment) setChatAttachment(null);
+      if (chatAttachments.length) setChatAttachments([]);
       if (isAuto) return;
       setLoading(true);
       // Let the diagnostic "thinking" animation run long enough to read as real
@@ -1014,19 +1043,27 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     setLoading(true);
     const pdfToSend = pdfBase64 || '';
     const pdfNameToSend = pdfToSend ? (fileName || 'scan.pdf') : '';
-    const attachBase64 = chatAttachment?.base64 || '';
-    const attachName = chatAttachment?.name || '';
-    if (chatAttachment) setChatAttachment(null);
+    const att0 = chatAttachments[0];
+    const att1 = chatAttachments[1];
+    const attachBase64 = att0?.base64 || '';
+    const attachName = att0?.name || '';
+    const attachBase64_2 = att1?.base64 || '';
+    const attachName_2 = att1?.name || '';
+    if (chatAttachments.length) setChatAttachments([]);
+    setChatAttachError('');
 
     try {
       const controller = new AbortController();
       const abortTimer = setTimeout(() => controller.abort(), 60000);
       const warmTimer = setTimeout(() => setWarmingUp(true), 5000);
-      track({ event_type: 'synth_message_sent', step: 'chat', session_id: sessionId, vehicle: [vehicle.year,vehicle.make,vehicle.model].filter(Boolean).join(' '), payload: { msg_len: text.length, has_attachment: !!attachBase64 } });
+      track({ event_type: 'synth_message_sent', step: 'chat', session_id: sessionId, vehicle: [vehicle.year,vehicle.make,vehicle.model].filter(Boolean).join(' '), payload: { msg_len: text.length, has_attachment: !!attachBase64, attachment_count: (attachBase64?1:0)+(attachBase64_2?1:0) } });
       const res = await fetch(SYNTH_API + '/api/diagnostic/stream', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + API_TOKEN },
-        body: JSON.stringify({ session_id:sessionId, message:text, vehicle, ...((attachBase64 && isValidPdfBase64(attachBase64)) ? { pdf_base64: attachBase64, pdf_name: attachName } : (pdfToSend && isValidPdfBase64(pdfToSend)) ? { pdf_base64: pdfToSend, pdf_name: pdfNameToSend } : {}) }),
+        body: JSON.stringify({ session_id:sessionId, message:text, vehicle,
+          ...((attachBase64 && isValidPdfBase64(attachBase64)) ? { pdf_base64: attachBase64, pdf_name: attachName } : (pdfToSend && isValidPdfBase64(pdfToSend)) ? { pdf_base64: pdfToSend, pdf_name: pdfNameToSend } : {}),
+          ...((attachBase64_2 && isValidPdfBase64(attachBase64_2)) ? { pdf_base64_2: attachBase64_2, pdf_name_2: attachName_2 } : {})
+        }),
         signal: controller.signal,
       });
         clearTimeout(abortTimer);
@@ -1090,7 +1127,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
     <div
       onDragOver={e => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); setChatDragOver(true); } }}
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setChatDragOver(false); }}
-      onDrop={e => { e.preventDefault(); setChatDragOver(false); const f = e.dataTransfer?.files?.[0]; if (f) attachFileToChat(f); }}
+      onDrop={e => { e.preventDefault(); setChatDragOver(false); const fs = e.dataTransfer?.files ? Array.from(e.dataTransfer.files) : []; if (fs.length) attachFilesToChat(fs); }}
       style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', position:'relative' }}>
       {chatDragOver && (
         <div style={{ position:'absolute', inset:0, zIndex:900, background:'rgba(0,195,255,0.10)', border:'2px dashed var(--accent)', borderRadius:12, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:10, pointerEvents:'none', backdropFilter:'blur(1px)' }}>
@@ -1235,13 +1272,18 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       )}
 
       <div style={{ padding:'10px 20px 14px', display:'flex', flexDirection:'column', gap:6, borderTop:'1px solid var(--border-card)', background:'var(--bg-card)', flexShrink:0 }}>
-        {chatAttachment && (<div style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',background:'rgba(0,195,255,0.1)',borderRadius:8,fontSize:11,color:'var(--text-2)'}}>
-          <span style={{maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{chatAttachment.name}</span>
-          <button onClick={()=>setChatAttachment(null)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-3)',fontSize:14,padding:0,lineHeight:1}}>x</button>
+        {chatAttachments.length > 0 && (<div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+          {chatAttachments.map((a, i) => (
+            <div key={i} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',background:'rgba(0,195,255,0.1)',borderRadius:8,fontSize:11,color:'var(--text-2)'}}>
+              <span style={{maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.name}</span>
+              <button onClick={()=>removeChatAttachment(i)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-3)',fontSize:14,padding:0,lineHeight:1}}>x</button>
+            </div>
+          ))}
         </div>)}
+        {chatAttachError && (<div role="alert" style={{fontSize:11.5,color:'#f59e0b',lineHeight:1.4}}>{chatAttachError}</div>)}
         <div style={{display:'flex',alignItems:'center',gap:8}}>
-        <input type='file' id='chat-file-input' accept='.pids,.pdf,.txt,.csv,.png,.jpg,.jpeg' style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)attachFileToChat(f);e.target.value='';}} />
-        <button onClick={()=>document.getElementById('chat-file-input')?.click()} title='Attach file' style={{width:38,height:38,borderRadius:9,background:'var(--bg-input)',border:'1px solid var(--border-card)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,color:chatAttachment?'#00c3ff':'var(--text-2)'}}>
+        <input type='file' id='chat-file-input' multiple accept='.pids,.pdf,.txt,.csv,.png,.jpg,.jpeg' style={{display:'none'}} onChange={e=>{const fs=e.target.files?Array.from(e.target.files):[];if(fs.length)attachFilesToChat(fs);e.target.value='';}} />
+        <button onClick={()=>{ if (chatAttachments.length >= MAX_CHAT_ATTACHMENTS) { setChatAttachError(`Only ${MAX_CHAT_ATTACHMENTS} attachments may be shared in one message. Remove one to add another.`); return; } document.getElementById('chat-file-input')?.click(); }} title={chatAttachments.length >= MAX_CHAT_ATTACHMENTS ? `Limit of ${MAX_CHAT_ATTACHMENTS} attachments reached` : 'Attach file'} style={{width:38,height:38,borderRadius:9,background:'var(--bg-input)',border:'1px solid var(--border-card)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,color:chatAttachments.length?'#00c3ff':'var(--text-2)'}}>
           <svg width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'><path d='m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'/></svg>
         </button>
         <textarea rows={1} value={input} onChange={e => setInput(e.target.value)}
