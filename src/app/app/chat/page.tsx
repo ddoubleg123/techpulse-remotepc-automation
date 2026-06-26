@@ -907,6 +907,17 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   const [pdfFilenameReport, setPdfFilenameReport] = useState<string>('');
   const [reportSynthesis, setReportSynthesis] = useState<Record<string, unknown> | null>(null);
   const [chatAttachment, setChatAttachment] = useState<{name:string;base64:string}|null>(null);
+  const [chatDragOver, setChatDragOver] = useState(false);
+  // Shared by the paperclip picker and drag-and-drop: read a dropped/selected
+  // file to base64 and stage it exactly like a clicked attachment.
+  const ACCEPTED_CHAT_EXT = ['.pids','.pdf','.txt','.csv','.png','.jpg','.jpeg'];
+  const attachFileToChat = (f: File) => {
+    const name = (f.name || '').toLowerCase();
+    if (!ACCEPTED_CHAT_EXT.some(ext => name.endsWith(ext))) return;
+    const r = new FileReader();
+    r.onload = () => { const b64 = (r.result as string).split(',')[1] || ''; setChatAttachment({ name: f.name, base64: b64 }); };
+    r.readAsDataURL(f);
+  };
   const [showVinGate, setShowVinGate] = useState(false);
   const [vinGateInput, setVinGateInput] = useState('');
   const [vinValidating, setVinValidating] = useState(false);
@@ -1098,7 +1109,20 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
   }, []);
   const iconStyle: React.CSSProperties = { width:30, height:30, borderRadius:8, background:'linear-gradient(135deg,#00c3ff,#0055ff)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, alignSelf:'flex-end' };
   return (
-    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+    <div
+      onDragOver={e => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); setChatDragOver(true); } }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setChatDragOver(false); }}
+      onDrop={e => { e.preventDefault(); setChatDragOver(false); const f = e.dataTransfer?.files?.[0]; if (f) attachFileToChat(f); }}
+      style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', position:'relative' }}>
+      {chatDragOver && (
+        <div style={{ position:'absolute', inset:0, zIndex:900, background:'rgba(0,195,255,0.10)', border:'2px dashed var(--accent)', borderRadius:12, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:10, pointerEvents:'none', backdropFilter:'blur(1px)' }}>
+          <div style={{ width:56, height:56, borderRadius:16, background:'var(--bg-card)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 20px rgba(0,0,0,0.25)' }}>
+            <Upload size={26} color='var(--accent)' />
+          </div>
+          <div style={{ fontSize:15, fontWeight:800, color:'var(--text-1)' }}>Drop to attach</div>
+          <div style={{ fontSize:12, color:'var(--text-2)' }}>PDF, image, .txt, .csv, or scanner export</div>
+        </div>
+      )}
         {showVinGate && (<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{background:'var(--bg-card)',borderRadius:20,padding:28,width:'100%',maxWidth:440,border:'1px solid var(--border-card)'}}><div style={{fontSize:20,fontWeight:800,color:'var(--text-1)',marginBottom:6}}>VIN Required</div><div style={{fontSize:13,color:'var(--text-2)',marginBottom:20}}>Enter your VIN to verify this diagnostic matches your vehicle before generating the report.</div><input value={vinGateInput} onChange={e=>setVinGateInput(e.target.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,''))} placeholder='Enter 17-character VIN' maxLength={17} autoFocus style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1px solid var(--border-card)',background:'var(--bg-input)',color:'var(--text-1)',fontSize:16,fontFamily:'monospace',letterSpacing:'0.1em',fontWeight:700,boxSizing:'border-box',marginBottom:8}} /><div style={{fontSize:11,color:'var(--text-3)',marginBottom:12}}>Found on the driver door jamb, dashboard (windshield side), or vehicle documents.</div>{vinGateError&&<div style={{fontSize:12,color:'#ef4444',marginBottom:10,lineHeight:1.5}}>{vinGateError}</div>}<div style={{display:'flex',gap:8}}><button onClick={()=>{setShowVinGate(false);setVinGateError('');setVinGateInput('');}} style={{flex:1,padding:'11px',borderRadius:10,border:'1px solid var(--border-card)',background:'var(--bg-input)',color:'var(--text-2)',fontWeight:700,fontSize:14,cursor:'pointer'}}>Cancel</button><button onClick={validateAndViewReport} disabled={vinGateInput.length!==17||vinValidating} style={{flex:2,padding:'11px',borderRadius:10,border:'none',background:vinGateInput.length===17&&!vinValidating?'linear-gradient(135deg,#10b981,#059669)':'var(--bg-input)',color:vinGateInput.length===17&&!vinValidating?'#fff':'var(--text-3)',fontWeight:700,fontSize:14,cursor:vinGateInput.length===17&&!vinValidating?'pointer':'not-allowed'}}>{vinValidating?'Verifying VIN...':'Verify & View Report'}</button></div></div></div>)}
     {/* === VIN Gate Modal === */}
       <div style={{ padding:'10px 20px', borderBottom:'1px solid var(--border-card)', background:'var(--bg-feed)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
@@ -1232,7 +1256,7 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
           <button onClick={()=>setChatAttachment(null)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-3)',fontSize:14,padding:0,lineHeight:1}}>x</button>
         </div>)}
         <div style={{display:'flex',alignItems:'center',gap:8}}>
-        <input type='file' id='chat-file-input' accept='.pids,.pdf,.txt,.csv,.png,.jpg,.jpeg' style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{const b64=(r.result as string).split(',')[1]||'';setChatAttachment({name:f.name,base64:b64});};r.readAsDataURL(f);e.target.value='';}} />
+        <input type='file' id='chat-file-input' accept='.pids,.pdf,.txt,.csv,.png,.jpg,.jpeg' style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)attachFileToChat(f);e.target.value='';}} />
         <button onClick={()=>document.getElementById('chat-file-input')?.click()} title='Attach file' style={{width:38,height:38,borderRadius:9,background:'var(--bg-input)',border:'1px solid var(--border-card)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,color:chatAttachment?'#00c3ff':'var(--text-2)'}}>
           <svg width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'><path d='m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'/></svg>
         </button>
