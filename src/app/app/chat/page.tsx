@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useCallback, useMemo, Suspense } from 'rea
 import { useAuthStore } from '@/stores/authStore';
 import { isDemoUser } from '@/lib/demoUsers';
 import { assertAcceptableScannerPdf, getPdfSizeViolationMessage, readPdfAsRawBase64 } from '@/lib/scannerPdf';
-import { getOrCreateSessionUnid } from '@/lib/unid';
+import { getOrCreateSessionUnid, rotateSessionUnid } from '@/lib/unid';
 import { useSearchParams } from 'next/navigation';
 import { loadSession } from '@/lib/sessionHistory';
 import { isValidPdfBase64 } from '@/lib/upload-classifier';
@@ -849,9 +849,9 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack, initialC
   );
 }
 
-function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, sessionId, isDemo, initialMessages, onReport, onBack }:
+function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, sessionId, isDemo, initialMessages, onReport, onBack, onNewCar }:
   { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; pdfBase64?: string; sessionId: string; isDemo?: boolean; initialMessages?: Message[];
-    onReport: (report: SynthReport, messages: Message[], updatedVehicle?: Vehicle) => void; onBack: () => void }
+    onReport: (report: SynthReport, messages: Message[], updatedVehicle?: Vehicle) => void; onBack: () => void; onNewCar?: () => void }
 ) {
   const nl = String.fromCharCode(10);
   const hasPdfAttachment = Boolean(pdfBase64 && pdfBase64.length > 0);
@@ -1137,6 +1137,12 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={onBack} style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, cursor:'pointer' }}> Back</button>
+          {onNewCar && <button
+            onClick={() => { if (window.confirm('Start a new car? This clears the current diagnostic and begins a fresh one.')) onNewCar(); }}
+            title='Start a diagnostic for a different vehicle'
+            style={{ padding:'6px 12px', borderRadius:8, background:'var(--bg-input)', border:'1px solid var(--border-input)', color:'var(--text-2)', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+            <Plus size={13} /> New Car
+          </button>}
           {!isDemo && <button
             disabled={!reportReady}
             onClick={() => {
@@ -1672,6 +1678,21 @@ function ChatPageInner() {
       let _selfId = '';
       try { _selfId = JSON.parse(atob(_tok.split('.')[1] || '')).sub || ''; } catch { return; }
       if (!_selfId) return;
+      // Resolve shop_id — the Auto History read filters chat_sessions by shop_id,
+      // and the shop-isolation RLS policy expects it. Without it the row saves
+      // with shop_id=NULL and is invisible in history. Prefer the user object,
+      // fall back to the users table.
+      const _uShop = (user as { shop_id?: string } | null);
+      let _shopId: string | null = (_uShop && _uShop.shop_id) || null;
+      if (!_shopId) {
+        try {
+          const _sr = await fetch(
+            SUPABASE_URL + '/rest/v1/users?id=eq.' + encodeURIComponent(_selfId) + '&select=shop_id',
+            { headers: { Authorization: 'Bearer ' + _tok, apikey: SUPABASE_ANON_KEY } }
+          );
+          if (_sr.ok) { const _j = await _sr.json(); _shopId = (_j && _j[0] && _j[0].shop_id) || null; }
+        } catch { /* leave null; row still saves under own_row RLS */ }
+      }
       const _u = user as { email?: string } | null;
       const _v = extra?.vehicle || vehicle;
       const _label = [_v.year, _v.make, _v.model].filter(Boolean).join(' ') || 'Diagnostic';
@@ -1686,6 +1707,7 @@ function ChatPageInner() {
         },
         body: JSON.stringify({
           user_id: _selfId,
+          shop_id: _shopId,
           user_email: (_u && _u.email) || '',
           session_id: sessionId,
           title: _label + (_codesArr.length ? ' — ' + _codesArr.join(', ') : ''),
@@ -1999,7 +2021,9 @@ function ChatPageInner() {
     setStep('vin'); setVehicle({ year:'', make:'', model:'', engine:'', mileage:'', vin:'' });
     setUploadedReport(undefined); setFileName(undefined); setUploadedPdfBase64('');
     setCodes([]); setSymptoms(''); setSynthReport(null); setChatMessages([]);
-    localStorage.removeItem('synth-session-id');
+    // Mint a fresh session id so the next car persists as its own history row
+    // instead of overwriting the previous session keyed on the same id.
+    setSessionId(rotateSessionUnid());
   };
   return (
     <div style={{ position:'relative', flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-page)' }}>
@@ -2031,7 +2055,7 @@ function ChatPageInner() {
       )}
       {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); recordStep('vehicle', { vehicle: v }); track({ event_type: 'scan_started', step: 'vin', session_id: sessionId, vehicle: [v.year,v.make,v.model].filter(Boolean).join(' '), payload: { has_pdf: !!b64 } }); if (b64) track({ event_type: 'pdf_uploaded', step: 'vin', session_id: sessionId, payload: { file: fn } }); setStep('codes'); }} />}
       {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onNext={(c,s) => { setCodes(c); setSymptoms(s); recordStep('codes', { codes: c }); track({ event_type: 'codes_entered', step: 'codes', session_id: sessionId, dtc_codes: (c||[]).map(x => x?.code).filter(Boolean), payload: { symptom_len: (s||'').length } }); checkGateThenStart(() => setStep('chat')); }} onBack={() => setStep('vin')} />}
-      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} initialMessages={chatMessages} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); recordStep('report', { messages: msgs, vehicle: updated || vehicle }); track({ event_type: 'report_generated', step: 'report', session_id: sessionId, vehicle: [(updated||vehicle).year,(updated||vehicle).make,(updated||vehicle).model].filter(Boolean).join(' ') }); setStep('report'); }} onBack={() => setStep('codes')} />}
+      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} initialMessages={chatMessages} onNewCar={restart} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); recordStep('report', { messages: msgs, vehicle: updated || vehicle }); track({ event_type: 'report_generated', step: 'report', session_id: sessionId, vehicle: [(updated||vehicle).year,(updated||vehicle).make,(updated||vehicle).model].filter(Boolean).join(' ') }); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep
         onRestart={restart}
