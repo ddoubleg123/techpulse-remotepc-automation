@@ -21,7 +21,11 @@ export type EventType =
   | 'codes_entered'
   | 'synth_message_sent'
   | 'report_generated'
-  | 'feedback_submitted';
+  | 'feedback_submitted'
+  | 'session_started'
+  | 'session_heartbeat'
+  | 'session_ended'
+  | 'page_view';
 
 interface TrackInput {
   event_type: EventType;

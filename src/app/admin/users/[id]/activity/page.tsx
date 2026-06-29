@@ -43,6 +43,10 @@ const EVENT_META: Record<string, { label: string; color: string }> = {
   synth_message_sent: { label: 'Asked Synth',         color: 'bg-cyan-500' },
   report_generated:   { label: 'Generated a report',  color: 'bg-green-500' },
   feedback_submitted: { label: 'Submitted feedback',  color: 'bg-amber-500' },
+  session_started:    { label: 'Opened the app',      color: 'bg-slate-400' },
+  session_heartbeat:  { label: 'Active on site',       color: 'bg-slate-300' },
+  session_ended:      { label: 'Left the app',         color: 'bg-slate-500' },
+  page_view:          { label: 'Viewed a page',        color: 'bg-sky-400' },
 };
 
 const RANGES = [
@@ -202,7 +206,7 @@ function ActivityInner() {
             </div>
           )}
           <ol className="relative border-l border-gray-200 ml-2">
-            {events.map((e) => {
+            {events.filter((e) => e.event_type !== 'session_heartbeat').map((e) => {
               const meta = EVENT_META[e.event_type] || { label: e.event_type, color: 'bg-gray-300' };
               const codes = Array.isArray(e.dtc_codes) ? e.dtc_codes.filter(Boolean) : [];
               return (

@@ -9,6 +9,7 @@ import OnboardingModal from '@/components/onboarding/OnboardingModal';
 import { isDemoUser } from '@/lib/demoUsers';
 import { captureReferralCode } from '@/lib/referralCapture';
 import { track } from '@/lib/track';
+import SessionTracker from '@/components/analytics/SessionTracker';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -308,6 +309,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </main>
       </div>
       <OnboardingGate />
+      <SessionTracker />
     </div>
   );
 }

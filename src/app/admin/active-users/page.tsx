@@ -52,6 +52,30 @@ const RANGES = [
   { label: '90 days', days: 90 },
 ];
 
+interface SessionSummary {
+  user_email: string | null;
+  user_id: string | null;
+  sessions: number;
+  total_seconds: number;
+  page_views: number;
+  scans_started: number;
+  reports_generated: number;
+  synth_messages: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  sources: string[] | null;
+}
+
+function fmtDuration(secs: number): string {
+  const s = Math.max(0, Math.round(secs || 0));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem ? `${h}h ${rem}m` : `${h}h`;
+}
+
 function ActiveUsersInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -63,6 +87,7 @@ function ActiveUsersInner() {
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true); setErr('');
@@ -79,6 +104,18 @@ function ActiveUsersInner() {
         const data = await res.json();
         setRows(Array.isArray(data) ? data : []);
       }
+
+      // Time-on-site summary (separate RPC; derives duration from session events).
+      try {
+        const since = new Date(Date.now() - days * 86400000).toISOString();
+        const sRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_session_summary`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_since: since }),
+        });
+        if (sRes.ok) { const sd = await sRes.json(); setSessions(Array.isArray(sd) ? sd : []); }
+        else setSessions([]);
+      } catch { setSessions([]); }
     } catch { setErr('Network error.'); setRows([]); }
     finally { setLoading(false); }
   }, [days]);
@@ -140,6 +177,48 @@ function ActiveUsersInner() {
           <span className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 font-medium">{rows.length} active</span>
           <span className="px-3 py-1.5 rounded-lg bg-green-100 text-green-700 font-medium">{paidCount} paid</span>
           <span className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 font-medium">{trialCount} on trial</span>
+        </div>
+
+        {/* Time on site — derived from session lifecycle + heartbeat events. */}
+        <div className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden">
+          <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-700">Time on site · last {days} days</span>
+            <span className="text-xs text-gray-400">{sessions.length} user{sessions.length === 1 ? '' : 's'} with tracked sessions</span>
+          </div>
+          <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-700">
+            Accurate session timing begins after the 6/29 instrumentation deploy. Sessions before then may show inflated durations (no session boundaries existed).
+          </div>
+          {sessions.length === 0 ? (
+            <div className="p-4 text-sm text-gray-500">
+              No session activity tracked yet in this window. Session timing starts accruing once users load the app after this deploy (forward-only).
+            </div>
+          ) : (
+            <>
+              <div className="hidden sm:grid grid-cols-[1fr_90px_90px_90px_140px] gap-3 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                <div>User</div><div>Sessions</div><div>Time</div><div>Scans</div><div className="text-right">Last seen</div>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {sessions.map((s) => (
+                  <div
+                    key={s.user_email || s.user_id || Math.random()}
+                    onClick={() => s.user_id && router.push(`/admin/users/${encodeURIComponent(s.user_id)}/activity?email=${encodeURIComponent(s.user_email || '')}`)}
+                    className={`grid grid-cols-1 sm:grid-cols-[1fr_90px_90px_90px_140px] gap-1 sm:gap-3 px-4 py-2.5 items-center text-sm ${s.user_id ? 'hover:bg-gray-50 cursor-pointer' : ''}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-900 truncate">{s.user_email || 'Unattributed'}</p>
+                      <p className="text-[10px] text-gray-400">{s.page_views} page views · {s.synth_messages} Synth msgs · {(s.sources || []).join(', ')}</p>
+                    </div>
+                    <div className="text-gray-700">{s.sessions}</div>
+                    <div className="font-medium text-gray-900">{fmtDuration(s.total_seconds)}</div>
+                    <div className="text-gray-700">{s.scans_started}{s.reports_generated ? ` · ${s.reports_generated} rpt` : ''}</div>
+                    <div className="sm:text-right text-gray-500 text-xs">
+                      {s.last_seen ? formatRelativeTime(new Date(s.last_seen)) : '—'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Search */}
