@@ -24,6 +24,8 @@ export const dynamic = 'force-dynamic';
 
 const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 
+interface ChatMsg { id?: string; ts?: number; role?: string; content?: string }
+
 interface SaveCaseBody {
   unid?: string;
   conversation_text?: string;
@@ -37,6 +39,11 @@ interface SaveCaseBody {
   conclusion?: string;
   cheat_sheet_title?: string;
   cheat_sheet_content?: string;
+  // Attribution + structured chat (added June 2026 so admin views can show
+  // shop, user, and render the conversation as bubbles).
+  shop_id?: string | null;
+  created_by?: string | null;
+  messages?: ChatMsg[];
 }
 
 export async function POST(req: NextRequest) {
@@ -66,6 +73,7 @@ export async function POST(req: NextRequest) {
     unid, conversation_text, year, make, model, dtc_codes,
     complaint, diagnosis, fix, conclusion,
     cheat_sheet_title, cheat_sheet_content,
+    shop_id, created_by, messages,
   } = body;
   if (!unid || typeof unid !== 'string') {
     return NextResponse.json({ error: 'Missing or invalid unid' }, { status: 400 });
@@ -103,6 +111,13 @@ export async function POST(req: NextRequest) {
     category: 'case_study',
     diagnosis_outcome: 'confirmed_correct',
     confirmed_date: new Date().toISOString().slice(0, 10),
+    // Attribution + structured chat. shop_id/created_by let admin views filter
+    // by shop and user; messages (jsonb) lets the chat viewer render bubbles
+    // instead of a flat transcript. All best-effort: null if the client didn't
+    // resolve them, which is still better than the prior always-null behavior.
+    shop_id: shop_id ?? null,
+    created_by: created_by ?? null,
+    messages: Array.isArray(messages) && messages.length ? messages : null,
     // cheat sheet content stored in technical_notes so it isn't lost; Mike's
     // pipeline can relocate it if it has a dedicated home.
     technical_notes: cheat_sheet_content ?? null,
@@ -127,6 +142,13 @@ export async function POST(req: NextRequest) {
       // Update the existing row (don't overwrite unid/source/created_at).
       const { ...patchRow } = row;
       delete (patchRow as Record<string, unknown>).source;
+      // Don't blank out attribution/messages on a re-confirm if this payload
+      // happens to lack them — only patch these when we actually have a value.
+      for (const k of ['shop_id', 'created_by', 'messages'] as const) {
+        if ((patchRow as Record<string, unknown>)[k] == null) {
+          delete (patchRow as Record<string, unknown>)[k];
+        }
+      }
       res = await fetch(
         `${SUPABASE_URL}/rest/v1/diagnostic_case_studies?unid=eq.${encodeURIComponent(unid)}`,
         {

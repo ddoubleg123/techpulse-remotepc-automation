@@ -42,6 +42,9 @@ export interface ConfirmFixModalProps {
   conclusion?: string;         // Optional summary; defaults to "Confirmed resolved"
   messages: ChatMessage[];     // Full conversation, for transcript fields
 
+  shopId?: string | null;      // Attribution: shop that ran the case
+  userId?: string | null;      // Attribution: user (auth uid) who confirmed
+
   token?: string;              // Bearer token if API requires auth
 }
 
@@ -58,6 +61,8 @@ export function ConfirmFixModal({
   diagnosis,
   conclusion,
   messages,
+  shopId,
+  userId,
   token,
 }: ConfirmFixModalProps) {
   const [whatFixedIt, setWhatFixedIt] = useState('');
@@ -115,6 +120,15 @@ export function ConfirmFixModal({
         conclusion: conclusion || 'Confirmed resolved',
         cheat_sheet_title: cheat.cheat_sheet_title,
         cheat_sheet_content: cheat.cheat_sheet_content,
+        shop_id: shopId ?? null,
+        created_by: userId ?? null,
+        // Normalize to the {role, content} shape the admin chat viewer renders.
+        // 'assistant' stays as-is (viewer treats non-'user' as Synth).
+        messages: (messages || []).map((m) => ({
+          role: m.role,
+          content: m.content,
+          ts: typeof m.timestamp === 'number' ? m.timestamp : undefined,
+        })),
       };
 
       // Fire both in parallel per the flowchart (Phase 3 + Phase 4/5 chain).

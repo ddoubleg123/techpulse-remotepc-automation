@@ -51,6 +51,10 @@ export interface SaveCasePayload {
   conclusion: string;
   cheat_sheet_title: string;
   cheat_sheet_content: string;
+  // Attribution + structured chat (optional; older callers omit them).
+  shop_id?: string | null;
+  created_by?: string | null;
+  messages?: Array<{ role: string; content: string; ts?: number }>;
 }
 
 // ---------- Internal POST helper ----------

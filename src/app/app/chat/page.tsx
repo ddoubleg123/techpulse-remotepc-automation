@@ -1686,6 +1686,33 @@ function FeedbackStep({ onRestart, unid, vehicle, codes, complaint, diagnosis, m
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [unconfirmOpen, setUnconfirmOpen] = useState(false);
 
+  // Resolve attribution (shop_id + auth uid) for the confirmed case write.
+  // userId comes from the token's `sub`; shop_id prefers the user object, then
+  // falls back to the users table (onboarding writes it there). Best-effort.
+  const [attribUserId, setAttribUserId] = useState<string | null>(null);
+  const [attribShopId, setAttribShopId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const u = useAuthStore.getState().user as { shop_id?: string } | null;
+        const tok = useAuthStore.getState().token || '';
+        let uid = '';
+        try { uid = JSON.parse(atob((tok.split('.')[1] || '').replace(/-/g, '+').replace(/_/g, '/'))).sub || ''; } catch { uid = ''; }
+        let shopId: string | null = (u && u.shop_id) || null;
+        if (!shopId && uid) {
+          const r = await fetch(
+            `${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(uid)}&select=shop_id`,
+            { headers: { Authorization: `Bearer ${tok || SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY } }
+          );
+          if (r.ok) { const j = await r.json(); shopId = (j && j[0] && j[0].shop_id) || null; }
+        }
+        if (!cancelled) { setAttribUserId(uid || null); setAttribShopId(shopId); }
+      } catch { /* best effort — attribution stays null */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // Map fault codes to string[] for the API payloads
   const dtcStrings = codes.map(c => c.code).filter(Boolean);
 
@@ -1768,6 +1795,8 @@ function FeedbackStep({ onRestart, unid, vehicle, codes, complaint, diagnosis, m
           complaint={complaint}
           diagnosis={diagnosis}
           messages={chatMessagesForModal}
+          shopId={attribShopId}
+          userId={attribUserId}
           token={token}
         />
         <UnconfirmFixModal
