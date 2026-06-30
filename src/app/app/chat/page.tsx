@@ -1892,9 +1892,12 @@ function ChatPageInner() {
 
   // === Funnel tracking ===
   // Upsert a chat_sessions row keyed on session_id as the customer moves through
-  // the flow, so we can measure started -> finished. Written at step 1 (vehicle)
-  // and updated on each transition. Keyed on user_id (owner RLS policy), so it
-  // persists with or without a shop. Fire-and-forget; never blocks the UI.
+  // the flow, so we can measure started -> finished and so it appears in Auto
+  // History. Routes through the save_chat_session RPC, which resolves the
+  // caller's shop server-side from their verified JWT (email claim) — so it
+  // works for OTP/OAuth users whose token has no auth.uid(). The old direct
+  // write required a Supabase `sub` and was blocked by auth.uid()-based RLS,
+  // which is why most sessions never saved. Fire-and-forget; never blocks UI.
   const recordStep = useCallback(async (
     lastStep: 'vehicle' | 'codes' | 'diagnose' | 'report',
     extra?: { vehicle?: Vehicle; codes?: DtcCode[]; messages?: Message[] }
@@ -1903,46 +1906,25 @@ function ChatPageInner() {
       if (!SUPABASE_ANON_KEY || isDemoUser) return;
       const _tok = useAuthStore.getState().token || '';
       if (!_tok) return;
-      let _selfId = '';
-      try { _selfId = JSON.parse(atob(_tok.split('.')[1] || '')).sub || ''; } catch { return; }
-      if (!_selfId) return;
-      // Resolve shop_id — the Auto History read filters chat_sessions by shop_id,
-      // and the shop-isolation RLS policy expects it. Without it the row saves
-      // with shop_id=NULL and is invisible in history. Prefer the user object,
-      // fall back to the users table.
-      const _uShop = (user as { shop_id?: string } | null);
-      let _shopId: string | null = (_uShop && _uShop.shop_id) || null;
-      if (!_shopId) {
-        try {
-          const _sr = await fetch(
-            SUPABASE_URL + '/rest/v1/users?id=eq.' + encodeURIComponent(_selfId) + '&select=shop_id',
-            { headers: { Authorization: 'Bearer ' + _tok, apikey: SUPABASE_ANON_KEY } }
-          );
-          if (_sr.ok) { const _j = await _sr.json(); _shopId = (_j && _j[0] && _j[0].shop_id) || null; }
-        } catch { /* leave null; row still saves under own_row RLS */ }
-      }
       const _u = user as { email?: string } | null;
       const _v = extra?.vehicle || vehicle;
       const _label = [_v.year, _v.make, _v.model].filter(Boolean).join(' ') || 'Diagnostic';
       const _codesArr = (extra?.codes || codes || []).map((c) => (c && c.code) || '').filter(Boolean);
-      await fetch(SUPABASE_URL + '/rest/v1/chat_sessions?on_conflict=session_id', {
+      await fetch(SUPABASE_URL + '/rest/v1/rpc/save_chat_session', {
         method: 'POST',
         headers: {
           Authorization: 'Bearer ' + _tok,
           apikey: SUPABASE_ANON_KEY,
           'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates,return=minimal',
         },
         body: JSON.stringify({
-          user_id: _selfId,
-          shop_id: _shopId,
-          user_email: (_u && _u.email) || '',
-          session_id: sessionId,
-          title: _label + (_codesArr.length ? ' — ' + _codesArr.join(', ') : ''),
-          dtc_codes: _codesArr,
-          vehicle_context: _v,
-          messages: extra?.messages || chatMessages || [],
-          last_step: lastStep,
+          p_session_id: sessionId,
+          p_messages: extra?.messages || chatMessages || [],
+          p_title: _label + (_codesArr.length ? ' — ' + _codesArr.join(', ') : ''),
+          p_dtc_codes: _codesArr,
+          p_vehicle_context: _v,
+          p_last_step: lastStep,
+          p_user_email: (_u && _u.email) || null,
         }),
       });
     } catch { /* funnel write is best-effort */ }
@@ -2114,41 +2096,31 @@ function ChatPageInner() {
         }
       } catch (e) { console.error('[report] synthesis save error', e); }
 
-      // 3) Upsert a diagnostic session row for history (Recent Diagnostics).
-      //    Keyed on the user (user_id), so it persists even before a shop is
-      //    assigned; shop_id is included when known for shop-wide history.
+      // 3) Upsert a chat_sessions row for Auto History via the save_chat_session
+      //    RPC, which resolves the shop server-side from the verified JWT email
+      //    claim — so it works for OTP/OAuth users with no auth.uid(). (The old
+      //    direct write required a Supabase sub and was blocked by RLS.)
       try {
-          if (!_selfId) return;
-          let _email = (_u && _u.email) || '';
-          try {
-            const _emRes = await fetch(
-              SUPABASE_URL + '/rest/v1/users?id=eq.' + encodeURIComponent(_selfId) + '&select=email',
-              { headers: { 'Authorization': 'Bearer ' + _userToken, 'apikey': SUPABASE_ANON_KEY } }
-            );
-            if (_emRes.ok) { const _er = await _emRes.json(); _email = (_er && _er[0] && _er[0].email) || _email; }
-          } catch { /* email is best-effort */ }
-          const _csRes = await fetch(SUPABASE_URL + '/rest/v1/chat_sessions?on_conflict=session_id', {
+          const _email2 = (_u && _u.email) || null;
+          const _csRes = await fetch(SUPABASE_URL + '/rest/v1/rpc/save_chat_session', {
             method: 'POST',
             headers: {
               'Authorization': 'Bearer ' + _userToken,
               'apikey': SUPABASE_ANON_KEY,
               'Content-Type': 'application/json',
-              'Prefer': 'resolution=merge-duplicates,return=minimal',
             },
             body: JSON.stringify({
-              user_id: _selfId,
-              user_email: _email,
-              shop_id: _shopId,
-              session_id: _unid,
-              title: _vehicleLabel + (_codesArr.length ? ' — ' + _codesArr.join(', ') : ''),
-              dtc_codes: _codesArr,
-              vehicle_context: vehicle,
-              messages: chatMessages || [],
-              last_step: 'report',
+              p_session_id: _unid,
+              p_messages: chatMessages || [],
+              p_title: _vehicleLabel + (_codesArr.length ? ' — ' + _codesArr.join(', ') : ''),
+              p_dtc_codes: _codesArr,
+              p_vehicle_context: vehicle,
+              p_last_step: 'report',
+              p_user_email: _email2,
             }),
           });
-          if (!_csRes.ok) console.error('[report] chat_sessions upsert failed', _csRes.status, await _csRes.text().catch(() => ''));
-      } catch (e) { console.error('[report] chat_sessions upsert error', e); }
+          if (!_csRes.ok) console.error('[report] chat_sessions RPC failed', _csRes.status, await _csRes.text().catch(() => ''));
+      } catch (e) { console.error('[report] chat_sessions RPC error', e); }
     } catch { /* never let persistence errors break the report flow */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps

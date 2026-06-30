@@ -68,18 +68,16 @@ export function resetShopCache(): void { _cachedShopId = undefined; }
 export async function listSessions(
   opts: { limit?: number; before?: string } = {}
 ): Promise<SessionSummary[]> {
-  const shopId = await getShopId();
-  if (!shopId) return [];
+  // Use the email-keyed RPC: it resolves the caller's shop from the verified JWT
+  // (email claim) so it works for OTP/OAuth users whose token has no auth.uid().
+  // The old direct chat_sessions query depended on a Supabase sub and returned
+  // nothing for those users — the cause of empty Auto History.
   const limit = opts.limit ?? 20;
-  const params = new URLSearchParams();
-  params.set('shop_id', `eq.${shopId}`);
-  params.set('select', 'session_id,title,dtc_codes,created_at,last_step,user_email');
-  params.set('order', 'created_at.desc');
-  params.set('limit', String(limit));
-  if (opts.before) params.append('created_at', `lt.${opts.before}`);
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/chat_sessions?${params.toString()}`, {
-      headers: authHeaders(),
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/list_chat_sessions`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_limit: limit, p_before: opts.before ?? null }),
     });
     if (!res.ok) return [];
     return (await res.json()) as SessionSummary[];
@@ -173,28 +171,20 @@ export async function saveSessionMessages(
   messages: unknown[]
 ): Promise<boolean> {
   if (!sessionId) return false;
-  const sub = subFromToken();
-  if (!sub) return false;
-  const shopId = await getShopId();
+  // Use the email-keyed RPC so the write succeeds for OTP/OAuth users whose
+  // token has no auth.uid() (the old `if (!sub) return` guard plus the
+  // auth.uid()-based RLS made the write silently no-op for them). The RPC
+  // attributes the row to the caller's own email + shop, derived server-side.
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/chat_sessions?on_conflict=session_id`,
-      {
-        method: 'POST',
-        headers: {
-          ...authHeaders(),
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates,return=minimal',
-        },
-        body: JSON.stringify({
-          session_id: sessionId,
-          user_id: sub,
-          shop_id: shopId,
-          messages,
-          last_step: 'report',
-        }),
-      }
-    );
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/save_chat_session`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        p_session_id: sessionId,
+        p_messages: messages ?? [],
+        p_last_step: 'report',
+      }),
+    });
     return res.ok;
   } catch {
     return false;
