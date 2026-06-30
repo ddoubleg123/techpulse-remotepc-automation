@@ -2008,45 +2008,13 @@ function ChatPageInner() {
         if (!r.ok) console.error('[report] storage upload failed', r.status);
       }).catch((e) => console.error('[report] storage upload error', e));
 
-      // 2) Insert case row into diagnostic_case_studies.
-      fetch(SUPABASE_URL + '/rest/v1/diagnostic_case_studies', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + _userToken,
-          'apikey': SUPABASE_ANON_KEY,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify({
-          unid: _unid,
-          source: isDemoUser ? 'demo' : 'web',
-          synth_guided: false,             // Gate: unverified web write — invisible to Synth
-          diagnosis_outcome: 'pending_review',  // Override default 'confirmed_correct' — these are NOT verified
-          messages: chatMessages || [],
-          title: _vehicleLabel + (_codesArr.length ? ' — ' + _codesArr.join(', ') : ''),  // NOT NULL
-          year: vehicle.year ? (parseInt(vehicle.year, 10) || null) : null,  // schema is integer
-          make: vehicle.make || '',
-          model: vehicle.model || '',
-          engine: vehicle.engine || '',
-          vin: vehicle.vin || '',
-          dtc_codes: _codesArr,
-          complaint: symptoms || '',
-          symptoms: symptoms || '',        // Mike's q_cases checks both columns
-          diagnosis: _diagnosisText,
-          fix: '',
-          conclusion: '',
-          shop_name: _shopName || '',
-          shop_id: _shopId,                // Prefer FK; shop_name kept for back-compat
-          created_by: _selfId,             // Owner — lets RLS persist even without a shop
-          full_content: (isDemoUser ? null : (_diagnosisText && _diagnosisText.length > 50 ? _diagnosisText : null)), // Trial-gate count marker for live web scans. Stays out of Synth training/search (synth_guided=false, embedding=null); promotion is gated on embedding, not this field.
-          embedding: null,                 // Gate: generated on promotion only
-        }),
-      }).then(async (r) => {
-        if (!r.ok) {
-          const _b = await r.text().catch(() => '');
-          console.error('[report] case_studies insert failed', r.status, _b);
-        }
-      }).catch((e) => { console.error('[report] case_studies insert error', e); });
+      // 2) [REMOVED 2026-06-29] Previously inserted an unconfirmed scan row into
+      //    diagnostic_case_studies (synth_guided=false) as a trial-gate marker.
+      //    Per Mike's write contract (June 29 2026), that table is CONFIRM-ONLY —
+      //    the knowledge base must not hold unconfirmed scans. Trial-gate counting
+      //    now derives from report_generated events in user_events instead (see the
+      //    shop_scan_gate_status RPC). Confirmed cases still reach the table via the
+      //    /api/confirm-case path, which is unchanged.
 
       // 2b) Save the structured synthesis fields to diagnostic_reports (Mike's
       //     decision: synthesis-prompt path). Upsert on session_id. Only fires
