@@ -32,6 +32,28 @@ interface UserDetail {
   scan_count: number | null;
 }
 
+interface Engagement {
+  created_at: string;
+  event_type: string;
+  step: string | null;
+  vehicle: string | null;
+  dtc_codes: string[] | null;
+  path: string | null;
+  source: string | null;
+  session_id: string | null;
+}
+
+interface ChatMsg { role?: string; content?: string }
+interface ChatSession {
+  session_id: string;
+  title: string | null;
+  dtc_codes: string[] | null;
+  last_step: string | null;
+  created_at: string;
+  updated_at: string;
+  messages: ChatMsg[] | null;
+}
+
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   const empty = value === null || value === undefined || value === '';
   return (
@@ -47,6 +69,40 @@ export default function UserDetailModal({ userId, onClose }: { userId: string | 
   const [data, setData] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [tab, setTab] = useState<'profile' | 'engagements' | 'chat'>('profile');
+  const [engagements, setEngagements] = useState<Engagement[] | null>(null);
+  const [chats, setChats] = useState<ChatSession[] | null>(null);
+  const [subLoading, setSubLoading] = useState(false);
+
+  const callRpc = useCallback(async (fn: string, id: string) => {
+    const tok = useAuthStore.getState().token || SUPABASE_ANON_KEY;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tok}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_user_id: id }),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    return res.json();
+  }, []);
+
+  // Lazy-load the active tab's data the first time it's opened.
+  useEffect(() => {
+    if (!userId) return;
+    if (tab === 'engagements' && engagements === null) {
+      setSubLoading(true);
+      callRpc('admin_user_engagements', userId)
+        .then((j) => setEngagements(Array.isArray(j) ? j : []))
+        .catch(() => setEngagements([]))
+        .finally(() => setSubLoading(false));
+    } else if (tab === 'chat' && chats === null) {
+      setSubLoading(true);
+      callRpc('admin_user_chats', userId)
+        .then((j) => setChats(Array.isArray(j) ? j : []))
+        .catch(() => setChats([]))
+        .finally(() => setSubLoading(false));
+    }
+  }, [tab, userId, engagements, chats, callRpc]);
+
 
   const load = useCallback(async (id: string) => {
     setLoading(true); setErr(''); setData(null);
@@ -68,7 +124,7 @@ export default function UserDetailModal({ userId, onClose }: { userId: string | 
   }, []);
 
   useEffect(() => {
-    if (userId) load(userId);
+    if (userId) { setTab('profile'); setEngagements(null); setChats(null); load(userId); }
   }, [userId, load]);
 
   useEffect(() => {
@@ -102,10 +158,21 @@ export default function UserDetailModal({ userId, onClose }: { userId: string | 
           </button>
         </div>
 
+        {data && (
+          <div className="flex gap-1 px-5 pt-3 border-b border-gray-100 sticky top-[57px] bg-white z-10">
+            {(['profile','engagements','chat'] as const).map((t) => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`px-3 py-2 text-sm font-medium rounded-t-lg ${tab===t ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                {t === 'profile' ? 'Profile' : t === 'engagements' ? 'Engagements' : 'Chat'}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="px-5 py-3">
           {loading && <p className="text-sm text-gray-500 py-6 text-center">Loading user…</p>}
           {err && <p className="text-sm text-red-600 py-6 text-center">{err}</p>}
-          {data && (
+          {data && tab === 'profile' && (
             <>
               <div className="mb-2">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Contact</p>
@@ -138,6 +205,67 @@ export default function UserDetailModal({ userId, onClose }: { userId: string | 
                 View full activity →
               </button>
             </>
+          )}
+
+          {data && tab === 'engagements' && (
+            <div className="py-1">
+              {subLoading && <p className="text-sm text-gray-500 py-6 text-center">Loading activity…</p>}
+              {!subLoading && engagements && engagements.length === 0 && (
+                <p className="text-sm text-gray-400 italic py-6 text-center">No engagement events recorded.</p>
+              )}
+              {!subLoading && engagements && engagements.length > 0 && (
+                <ul className="divide-y divide-gray-100">
+                  {engagements.map((e, i) => (
+                    <li key={i} className="py-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-gray-900">{e.event_type.replace(/_/g, ' ')}</span>
+                        <span className="text-xs text-gray-400 shrink-0">{new Date(e.created_at).toLocaleString()}</span>
+                      </div>
+                      {(e.vehicle || (e.dtc_codes && e.dtc_codes.length) || e.path) && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {[e.vehicle, e.dtc_codes && e.dtc_codes.length ? e.dtc_codes.join(', ') : null, e.path]
+                            .filter(Boolean).join(' · ')}
+                          {e.source ? <span className="ml-1 text-gray-300">({e.source})</span> : null}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {data && tab === 'chat' && (
+            <div className="py-1">
+              {subLoading && <p className="text-sm text-gray-500 py-6 text-center">Loading chats…</p>}
+              {!subLoading && chats && chats.length === 0 && (
+                <p className="text-sm text-gray-400 italic py-6 text-center">No saved chat sessions.</p>
+              )}
+              {!subLoading && chats && chats.map((c) => (
+                <div key={c.session_id} className="mb-4 border border-gray-100 rounded-xl overflow-hidden">
+                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+                    <p className="text-sm font-semibold text-gray-900">{c.title || 'Diagnostic'}</p>
+                    <p className="text-xs text-gray-400">
+                      {new Date(c.created_at).toLocaleString()}
+                      {c.dtc_codes && c.dtc_codes.length ? ` · ${c.dtc_codes.join(', ')}` : ''}
+                      {c.last_step ? ` · ${c.last_step}` : ''}
+                    </p>
+                  </div>
+                  <div className="px-3 py-2 space-y-2 max-h-72 overflow-y-auto">
+                    {(c.messages || []).length === 0 && (
+                      <p className="text-xs text-gray-400 italic">No messages stored for this session.</p>
+                    )}
+                    {(c.messages || []).map((m, i) => (
+                      <div key={i} className={`text-sm ${m.role === 'user' ? 'text-right' : 'text-left'}`}>
+                        <span className={`inline-block px-3 py-1.5 rounded-2xl max-w-[85%] ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'}`}>
+                          {m.content || ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
