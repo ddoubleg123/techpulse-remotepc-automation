@@ -966,8 +966,8 @@ function CodesStep({ vehicle, uploadedReport, fileName, onNext, onBack, initialC
   );
 }
 
-function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, sessionId, isDemo, initialMessages, onReport, onBack, onNewCar, onPersist }:
-  { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; pdfBase64?: string; sessionId: string; isDemo?: boolean; initialMessages?: Message[];
+function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase64, sessionId, isDemo, isAdminUser, initialMessages, onReport, onBack, onNewCar, onPersist }:
+  { vehicle: Vehicle; codes: DtcCode[]; symptoms: string; uploadedReport?: string; fileName?: string; pdfBase64?: string; sessionId: string; isDemo?: boolean; isAdminUser?: boolean; initialMessages?: Message[];
     onReport: (report: SynthReport, messages: Message[], updatedVehicle?: Vehicle) => void; onBack: () => void; onNewCar?: () => void; onPersist?: (messages: Message[]) => void }
 ) {
   const nl = String.fromCharCode(10);
@@ -1180,7 +1180,20 @@ function ChatStep({ vehicle, codes, symptoms, uploadedReport, fileName, pdfBase6
       const abortTimer = setTimeout(() => controller.abort(), 60000);
       const warmTimer = setTimeout(() => setWarmingUp(true), 5000);
       track({ event_type: 'synth_message_sent', step: 'chat', session_id: sessionId, vehicle: [vehicle.year,vehicle.make,vehicle.model].filter(Boolean).join(' '), payload: { msg_len: text.length, has_attachment: !!attachBase64, attachment_count: (attachBase64?1:0)+(attachBase64_2?1:0) } });
-      const res = await fetch(SYNTH_API + '/api/diagnostic/stream', {
+      // Admins (Tier 3) go through the same-origin server route, which verifies
+      // admin server-side and attaches the T3 token (never exposed to the client).
+      // Mechanics (Tier 2) call the Synth API directly with the public T2 token.
+      const res = isAdminUser
+        ? await fetch('/api/admin-diagnostic', {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json' },
+            body: JSON.stringify({ session_id:sessionId, message:text, vehicle,
+              ...((attachBase64 && isValidPdfBase64(attachBase64)) ? { pdf_base64: attachBase64, pdf_name: attachName } : (pdfToSend && isValidPdfBase64(pdfToSend)) ? { pdf_base64: pdfToSend, pdf_name: pdfNameToSend } : {}),
+              ...((attachBase64_2 && isValidPdfBase64(attachBase64_2)) ? { pdf_base64_2: attachBase64_2, pdf_name_2: attachName_2 } : {})
+            }),
+            signal: controller.signal,
+          })
+        : await fetch(SYNTH_API + '/api/diagnostic/stream', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + API_TOKEN },
         body: JSON.stringify({ session_id:sessionId, message:text, vehicle,
@@ -1820,6 +1833,36 @@ function FeedbackStep({ onRestart, unid, vehicle, codes, complaint, diagnosis, m
 function ChatPageInner() {
   const { user } = useAuthStore();
   const isDemoUser = DEMO_USER_EMAILS.includes(((user as { email?: string } | null)?.email || '').toLowerCase());
+  // Admin (Tier 3) detection. This flag ONLY decides which endpoint the client
+  // calls — it is NOT the security boundary. The /api/admin-diagnostic route
+  // re-verifies admin server-side via requireAdmin() and 403s a non-admin, so a
+  // spoofed flag gains nothing. We read the caller's own role from Supabase with
+  // their own token (RLS allows reading your own row).
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const tok = useAuthStore.getState().token || '';
+      if (!tok || !SUPABASE_ANON_KEY) { setIsAdminUser(false); return; }
+      try {
+        const who = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+          headers: { Authorization: `Bearer ${tok}`, apikey: SUPABASE_ANON_KEY }, cache: 'no-store',
+        });
+        if (!who.ok) { if (!cancelled) setIsAdminUser(false); return; }
+        const u = await who.json();
+        const uid = u?.id || '';
+        if (!uid) { if (!cancelled) setIsAdminUser(false); return; }
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(uid)}&select=role`, {
+          headers: { Authorization: `Bearer ${tok}`, apikey: SUPABASE_ANON_KEY }, cache: 'no-store',
+        });
+        if (!r.ok) { if (!cancelled) setIsAdminUser(false); return; }
+        const rows = await r.json();
+        const role = Array.isArray(rows) && rows[0] ? rows[0].role : '';
+        if (!cancelled) setIsAdminUser(role === 'admin');
+      } catch { if (!cancelled) setIsAdminUser(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
   // Pre-warm Synth API immediately on demo-user login so the chat step doesn't
   // pay the ~30-60s Render cold-start. Fires once per ChatPage mount.
   useEffect(() => {
@@ -2208,7 +2251,7 @@ function ChatPageInner() {
       )}
       {step==='vin'      && <VinStep initialVehicle={isDemoUser ? DEMO_VEHICLE : undefined} onNext={(v,r,fn,b64) => { setVehicle(v); setUploadedReport(r); setFileName(fn); setUploadedPdfBase64(b64||''); recordStep('vehicle', { vehicle: v }); track({ event_type: 'scan_started', step: 'vin', session_id: sessionId, vehicle: [v.year,v.make,v.model].filter(Boolean).join(' '), payload: { has_pdf: !!b64 } }); if (b64) track({ event_type: 'pdf_uploaded', step: 'vin', session_id: sessionId, payload: { file: fn } }); setStep('codes'); }} />}
       {step==='codes'    && <CodesStep vehicle={vehicle} uploadedReport={uploadedReport} fileName={fileName} initialCodes={isDemoUser ? DEMO_CODES : undefined} initialSymptoms={isDemoUser ? DEMO_SYMPTOMS : undefined} onVehicleEdit={(patch) => setVehicle(v => ({ ...v, ...patch }))} onNext={(c,s) => { setCodes(c); setSymptoms(s); recordStep('codes', { codes: c }); track({ event_type: 'codes_entered', step: 'codes', session_id: sessionId, dtc_codes: (c||[]).map(x => x?.code).filter(Boolean), payload: { symptom_len: (s||'').length } }); checkGateThenStart(() => setStep('chat')); }} onBack={() => setStep('vin')} />}
-      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} initialMessages={chatMessages} onNewCar={restart} onPersist={(msgs) => { setChatMessages(msgs); recordStep('diagnose', { messages: msgs }); }} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); recordStep('report', { messages: msgs, vehicle: updated || vehicle }); track({ event_type: 'report_generated', step: 'report', session_id: sessionId, vehicle: [(updated||vehicle).year,(updated||vehicle).make,(updated||vehicle).model].filter(Boolean).join(' ') }); setStep('report'); }} onBack={() => setStep('codes')} />}
+      {step==='chat'     && <ChatStep vehicle={vehicle} codes={codes} symptoms={symptoms} uploadedReport={uploadedReport} pdfBase64={uploadedPdfBase64} fileName={fileName} sessionId={sessionId} isDemo={isDemoUser} isAdminUser={isAdminUser} initialMessages={chatMessages} onNewCar={restart} onPersist={(msgs) => { setChatMessages(msgs); recordStep('diagnose', { messages: msgs }); }} onReport={(r, msgs, updated) => { setSynthReport(r); setChatMessages(msgs); if (updated) setVehicle(updated); recordStep('report', { messages: msgs, vehicle: updated || vehicle }); track({ event_type: 'report_generated', step: 'report', session_id: sessionId, vehicle: [(updated||vehicle).year,(updated||vehicle).make,(updated||vehicle).model].filter(Boolean).join(' ') }); setStep('report'); }} onBack={() => setStep('codes')} />}
       {step==='report'   && synthReport && <ReportStep synthReport={synthReport} vehicle={vehicle} codes={codes} onFeedback={() => setStep('feedback')} onBack={() => setStep('chat')} />}
       {step==='feedback' && <FeedbackStep
         onRestart={restart}
