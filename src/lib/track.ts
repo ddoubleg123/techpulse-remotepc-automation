@@ -64,6 +64,10 @@ export function track(input: TrackInput): void {
 
     const user_id = token ? subFromToken(token) : '';
     const user_email = (user && user.email) || '';
+    // Resolve shop_id: prefer an explicit value, else read it off the auth store.
+    // Without this, gate-relevant events (report_generated) land with shop_id=NULL
+    // and the trial gate — which counts by shop — can't see them.
+    const shop_id = input.shop_id ?? (user && user.shop_id) ?? null;
 
     // Don't bother writing a totally anonymous row with no signal at all.
     if (!user_id && !user_email && !input.session_id) return;
@@ -71,7 +75,7 @@ export function track(input: TrackInput): void {
     const body = {
       user_id: user_id || null,
       user_email: user_email || null,
-      shop_id: input.shop_id ?? null,
+      shop_id: shop_id,
       session_id: input.session_id ?? null,
       event_type: input.event_type,
       step: input.step ?? null,
