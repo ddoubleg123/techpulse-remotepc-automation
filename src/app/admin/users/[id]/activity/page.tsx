@@ -21,6 +21,7 @@ interface UserEvent {
   vehicle: string | null;
   dtc_codes: string[] | null;
   source: string;
+  path?: string | null;
   payload: Record<string, unknown>;
 }
 
@@ -32,6 +33,28 @@ interface SynthUsage {
   total_cost_usd: number;
   first_call: string | null;
   last_call: string | null;
+}
+
+// Map a route path to a friendly page name so "Viewed a page" becomes
+// "Viewed Chat", "Left Chat", etc. Keeps the timeline legible at a glance.
+function friendlyPage(path: string | null | undefined): string {
+  if (!path) return '';
+  const p = path.split('?')[0].replace(/\/+$/, '');
+  const map: Record<string, string> = {
+    '/app': 'Home',
+    '/app/chat': 'Chat',
+    '/app/history': 'Auto History',
+    '/app/reports': 'Reports',
+    '/app/billing': 'Billing',
+    '/app/settings': 'Settings',
+    '/app/profile': 'Profile',
+    '/app/sync': 'Sync',
+    '/app/referrals': 'Referrals',
+    '/app/notifications': 'Notifications',
+  };
+  if (map[p]) return map[p];
+  const last = p.split('/').filter(Boolean).pop() || '';
+  return last ? last.charAt(0).toUpperCase() + last.slice(1) : p;
 }
 
 // Human label + dot colour per event type.
@@ -205,15 +228,65 @@ function ActivityInner() {
               No recorded activity in this period.
             </div>
           )}
+          {!loading && events.length > 0 && (() => {
+            // Group non-heartbeat events into sessions and compute active spans,
+            // so the admin sees "how long were they here" without reading every row.
+            const real = events.filter((e) => e.event_type !== 'session_heartbeat');
+            const bySession = new Map<string, { first: number; last: number; pages: Set<string>; scans: number; reports: number }>();
+            for (const e of real) {
+              const k = e.session_id || 'unknown';
+              const t = new Date(e.created_at).getTime();
+              const cur = bySession.get(k) || { first: t, last: t, pages: new Set<string>(), scans: 0, reports: 0 };
+              cur.first = Math.min(cur.first, t); cur.last = Math.max(cur.last, t);
+              const pg = friendlyPage(e.path); if (pg) cur.pages.add(pg);
+              if (e.event_type === 'scan_started') cur.scans++;
+              if (e.event_type === 'report_generated') cur.reports++;
+              bySession.set(k, cur);
+            }
+            const fmtDur = (ms: number) => {
+              const m = Math.round(ms / 60000);
+              if (m < 1) return '<1 min';
+              if (m < 60) return `${m} min`;
+              const h = Math.floor(m / 60); return `${h}h ${m % 60}m`;
+            };
+            const sessions = Array.from(bySession.entries()).sort((a, b) => b[1].last - a[1].last);
+            return (
+              <div className="mb-4 pb-3 border-b border-gray-100">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Sessions</p>
+                <div className="space-y-1.5">
+                  {sessions.map(([sid, s]) => (
+                    <div key={sid} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-700">
+                        {new Date(s.first).toLocaleDateString()} · <span className="font-medium">{fmtDur(s.last - s.first)}</span> active
+                        <span className="text-gray-400"> · {Array.from(s.pages).join(', ') || '—'}</span>
+                      </span>
+                      <span className="text-xs text-gray-400 shrink-0">
+                        {s.scans ? `${s.scans} scan${s.scans > 1 ? 's' : ''}` : ''}{s.scans && s.reports ? ', ' : ''}{s.reports ? `${s.reports} report${s.reports > 1 ? 's' : ''}` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           <ol className="relative border-l border-gray-200 ml-2">
             {events.filter((e) => e.event_type !== 'session_heartbeat').map((e) => {
               const meta = EVENT_META[e.event_type] || { label: e.event_type, color: 'bg-gray-300' };
               const codes = Array.isArray(e.dtc_codes) ? e.dtc_codes.filter(Boolean) : [];
+              const page = friendlyPage(e.path);
+              // For navigation events, fold the page name into the label so it
+              // reads "Viewed Chat" / "Left Chat" instead of a bare "Viewed a page".
+              let label = meta.label;
+              if (page) {
+                if (e.event_type === 'page_view') label = `Viewed ${page}`;
+                else if (e.event_type === 'session_ended') label = `Left ${page}`;
+                else if (e.event_type === 'session_started') label = `Opened ${page}`;
+              }
               return (
                 <li key={e.id} className="mb-5 ml-4">
                   <span className={`absolute -left-1.5 w-3 h-3 rounded-full ${meta.color} border-2 border-white`} />
                   <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-sm font-medium text-gray-900">{meta.label}</p>
+                    <p className="text-sm font-medium text-gray-900">{label}</p>
                     <time className="text-xs text-gray-400 shrink-0" title={e.created_at}>
                       {formatRelativeTime(new Date(e.created_at))}
                     </time>
@@ -225,7 +298,7 @@ function ActivityInner() {
                     </p>
                   )}
                   <p className="text-[10px] text-gray-300 mt-0.5">
-                    {e.source}{e.session_id ? ` · ${e.session_id}` : ''}
+                    {[e.path, e.source].filter(Boolean).join(' · ')}
                   </p>
                 </li>
               );
