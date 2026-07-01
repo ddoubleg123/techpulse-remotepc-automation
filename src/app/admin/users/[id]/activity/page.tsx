@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { RefreshCw, ChevronLeft, Activity, Zap } from 'lucide-react';
+import { RefreshCw, ChevronLeft, ChevronDown, ChevronRight, MessageSquare, Wrench, Activity, Zap } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { formatRelativeTime } from '@/lib/utils';
 
@@ -10,302 +10,257 @@ const SUPABASE_URL = 'https://fcqejcrxtrqdxybgyueu.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 interface UserEvent {
-  id: string;
-  created_at: string;
-  user_id: string | null;
-  user_email: string | null;
-  shop_id: string | null;
-  session_id: string | null;
-  event_type: string;
-  step: string | null;
-  vehicle: string | null;
-  dtc_codes: string[] | null;
-  source: string;
-  path?: string | null;
-  payload: Record<string, unknown>;
+  id: string; created_at: string; session_id: string | null; event_type: string;
+  vehicle: string | null; dtc_codes: string[] | null; source: string; path?: string | null;
 }
-
-interface SynthUsage {
-  owner_email: string | null;
-  calls: number;
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_cost_usd: number;
-  first_call: string | null;
-  last_call: string | null;
+interface ChatMsg { role?: string; content?: string }
+interface Diagnostic {
+  session_id: string; title: string | null; dtc_codes: string[] | null; last_step: string | null;
+  created_at: string; messages: ChatMsg[] | null; msg_count: number;
+  diagnosis: string | null; root_cause: string | null; resolution: string | null;
+  outcome_status: string | null; cost_saved: number | null;
 }
+interface Signals {
+  scans: number; reports: number; synth_messages: number; chat_sessions_count: number;
+  engaged_sessions: number; engaged_minutes: number; first_seen: string | null; last_seen: string | null;
+}
+interface Profile {
+  id: string; email: string | null; full_name: string | null; name: string | null;
+  first_name: string | null; last_name: string | null; role: string | null;
+  shop_name: string | null; shop_city: string | null; shop_state: string | null;
+  sub_status: string | null; plan_type: string | null;
+}
+interface SynthUsage { calls: number; total_cost_usd: number }
 
-// Map a route path to a friendly page name so "Viewed a page" becomes
-// "Viewed Chat", "Left Chat", etc. Keeps the timeline legible at a glance.
 function friendlyPage(path: string | null | undefined): string {
   if (!path) return '';
   const p = path.split('?')[0].replace(/\/+$/, '');
   const map: Record<string, string> = {
-    '/app': 'Home',
-    '/app/chat': 'Chat',
-    '/app/history': 'Auto History',
-    '/app/reports': 'Reports',
-    '/app/billing': 'Billing',
-    '/app/settings': 'Settings',
-    '/app/profile': 'Profile',
-    '/app/sync': 'Sync',
-    '/app/referrals': 'Referrals',
-    '/app/notifications': 'Notifications',
+    '/app': 'Home', '/app/chat': 'Chat', '/app/history': 'Auto History', '/app/reports': 'Reports',
+    '/app/billing': 'Billing', '/app/settings': 'Settings', '/app/profile': 'Profile',
+    '/app/sync': 'Sync', '/app/referrals': 'Referrals', '/app/notifications': 'Notifications',
   };
   if (map[p]) return map[p];
   const last = p.split('/').filter(Boolean).pop() || '';
   return last ? last.charAt(0).toUpperCase() + last.slice(1) : p;
 }
+function fmtMin(m: number): string {
+  if (!m) return '0 min';
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
 
-// Human label + dot colour per event type.
 const EVENT_META: Record<string, { label: string; color: string }> = {
-  login:              { label: 'Logged in',          color: 'bg-gray-400' },
-  scan_started:       { label: 'Started a scan',      color: 'bg-blue-500' },
-  pdf_uploaded:       { label: 'Uploaded a PDF',      color: 'bg-indigo-500' },
-  codes_entered:      { label: 'Entered DTC codes',   color: 'bg-violet-500' },
-  synth_message_sent: { label: 'Asked Synth',         color: 'bg-cyan-500' },
-  report_generated:   { label: 'Generated a report',  color: 'bg-green-500' },
-  feedback_submitted: { label: 'Submitted feedback',  color: 'bg-amber-500' },
-  session_started:    { label: 'Opened the app',      color: 'bg-slate-400' },
-  session_heartbeat:  { label: 'Active on site',       color: 'bg-slate-300' },
-  session_ended:      { label: 'Left the app',         color: 'bg-slate-500' },
-  page_view:          { label: 'Viewed a page',        color: 'bg-sky-400' },
+  login: { label: 'Logged in', color: 'bg-gray-400' },
+  scan_started: { label: 'Started a scan', color: 'bg-blue-500' },
+  pdf_uploaded: { label: 'Uploaded a PDF', color: 'bg-indigo-500' },
+  codes_entered: { label: 'Entered DTC codes', color: 'bg-violet-500' },
+  synth_message_sent: { label: 'Asked Synth', color: 'bg-cyan-500' },
+  report_generated: { label: 'Generated a report', color: 'bg-green-500' },
+  feedback_submitted: { label: 'Submitted feedback', color: 'bg-amber-500' },
+  session_started: { label: 'Opened', color: 'bg-slate-400' },
+  session_ended: { label: 'Left', color: 'bg-slate-500' },
+  page_view: { label: 'Viewed', color: 'bg-sky-400' },
 };
-
-const RANGES = [
-  { label: '24 hours', hours: 24 },
-  { label: '7 days', hours: 24 * 7 },
-  { label: '30 days', hours: 24 * 30 },
-  { label: 'All time', hours: 0 },
-];
 
 function ActivityInner() {
   const params = useParams();
-  const searchParams = useSearchParams();
+  const search = useSearchParams();
   const router = useRouter();
-  const token = useAuthStore((s) => s.token);
+  const userId = String(params?.id || '');
+  const emailHint = search.get('email') || '';
 
-  const userId = (params?.id as string) || '';
-  const email = searchParams.get('email') || '';
-  const hours = parseInt(searchParams.get('hours') || '168', 10) || 168; // default 7d
-
-  const [events, setEvents] = useState<UserEvent[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [signals, setSignals] = useState<Signals | null>(null);
+  const [diags, setDiags] = useState<Diagnostic[] | null>(null);
   const [usage, setUsage] = useState<SynthUsage | null>(null);
+  const [events, setEvents] = useState<UserEvent[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
+  const [openChat, setOpenChat] = useState<string | null>(null);
+  const [showTimeline, setShowTimeline] = useState(false);
+
+  const rpc = useCallback(async (fn: string, body: Record<string, unknown>) => {
+    const tok = useAuthStore.getState().token || SUPABASE_ANON_KEY;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tok}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  }, []);
 
   const load = useCallback(async () => {
-    setLoading(true); setErr('');
-    try {
-      const t = useAuthStore.getState().token;
-      if (!t || !SUPABASE_ANON_KEY) { setLoading(false); return; }
-      const headers = {
-        Authorization: `Bearer ${t}`,
-        apikey: SUPABASE_ANON_KEY,
-        'Content-Type': 'application/json',
-      };
-      const since = hours > 0 ? new Date(Date.now() - hours * 3600 * 1000).toISOString() : null;
+    if (!userId || !SUPABASE_ANON_KEY) { setLoading(false); return; }
+    setLoading(true);
+    const [p, s, d, u] = await Promise.all([
+      rpc('admin_user_detail', { p_user_id: userId }),
+      rpc('admin_user_signals', { p_user_id: userId }),
+      rpc('admin_user_diagnostics', { p_user_id: userId }),
+      rpc('admin_user_synth_usage', { p_email: emailHint || null }).catch(() => null),
+    ]);
+    setProfile(Array.isArray(p) ? p[0] : p);
+    setSignals(Array.isArray(s) ? s[0] : s);
+    setDiags(Array.isArray(d) ? d : []);
+    setUsage(Array.isArray(u) ? u[0] : u);
+    if (Array.isArray(d) && d[0]) setOpenChat(d[0].session_id);
+    setLoading(false);
+  }, [userId, emailHint, rpc]);
 
-      // Timeline. Pass BOTH id and email so OTP-only rows (null user_id) match
-      // by email. The RPC ANDs non-null filters, so pass only what we have.
-      const actBody: Record<string, unknown> = { p_since: since, p_limit: 500 };
-      if (userId) actBody.p_user_id = userId;
-      else if (email) actBody.p_email = email;
+  const loadEvents = useCallback(async () => {
+    const e = await rpc('admin_user_engagements', { p_user_id: userId });
+    setEvents(Array.isArray(e) ? e : []);
+  }, [userId, rpc]);
 
-      const [actRes, useRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_user_activity`, {
-          method: 'POST', headers, body: JSON.stringify(actBody),
-        }),
-        email
-          ? fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_user_synth_usage`, {
-              method: 'POST', headers, body: JSON.stringify({ p_email: email, p_since: since }),
-            })
-          : Promise.resolve(null as unknown as Response),
-      ]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (showTimeline && events === null) loadEvents(); }, [showTimeline, events, loadEvents]);
 
-      if (actRes.ok) {
-        const data = await actRes.json();
-        setEvents(Array.isArray(data) ? data : []);
-      } else {
-        setErr('Could not load activity.');
-        setEvents([]);
-      }
-
-      if (useRes && useRes.ok) {
-        const u = await useRes.json();
-        setUsage(Array.isArray(u) && u[0] ? u[0] : null);
-      } else {
-        setUsage(null);
-      }
-    } catch {
-      setErr('Network error.');
-      setEvents([]); setUsage(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId, email, hours]);
-
-  useEffect(() => { load(); }, [load, token]);
-
-  const setHours = (h: number) => {
-    const qs = new URLSearchParams();
-    if (email) qs.set('email', email);
-    qs.set('hours', String(h));
-    router.push(`/admin/users/${encodeURIComponent(userId)}/activity?${qs.toString()}`);
-  };
-
-  const title = email || (events[0]?.user_email) || 'User';
+  const displayName =
+    (profile && (profile.full_name || profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(' '))) ||
+    (profile?.email ? profile.email.split('@')[0] : emailHint.split('@')[0] || 'User');
+  const loc = profile ? [profile.shop_city, profile.shop_state].filter(Boolean).join(', ') : '';
 
   return (
-    <div className="p-6">
-      <div className="max-w-3xl mx-auto">
-        <button
-          onClick={() => router.push('/admin/active-users')}
-          className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-3"
-        >
-          <ChevronLeft className="w-4 h-4" /> Active Users
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-3xl mx-auto p-6">
+        <button onClick={() => router.back()} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-3">
+          <ChevronLeft className="w-4 h-4" /> Back
         </button>
 
-        <div className="flex items-center justify-between mb-1">
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-blue-600" /> Activity
-          </h1>
-          <button onClick={load} className="p-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50" title="Refresh">
-            <RefreshCw className={`w-4 h-4 text-gray-600 ${loading ? 'animate-spin' : ''}`} />
+        <div className="flex items-start justify-between mb-5">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">{displayName}</h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {profile?.email || emailHint}
+              {profile?.role ? <span className="ml-2 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-xs">{profile.role}</span> : null}
+            </p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {profile?.shop_name ? `${profile.shop_name}${loc ? ` · ${loc}` : ''}` : 'No shop'}
+              {profile?.sub_status ? <span className="ml-2 text-gray-400">· {profile.sub_status}{profile.plan_type ? ` (${profile.plan_type})` : ''}</span> : null}
+            </p>
+          </div>
+          <button onClick={load} className="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50" title="Refresh">
+            <RefreshCw className={`w-4 h-4 text-gray-500 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
-        <p className="text-sm text-gray-500 mb-4 truncate">{title}</p>
 
-        {/* Range selector */}
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          {RANGES.map((r) => (
-            <button
-              key={r.hours}
-              onClick={() => setHours(r.hours)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${
-                hours === r.hours ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <Stat label="Diagnostics" value={signals?.chat_sessions_count ?? '—'} icon={<Wrench className="w-4 h-4" />} />
+          <Stat label="Reports" value={signals?.reports ?? '—'} icon={<Zap className="w-4 h-4" />} />
+          <Stat label="Engaged time" value={signals ? fmtMin(signals.engaged_minutes) : '—'} sub={signals ? `${signals.engaged_sessions} session${signals.engaged_sessions === 1 ? '' : 's'}` : ''} icon={<Activity className="w-4 h-4" />} />
+          <Stat label="Last active" value={signals?.last_seen ? formatRelativeTime(new Date(signals.last_seen)) : '—'} icon={<MessageSquare className="w-4 h-4" />} />
         </div>
 
-        {/* Synth usage summary */}
-        {usage && usage.calls > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-            <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-gray-700">
-              <Zap className="w-4 h-4 text-cyan-500" /> Synth usage
-            </div>
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div>
-                <p className="text-lg font-bold text-gray-900">{usage.calls}</p>
-                <p className="text-xs text-gray-500">calls</p>
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Diagnostics & Chat</h2>
+          {loading && <div className="p-6 text-sm text-gray-400 bg-white rounded-xl border border-gray-100 text-center">Loading…</div>}
+          {!loading && diags && diags.length === 0 && (
+            <div className="p-6 text-sm text-gray-400 bg-white rounded-xl border border-gray-100 text-center">No diagnostics or chats yet.</div>
+          )}
+          {!loading && diags && diags.map((d) => {
+            const open = openChat === d.session_id;
+            return (
+              <div key={d.session_id} className="mb-3 bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <button onClick={() => setOpenChat(open ? null : d.session_id)} className="w-full flex items-start justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      {open ? <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />}
+                      <span className="font-semibold text-gray-900 truncate">{d.title || 'Diagnostic'}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5 ml-6">
+                      {new Date(d.created_at).toLocaleDateString()} · {d.msg_count} message{d.msg_count === 1 ? '' : 's'}
+                      {d.dtc_codes && d.dtc_codes.length ? ` · ${d.dtc_codes.join(', ')}` : ''}
+                    </p>
+                    {(d.diagnosis || d.resolution) && (
+                      <p className="text-xs text-gray-600 mt-1 ml-6 line-clamp-2">{d.resolution || d.diagnosis}</p>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    {d.outcome_status && (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${d.outcome_status === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{d.outcome_status}</span>
+                    )}
+                    {typeof d.cost_saved === 'number' && d.cost_saved > 0 && (
+                      <p className="text-xs text-green-600 mt-1">${d.cost_saved} saved</p>
+                    )}
+                  </div>
+                </button>
+                {open && (
+                  <div className="px-4 pb-4 border-t border-gray-100">
+                    {(d.diagnosis || d.root_cause || d.resolution) && (
+                      <div className="my-3 p-3 rounded-lg bg-gray-50 text-sm space-y-1">
+                        {d.diagnosis && <p><span className="text-gray-400">Diagnosis: </span>{d.diagnosis}</p>}
+                        {d.root_cause && <p><span className="text-gray-400">Root cause: </span>{d.root_cause}</p>}
+                        {d.resolution && <p><span className="text-gray-400">Resolution: </span>{d.resolution}</p>}
+                      </div>
+                    )}
+                    <div className="space-y-2 mt-3 max-h-96 overflow-y-auto">
+                      {(d.messages || []).length === 0 && <p className="text-xs text-gray-400 italic">No messages stored for this session.</p>}
+                      {(d.messages || []).map((m, i) => (
+                        <div key={i} className={m.role === 'user' ? 'text-right' : 'text-left'}>
+                          <span className={`inline-block px-3 py-2 rounded-2xl text-sm max-w-[85%] whitespace-pre-wrap ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'}`}>{m.content || ''}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div>
-                <p className="text-lg font-bold text-gray-900">
-                  {(usage.total_input_tokens + usage.total_output_tokens).toLocaleString()}
-                </p>
-                <p className="text-xs text-gray-500">tokens</p>
-              </div>
-              <div>
-                <p className="text-lg font-bold text-gray-900">${Number(usage.total_cost_usd).toFixed(2)}</p>
-                <p className="text-xs text-gray-500">est. cost</p>
-              </div>
-            </div>
+            );
+          })}
+        </div>
+
+        {usage && (
+          <div className="mb-6 flex items-center gap-6 text-sm text-gray-500 px-4 py-3 bg-white rounded-xl border border-gray-100">
+            <span><span className="font-semibold text-gray-900">{usage.calls}</span> Synth calls</span>
+            <span><span className="font-semibold text-gray-900">${usage.total_cost_usd?.toFixed(2)}</span> est. cost</span>
           </div>
         )}
 
-        {err && <div className="p-3 mb-4 rounded-lg bg-red-50 text-red-700 text-sm">{err}</div>}
-
-        {/* Timeline */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          {loading && events.length === 0 && (
-            <div className="p-4 text-sm text-gray-500">Loading…</div>
-          )}
-          {!loading && events.length === 0 && (
-            <div className="p-4 text-sm text-gray-500">
-              No recorded activity in this period.
+        <div className="bg-white rounded-xl border border-gray-200">
+          <button onClick={() => setShowTimeline(!showTimeline)} className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50">
+            <span className="text-sm font-semibold text-gray-600">Full activity timeline</span>
+            {showTimeline ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+          </button>
+          {showTimeline && (
+            <div className="px-4 pb-4 border-t border-gray-100">
+              {events === null && <p className="text-sm text-gray-400 py-4">Loading…</p>}
+              {events && events.length === 0 && <p className="text-sm text-gray-400 py-4">No activity recorded.</p>}
+              {events && events.length > 0 && (
+                <ol className="relative border-l border-gray-200 ml-2 mt-3">
+                  {events.map((e) => {
+                    const meta = EVENT_META[e.event_type] || { label: e.event_type, color: 'bg-gray-300' };
+                    const page = friendlyPage(e.path);
+                    let label = meta.label;
+                    if (page && ['page_view', 'session_ended', 'session_started'].includes(e.event_type)) label = `${meta.label} ${page}`;
+                    const codes = Array.isArray(e.dtc_codes) ? e.dtc_codes.filter(Boolean) : [];
+                    return (
+                      <li key={e.id} className="mb-4 ml-4">
+                        <span className={`absolute -left-1.5 w-3 h-3 rounded-full ${meta.color} border-2 border-white`} />
+                        <div className="flex items-baseline justify-between gap-2">
+                          <p className="text-sm font-medium text-gray-900">{label}</p>
+                          <time className="text-xs text-gray-400 shrink-0">{formatRelativeTime(new Date(e.created_at))}</time>
+                        </div>
+                        {(e.vehicle || codes.length > 0) && (
+                          <p className="text-xs text-gray-500 mt-0.5">{e.vehicle}{codes.length > 0 && <span className="ml-2 text-gray-400">{codes.join(', ')}</span>}</p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
             </div>
           )}
-          {!loading && events.length > 0 && (() => {
-            // Group non-heartbeat events into sessions and compute active spans,
-            // so the admin sees "how long were they here" without reading every row.
-            const real = events.filter((e) => e.event_type !== 'session_heartbeat');
-            const bySession = new Map<string, { first: number; last: number; pages: Set<string>; scans: number; reports: number }>();
-            for (const e of real) {
-              const k = e.session_id || 'unknown';
-              const t = new Date(e.created_at).getTime();
-              const cur = bySession.get(k) || { first: t, last: t, pages: new Set<string>(), scans: 0, reports: 0 };
-              cur.first = Math.min(cur.first, t); cur.last = Math.max(cur.last, t);
-              const pg = friendlyPage(e.path); if (pg) cur.pages.add(pg);
-              if (e.event_type === 'scan_started') cur.scans++;
-              if (e.event_type === 'report_generated') cur.reports++;
-              bySession.set(k, cur);
-            }
-            const fmtDur = (ms: number) => {
-              const m = Math.round(ms / 60000);
-              if (m < 1) return '<1 min';
-              if (m < 60) return `${m} min`;
-              const h = Math.floor(m / 60); return `${h}h ${m % 60}m`;
-            };
-            const sessions = Array.from(bySession.entries()).sort((a, b) => b[1].last - a[1].last);
-            return (
-              <div className="mb-4 pb-3 border-b border-gray-100">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Sessions</p>
-                <div className="space-y-1.5">
-                  {sessions.map(([sid, s]) => (
-                    <div key={sid} className="flex items-center justify-between text-sm">
-                      <span className="text-gray-700">
-                        {new Date(s.first).toLocaleDateString()} · <span className="font-medium">{fmtDur(s.last - s.first)}</span> active
-                        <span className="text-gray-400"> · {Array.from(s.pages).join(', ') || '—'}</span>
-                      </span>
-                      <span className="text-xs text-gray-400 shrink-0">
-                        {s.scans ? `${s.scans} scan${s.scans > 1 ? 's' : ''}` : ''}{s.scans && s.reports ? ', ' : ''}{s.reports ? `${s.reports} report${s.reports > 1 ? 's' : ''}` : ''}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-          <ol className="relative border-l border-gray-200 ml-2">
-            {events.filter((e) => e.event_type !== 'session_heartbeat').map((e) => {
-              const meta = EVENT_META[e.event_type] || { label: e.event_type, color: 'bg-gray-300' };
-              const codes = Array.isArray(e.dtc_codes) ? e.dtc_codes.filter(Boolean) : [];
-              const page = friendlyPage(e.path);
-              // For navigation events, fold the page name into the label so it
-              // reads "Viewed Chat" / "Left Chat" instead of a bare "Viewed a page".
-              let label = meta.label;
-              if (page) {
-                if (e.event_type === 'page_view') label = `Viewed ${page}`;
-                else if (e.event_type === 'session_ended') label = `Left ${page}`;
-                else if (e.event_type === 'session_started') label = `Opened ${page}`;
-              }
-              return (
-                <li key={e.id} className="mb-5 ml-4">
-                  <span className={`absolute -left-1.5 w-3 h-3 rounded-full ${meta.color} border-2 border-white`} />
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-sm font-medium text-gray-900">{label}</p>
-                    <time className="text-xs text-gray-400 shrink-0" title={e.created_at}>
-                      {formatRelativeTime(new Date(e.created_at))}
-                    </time>
-                  </div>
-                  {(e.vehicle || codes.length > 0) && (
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {e.vehicle}
-                      {codes.length > 0 && <span className="ml-2 text-gray-400">{codes.join(', ')}</span>}
-                    </p>
-                  )}
-                  <p className="text-[10px] text-gray-300 mt-0.5">
-                    {[e.path, e.source].filter(Boolean).join(' · ')}
-                  </p>
-                </li>
-              );
-            })}
-          </ol>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, sub, icon }: { label: string; value: React.ReactNode; sub?: string; icon?: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-3">
+      <div className="flex items-center gap-1.5 text-gray-400 mb-1">{icon}<span className="text-xs">{label}</span></div>
+      <p className="text-lg font-bold text-gray-900 leading-tight">{value}</p>
+      {sub && <p className="text-xs text-gray-400">{sub}</p>}
     </div>
   );
 }
