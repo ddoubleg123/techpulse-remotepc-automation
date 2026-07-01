@@ -202,7 +202,7 @@ export default function UserDetailModal({ userId, onClose }: { userId: string | 
                 onClick={() => router.push(`/admin/users/${encodeURIComponent(data.id)}/activity?email=${encodeURIComponent(data.email || '')}&hours=168`)}
                 className="w-full mt-1 mb-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
               >
-                View full activity →
+                Open full timeline (all sessions & durations) →
               </button>
             </>
           )}
