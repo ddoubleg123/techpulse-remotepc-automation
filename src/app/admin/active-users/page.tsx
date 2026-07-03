@@ -143,7 +143,7 @@ function ActiveUsersInner() {
           </button>
         </div>
         <p className="text-sm text-gray-500 mb-4">
-          Signed in within the last {days} days · sorted by most recent login
+          Signed in within the last {days} days · sorted by most recently on site
         </p>
 
         {/* Range selector */}
@@ -260,11 +260,12 @@ function ActiveUsersInner() {
                 </span>
 
                 <div className="w-36 text-right shrink-0">
-                  {u.last_sign_in_at ? (
+                  {u.last_active ? (
                     <>
-                      <p className="text-sm text-gray-700">login {formatRelativeTime(new Date(u.last_sign_in_at))}</p>
+                      <p className="text-sm text-gray-700">on site {formatRelativeTime(new Date(u.last_active))}</p>
                       <p className="text-[10px] text-gray-400">
                         {u.provider === 'google' ? 'Google' : u.provider === 'email' ? 'Email OTP' : (u.provider || '')}
+                        {u.last_sign_in_at ? ` · login ${formatRelativeTime(new Date(u.last_sign_in_at))}` : ''}
                       </p>
                     </>
                   ) : (
